@@ -17,6 +17,8 @@ import yaml
 import hashlib
 import subprocess
 import shutil
+import threading
+import copy
 
 from datetime import datetime, timedelta
 from pprint import pprint, pformat
@@ -35,9 +37,19 @@ import mercantile
 
 import png
 import tempfile
+import socket
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
+urllib3.disable_warnings(urllib3.exceptions.SNIMissingWarning)
+urllib3.disable_warnings(UserWarning)
+
 
 #from OpenSSL import SSL
 import ssl
+
+default_justification = "Software Development Testing"
 
 flask_app = Flask(__name__)
 _color_key_map = []
@@ -70,13 +82,34 @@ def index():
 def display_config():
     cache_info = {}
     for c in flask_app.config["index_config"]:
-        try:
-            cache_info[c] = subprocess.check_output(['du','-sh', flask_app.config["cache_directory"]+'%s'%c]).split()[0].decode('utf-8')
-        except:
+        tile_cache_path = os.path.join(flask_app.config["cache_directory"], c)
+        if os.path.exists(tile_cache_path)
+            try:
+                cache_info[c] = subprocess.check_output(['du','-sh', flask_app.config["cache_directory"]+'%s'%c]).split()[0].decode('utf-8')
+            except OSError:
+                cache_info[c] = "Error"
+        else:
             cache_info[c] = "N/A"
 
-    connection_base = "http://localhost:5000/tms/"
+    if flask_app.config.get("proxy_host"):
+        connection_base = "https://" + flask_app.config.get('proxy_host') + "/" + flask_app.config.get("proxy_prefix") + "/tms/"
+    else:
+        connection_base = "http://" + socket.getfqdn() + ":5000/tms/"
     return render_template('display_config.html', config_contents = flask_app.config["index_config"], connection_base=connection_base, cache_info=cache_info)
+
+@flask_app.route('/color_map', methods=['GET'])
+def display_color_map():
+    color_key_map = {}
+    color_file = os.path.join(flask_a)
+    if os.path.exists(color_file):
+        with open(color_file, 'r') as c:
+            color_key_map = yaml.safe_load(c)
+    
+    color_key_hash = {}
+    for k in color_key_map.keys():
+        color_key_hash[k] = int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)
+
+    return render_template('color_map.html', color_key_map=color_key_map, color_key_hash=color_key_hash)
 
 class ConfigForm(FlaskForm):
     name = wtforms.StringField('Name', description="Name of map layer", validators=[wtforms.validators.DataRequired()])
@@ -86,6 +119,7 @@ class ConfigForm(FlaskForm):
     geopoint_field = wtforms.StringField('Geopoint Field', description="Required", validators=[wtforms.validators.DataRequired()])
     timestamp_field = wtforms.StringField('Timestamp Field', description="Optional, needed if Date Range is not All")
     category_field = wtforms.StringField('Category Field', description="Optional, needed if mode is category")
+    justification_field = wtforms.StringField('Justification', description="Required, Justification for ES search", validators=[wtforms.validators.DataRequired()])
     submit = wtforms.SubmitField('Add Config')
 
 @flask_app.route('/add_config', methods=['GET', 'POST'])
@@ -97,7 +131,8 @@ def add_config():
                'mode':form.mode.data,
                'geopoint_field':form.geopoint_field.data,
                'timestamp_field':form.timestamp_field.data,
-               'category_field':form.category_field.data }
+               'category_field':form.category_field.data,
+               'justification':form.justification_field.data}
         flask_app.config['index_config'][form.name.data] = cfg
         
         #Store to file
@@ -125,10 +160,13 @@ def remove_config():
 def clear_cache():
     if request.args.get('name') is not None:
         #delete the cache
+        tile_cache_path = os.path.join(flask_app.config.get("cache_director"), requests.args.get('name'))
         try:
-            shutil.rmtree("%s%s"%(flask_app.config["cache_directory"], request.args.get('name')))
+            shutil.rmtree(tile_cache_path)
         except FileNotFoundError:
             pass
+        flask_app.logger.warn("Recreating cache path %s", tile_cache_path)
+        pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
         return Response("Completed clearing cache for: %s"%(request.args.get('name')), status=200)
     return Response("Unknown config: %s"%(request.args.get('name')), status=500)
 
@@ -141,6 +179,13 @@ def get_tms(config_name, x, y, z):
         flask_app.logger.warn("Selected configuration is not in known configurations: %s"%(config_name))
         resp = Response("Selected configuration is not in known configurations: %s"%(config_name), status=500)
         return resp
+
+    #Validate request is from proxy if proxy mode is enabled
+    if flask_app.config.get("tms_key") is not None:
+        if flask_app.config.get("tms_key") != request.headers.get("TMS_PROXY_KEY"):
+            flask_app.logger.warn("TMS must be accessed via reverse proxy")
+            resp = Response("TMS must be accessed via reverse proxy", status=403)
+            return resp
 
     #Get params from config file
     idx = flask_app.config.get("index_config", {}).get(config_name, {}).get("idx", None)
@@ -185,13 +230,14 @@ def get_tms(config_name, x, y, z):
             flask_app.logger.info("No cache, generating a new tile %s/%s/%s"%(z,x,y))
         
         if mode == "heat":
-            img = generate_heat_tile(idx, x, y, z, geopoint_field=geopoint_field, start_time=start_time, stop_time=stop_time, time_field=timestamp_field)
+            img = generate_heat_tile(idx, x, y, z, geopoint_field=geopoint_field, start_time=start_time, stop_time=stop_time, 
+                                        time_field=timestamp_field, justification=justification)
         else:
             #pathlib.Path(os.path.dirname(cache_dir+tile)).mkdir(parents=True, exist_ok=True) 
-            #map_filename = os.path.join(flask_app.config["cache_directory"]+"/tms/%s/category/color_map.yaml"%(idx))
-            map_filename = None
+            map_filename = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(config_name))
+            #map_filename = None
             img = generate_category_tile(idx, x, y, z, geopoint_field=geopoint_field, start_time=start_time, stop_time=stop_time, 
-                                        time_field=timestamp_field, category_field=category_field, map_filename=map_filename)
+                                        time_field=timestamp_field, category_field=category_field, map_filename=map_filename, justification=justification)
         set_cache("/%s/%s/%s/%s.png"%(config_name, z, x, y), img, flask_app.config["cache_directory"])
 
     resp = Response(img, status=200)
@@ -289,7 +335,7 @@ def generate_sub_frames(level, bb_dict):
 
     return subframes
 
-def generate_heat_tile(idx, x, y, z, geopoint_field="location", start_time=None, stop_time=None, time_field='@timestamp', max_bins=10000):
+def generate_heat_tile(idx, x, y, z, geopoint_field="location", start_time=None, stop_time=None, time_field='@timestamp', max_bins=10000, justification=default_justification):
     flask_app.logger.debug("Generating Heat tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, start_time, stop_time))
     try:
         # Preconfigured tile size
@@ -338,11 +384,14 @@ def generate_heat_tile(idx, x, y, z, geopoint_field="location", start_time=None,
         area = xwidth * yheight
 
         # Connect to Elasticsearch (TODO is it faster if this is globa?)
-        flask_app.logger.debug("Connecting to ES")
         es = Elasticsearch(
-            "http://%s:9200"%flask_app.config.get("elastic_credentials")
+            flask_app.config.get('elastic')
+            verify_certs=False,
+            timeout=900,
+            headers={
+                "acecard-justification":justification
+            }
         )
-        flask_app.logger.debug("Got connection to ES")
 
         filters = [
             Q(
@@ -460,7 +509,7 @@ def create_color_key_hash(categories, cmap='glasbey_category10'):
     color_key = {}
     for k in set(categories):
         # Set the global color key for this category
-        color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:1], 16)]
+        color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
     return color_key
 
 def create_color_key_file(categories, color_file, cmap='glasbey_category10'):
@@ -489,9 +538,36 @@ def create_color_key_file(categories, color_file, cmap='glasbey_category10'):
             yaml.dump(color_key_map, f)
     return color_key
 
+color_key_hash_lock = threading.lock()
+def create_color_key_hash_file(categories, color_file, cmap='glasbey_bw'):
+    with color_key_hash_lock:
+        color_key_map = {}
+        
+        #See if you need to load the file
+        if os.path.exists(color_file):
+            #Load the file
+            with open(color_file, 'r') as c:
+                color_key_map = yaml.safe_load(c)        
+
+        changed = False
+        color_key = {}
+        for k in set(categories):
+            # Set the global color key for this category
+            color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
+            if k not in color_key_map:
+                #Add it to the map to return
+                color_key_map[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
+                changed = True
+
+        if changed:
+            with open(color_file, 'w') as f:
+                yaml.dump(color_key_map, f)
+        return color_key
+
+
 def generate_category_tile(idx, x, y, z, 
                            geopoint_field="location", start_time=None, stop_time=None, time_field='@timestamp', 
-                           category_field=None, max_bins=10000, map_filename=None):
+                           category_field=None, max_bins=10000, map_filename=None, justification=default_justification):
     flask_app.logger.debug("Generating Category tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
     try:
         # Preconfigured tile size
@@ -548,11 +624,14 @@ def generate_category_tile(idx, x, y, z,
 
 
         # Connect to Elasticsearch (TODO is it faster if this is globa?)
-        flask_app.logger.debug("Connecting to ES")
         es = Elasticsearch(
-            "http://%s:9200"%flask_app.config.get("elastic_credentials")
+            flask_app.config.get("elastic"),
+            verify_certs=False,
+            timeout=900,
+            headers={
+                "acecard-justification":justification
+            }
         )
-        flask_app.logger.debug("Got connection to ES")
 
         filters = [
             Q(
@@ -659,7 +738,7 @@ def generate_category_tile(idx, x, y, z,
                 
 
                 if map_filename:
-                    img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_file(df["T"], map_filename), min_alpha=250)
+                    img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash_file(df["T"], map_filename), min_alpha=250)
                 else:
                     img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash(df["T"]), min_alpha=250)
 
@@ -692,7 +771,15 @@ if __name__ == '__main__':
     parser.add_argument('-d', '--cache_directory', default='./tms-cache/', help="Directory for tile cache")
     parser.add_argument('-f', '--index_config_file', default='./index_config.yaml', help="YAML file containing information about each index")
     parser.add_argument('-t', '--cache_timeout', default=60*60, help="Cache lifespan in sec")
-    parser.add_argument('-c', '--elastic_credentials', default=None, help="Credentials for Elasticsearch, format USER:PASSWORD@HOST")
+    parser.add_argument('-e', '--elastic', default=None, help="Elasticsearch URL")
+    
+    #Reverse Proxy Modes
+    parser.add_argument('-H', '--proxy_host', default=None, help="Proxy host")
+    parser.add_argument('-p', '--proxy_prefix', default="", help="Proxy prefix")
+    parser.add_argument('-k', '--tms_key', default=None, help="TMS key required in header")
+    
+    #SSL Modes
+    parser.add_argument('--ssl_adhoc', default=False, action='store_true', help="Enable SSL in ad-hoc mode")
     parser.add_argument('-s', '--ssl', default=False, action='store_true', help="Enable SSL, set environment variables to confgure: \
                                                                                 SSL_SERVER_KEY, SSL_SERVER_CERT, SSL_CA_CHAIN")
     args = parser.parse_args()
@@ -715,7 +802,17 @@ if __name__ == '__main__':
     flask_app.logger.setLevel(logging.INFO)
     flask_app.logger.setLevel(logging.DEBUG)
 
-    if args.ssl:
+    #Create cache directories for all layers
+    for c in flask_app.config.get("index_config", {}):
+        tile_cache_path = os.path.join(flask_app.config.get("cache_directory"))
+        if not os.path.exists(tile_cache_path):
+            flask_app.logger.info("Making cache path %s", tile_cache_path)
+            pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
+
+    if agrs.ssl_adhoc:
+        context = 'adhoc'
+        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0' , ssl_context=context, threaded=True)
+    elif args.ssl:
         context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         context.load_verify_locations(os.environ.get("SSL_CA_CHAIN"))
         context.load_cert_chain(os.environ.get("SSL_SERVER_CERT"), os.environ.get("SSL_SERVER_KEY") )
