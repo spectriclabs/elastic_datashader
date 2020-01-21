@@ -1,0 +1,21 @@
+test-1dayByCity:
+  category_field: city.keyword
+  date_range: 1d
+  geopoint_field: location
+  idx: test_geotimedata
+  mode: category
+  timestamp_field: '@timestamp'
+test-30dayByCountry:
+  category_field: country.keyword
+  date_range: 30d
+  geopoint_field: location
+  idx: test_geotimedata
+  mode: category
+  timestamp_field: '@timestamp'
+test-30dayHeat:
+  category_field: None
+  date_range: 30d
+  geopoint_field: location
+  idx: test_geotimedata
+  mode: heat
+  timestamp_field: '@timestamp'

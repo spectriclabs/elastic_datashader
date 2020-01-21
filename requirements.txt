@@ -1,0 +1,10 @@
+Flask
+flask-wtf
+elasticsearch
+elasticsearch_dsl
+pyOpenSSL
+datashader
+pandas
+colorcet
+mercantile
+pypng
