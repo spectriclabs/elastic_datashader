@@ -85,7 +85,7 @@ def display_config():
         tile_cache_path = os.path.join(flask_app.config["cache_directory"], c)
         if os.path.exists(tile_cache_path):
             try:
-                cache_info[c] = subprocess.check_output(['du','-sh', flask_app.config["cache_directory"]+'%s'%c]).split()[0].decode('utf-8')
+                cache_info[c] = subprocess.check_output(['du','-sh', os.path.join(flask_app.config["cache_directory"], c)]).split()[0].decode('utf-8')
             except OSError:
                 cache_info[c] = "Error"
         else:
@@ -100,7 +100,7 @@ def display_config():
 @flask_app.route('/color_map', methods=['GET'])
 def display_color_map():
     color_key_map = {}
-    color_file = os.path.join(flask_a)
+    color_file = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(request.args.get('name')))
     if os.path.exists(color_file):
         with open(color_file, 'r') as c:
             color_key_map = yaml.safe_load(c)
@@ -160,7 +160,7 @@ def remove_config():
 def clear_cache():
     if request.args.get('name') is not None:
         #delete the cache
-        tile_cache_path = os.path.join(flask_app.config.get("cache_director"), requests.args.get('name'))
+        tile_cache_path = os.path.join(flask_app.config.get("cache_directory"), request.args.get('name'))
         try:
             shutil.rmtree(tile_cache_path)
         except FileNotFoundError:
@@ -194,6 +194,7 @@ def get_tms(config_name, x, y, z):
     category_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("category_field", None)
     date_range = flask_app.config.get("index_config", {}).get(config_name, {}).get("date_range", None)
     mode = flask_app.config.get("index_config", {}).get(config_name, {}).get("mode", None)
+    justification = flask_app.config.get("index_config", {}).get(config_name, {}).get('justification', default_justification)
 
     # TMS tile coordinates
     x = int(x)
@@ -229,15 +230,16 @@ def get_tms(config_name, x, y, z):
         else:
             flask_app.logger.info("No cache, generating a new tile %s/%s/%s"%(z,x,y))
         
-        if mode == "heat":
-            img = generate_heat_tile(idx, x, y, z, geopoint_field=geopoint_field, start_time=start_time, stop_time=stop_time, 
-                                        time_field=timestamp_field, justification=justification)
-        else:
-            #pathlib.Path(os.path.dirname(cache_dir+tile)).mkdir(parents=True, exist_ok=True) 
-            map_filename = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(config_name))
-            #map_filename = None
-            img = generate_category_tile(idx, x, y, z, geopoint_field=geopoint_field, start_time=start_time, stop_time=stop_time, 
-                                        time_field=timestamp_field, category_field=category_field, map_filename=map_filename, justification=justification)
+
+        color_map_filename = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(config_name))
+        img = generate_tile(idx, x, y, z, 
+                    geopoint_field=geopoint_field, time_field=timestamp_field, 
+                    start_time=start_time, stop_time=stop_time,
+                    category_field=category_field, map_filename=color_map_filename,
+                    max_bins=10000,  #TODO: Make this configurable
+                    justification=justification )
+        
+        
         set_cache("/%s/%s/%s/%s.png"%(config_name, z, x, y), img, flask_app.config["cache_directory"])
 
     resp = Response(img, status=200)
@@ -335,209 +337,6 @@ def generate_sub_frames(level, bb_dict):
 
     return subframes
 
-def generate_heat_tile(idx, x, y, z, geopoint_field="location", start_time=None, stop_time=None, time_field='@timestamp', max_bins=10000, justification=default_justification):
-    flask_app.logger.debug("Generating Heat tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, start_time, stop_time))
-    try:
-        # Preconfigured tile size
-        tile_height_px = 256
-        tile_width_px = 256
-
-        # Because each tile is generated dynamically, we cannot
-        # use auto-caclulate spans because the color mapping won't
-        # be consistent
-        span = [0, 5]
-        span = None
-
-        # Get the web mercador bounds for the tile
-        xy_bounds = mercantile.xy_bounds(x, y, z)
-
-        # Calculate the x/y range in meters
-        x_range = xy_bounds.left, xy_bounds.right
-        y_range = xy_bounds.bottom, xy_bounds.top
-        
-        # Swap the numbers so that [0] is always lowest
-        if x_range[0] > x_range[1]:
-            x_range = x_range[1], x_range[0]
-        if y_range[0] > y_range[1]:
-            y_range = y_range[1], y_range[0]
-
-        # Get the top_left/bot_rght for the tile
-        top_left = mercantile.lnglat(x_range[0], y_range[1])
-        bot_rght = mercantile.lnglat(x_range[1], y_range[0])
-
-        # Constrain exactly to map boundaries
-        bb_dict = {
-            "top_left": {
-                "lat": min(90, max(-90, top_left[1])),
-                "lon": min(180, max(-180, top_left[0]))
-            },
-            "bottom_right": {
-                "lat": min(90, max(-90, bot_rght[1])),
-                "lon": min(180, max(-180, bot_rght[0]))
-            } }
-
-
-        # Figure out how big the tile is in meters
-        xwidth = (x_range[1] - x_range[0])
-        yheight = (y_range[1] - y_range[0])
-        # And now the area of the tile
-        area = xwidth * yheight
-
-        # Connect to Elasticsearch (TODO is it faster if this is globa?)
-        es = Elasticsearch(
-            flask_app.config.get('elastic'),
-            verify_certs=False,
-            timeout=900,
-            headers={
-                "acecard-justification":justification
-            }
-        )
-
-        filters = [
-            Q(
-                "geo_bounding_box",
-                **{
-                    geopoint_field: bb_dict
-                }
-            )
-        ]
-
-        time_range = { time_field: {} }
-        if start_time != None:
-            time_range[time_field]["gte"] = start_time
-        if stop_time != None:
-            time_range[time_field]["lte"] = stop_time
-
-        if time_range[time_field]:
-            filters.append(
-                Q(
-                    "range",
-                    **time_range
-                )
-            )  
-
-        # See how many documents are in the bounding box
-        s = Search(index=idx).using(es).query('bool', filter=filters)
-        doc_cnt = s.count()
-
-        #If count is zero then return a null image
-        flask_app.logger.debug("Count: %s"%doc_cnt)
-        if doc_cnt == 0:
-            flask_app.logger.debug("No points in bounding box")
-            img = b""
-        else:
-            # Find number of pixels in required image
-            pixels = tile_height_px * tile_width_px
-            sub_frame_level = math.ceil( math.log(pixels/max_bins,4) )
-            flask_app.logger.debug("SubFrame math: %spx, %s subframe level"%(pixels, sub_frame_level) )
-            current_zoom = z
-            max_zooms = int(math.log(max_bins, 2) / 2)  #Is this right?
-            #max_zooms = int(math.log(max_bins, 4))
-            geotile_precision = current_zoom + max_zooms + sub_frame_level 
-            flask_app.logger.debug("GeoTile Zoom Info: current %s, max %s, sub frame level %s, precision %s"% (current_zoom, max_zooms, sub_frame_level, geotile_precision) )
-
-            a = A(
-                'geotile_grid',
-                field=geopoint_field,
-                precision=geotile_precision,
-                size=max_bins
-            ).metric(
-                "centroid",
-                'geo_centroid',
-                field=geopoint_field
-            )
-
-            #generate n subframe bounding boxes
-            subframes = generate_sub_frames(sub_frame_level, bb_dict)
-            df = pd.DataFrame()
-            s1 = time.time()
-            for _, subframe in enumerate(subframes):
-                subfilters = [
-                            Q(
-                                "geo_bounding_box",
-                                **{
-                                    geopoint_field: subframe
-                                }
-                            )
-                        ]
-                if time_range[time_field]:
-                    subfilters.append(
-                        Q(
-                            "range",
-                            **time_range
-                        )
-                    )  
-                s = Search(index=idx).using(es).query('bool', filter=subfilters).params(size=0)
-                    
-                s.aggs.bucket("bins", a)
-                resp = s.execute()
-                df = df.append(pd.DataFrame(map(convert_old, resp.aggregations.bins)))
-                
-                
-            s2 = time.time()
-            flask_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))
-
-            if len(df.index) == 0:
-                img = b""
-            else:            
-                #NB, if len(df)==0 then this will fail            
-                agg = ds.Canvas(
-                    plot_width=tile_width_px,
-                    plot_height=tile_height_px,
-                    x_range=x_range,
-                    y_range=y_range
-                ).points(df, 'x', 'y', agg=ds.sum('c'))
-                img = tf.shade(agg, cmap=cc.bmy, how="log", span=[0,500])
-
-                #Below zoom threshold spread to make individual dots large enough
-                spread_threshold = 11
-                if z >= spread_threshold:
-                    spread_factor = math.floor(2 +(z-(spread_threshold-1))*.25)
-                    print("Spreading by %s, z=%s"%(spread_factor, z))
-                    img = tf.spread(img, spread_factor)
-
-                img = img.to_bytesio().read()
-
-        #Set headers and return data 
-        return img
-    except Exception as E:
-        traceback.print_exc()
-        print(type(E), E)
-        return b""
-
-def create_color_key_hash(categories, cmap='glasbey_category10'):
-    color_key = {}
-    for k in set(categories):
-        # Set the global color key for this category
-        color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
-    return color_key
-
-def create_color_key_file(categories, color_file, cmap='glasbey_category10'):
-    color_key_map = None
-    color_key = {} 
-     
-    #See if you need to load the file
-    if os.path.exists(color_file):
-        #Load the file
-        with open(color_file, 'r') as c:
-            color_key_map = yaml.safe_load(c)        
-
-    if not color_key_map:
-        color_key_map = []
-
-    changed = False
-    for k in categories:
-        if k not in color_key_map:
-            #Add it to the map to return
-            color_key_map.append(k)
-            changed = True
-        color_key[k] = cc.palette[cmap][color_key_map.index(k) % len(cc.palette[cmap])]
-
-    if changed:
-        with open(color_file, 'w') as f:
-            yaml.dump(color_key_map, f)
-    return color_key
-
 color_key_hash_lock = threading.Lock()
 def create_color_key_hash_file(categories, color_file, cmap='glasbey_bw'):
     with color_key_hash_lock:
@@ -564,39 +363,32 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_bw'):
                 yaml.dump(color_key_map, f)
         return color_key
 
-
-def generate_category_tile(idx, x, y, z, 
-                           geopoint_field="location", start_time=None, stop_time=None, time_field='@timestamp', 
-                           category_field=None, max_bins=10000, map_filename=None, justification=default_justification):
-    flask_app.logger.debug("Generating Category tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
+def generate_tile(idx, x, y, z, 
+                    geopoint_field="location", time_field='@timestamp', 
+                    start_time=None, stop_time=None,
+                    category_field=None, map_filename=None,
+                    max_bins=10000,
+                    justification=default_justification ):
+    
+    flask_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
     try:
         # Preconfigured tile size
         tile_height_px = 256
         tile_width_px = 256
 
-        # Because each tile is generated dynamically, we cannot
-        # use auto-caclulate spans because the color mapping won't
-        # be consistent
-        span = [0, 5]
-        span = None
-
         # Get the web mercador bounds for the tile
         xy_bounds = mercantile.xy_bounds(x, y, z)
-
         # Calculate the x/y range in meters
         x_range = xy_bounds.left, xy_bounds.right
         y_range = xy_bounds.bottom, xy_bounds.top
-        
         # Swap the numbers so that [0] is always lowest
         if x_range[0] > x_range[1]:
             x_range = x_range[1], x_range[0]
         if y_range[0] > y_range[1]:
             y_range = y_range[1], y_range[0]
-
         # Get the top_left/bot_rght for the tile
         top_left = mercantile.lnglat(x_range[0], y_range[1])
         bot_rght = mercantile.lnglat(x_range[1], y_range[0])
-
         # Constrain exactly to map boundaries
         bb_dict = {
             "top_left": {
@@ -622,43 +414,41 @@ def generate_category_tile(idx, x, y, z,
         if stop_time != None:
             time_range[time_field]["lte"] = stop_time
 
-
-        # Connect to Elasticsearch (TODO is it faster if this is globa?)
+        # Connect to Elasticsearch (TODO is it faster if this is global?)
         es = Elasticsearch(
             flask_app.config.get("elastic"),
             verify_certs=False,
             timeout=900,
-            headers={
-                "acecard-justification":justification
-            }
+            headers={"acecard-justification":justification}
         )
 
-        filters = [
-            Q(
-                "geo_bounding_box",
-                **{
-                    geopoint_field: bb_dict
-                }
-            )
-        ]
+        #Create base search 
+        base_s = Search(index=idx).using(es)
+        #Add time bounds
         if time_range[time_field]:
-            filters.append(
-                Q(
-                    "range",
-                    **time_range
-                )
-            )  
+            base_s = s.filter("range", **time_range)
+        #TODO: Add lucene query
+        #TODO: Add dsl query
 
         # See how many documents are in the bounding box
-        s = Search(index=idx).using(es).query('bool', filter=filters).extra(size=0)
-        doc_cnt = s.count()
+        count_s = copy.copy(base_s)
+        count_s = count_s.filter("geo_bounding_box",
+                **{
+                    geopoint_field: bb_dict
+                } )
+        doc_cnt = count_s.count()
 
-        #Also need to calculate the number of categories
-        s = Search(index=idx).using(es).query('bool', filter=filters).extra(size=0)
-        s.aggs.metric('term_count','cardinality',field=category_field)
-        resp = s.execute()
-        category_cnt = resp.aggregations.term_count.value
-        flask_app.logger.debug("Document Count: %s, Category Count: %s"%(doc_cnt, category_cnt))
+
+        if category_field:
+            #Also need to calculate the number of categories
+            count_s.aggs.metric('term_count','cardinality',field=category_field)
+            resp = count_s.execute()
+            category_cnt = resp.aggregations.term_count.value
+            if category_cnt <= 0:
+                category_cnt = 1
+            flask_app.logger.debug("Document Count: %s, Category Count: %s"%(doc_cnt, category_cnt))
+        else:
+            category_cnt = 1  #Heat mode effectively has one category
 
         #If count is zero then return a null image
         flask_app.logger.debug("Count: %s"%doc_cnt)
@@ -668,12 +458,14 @@ def generate_category_tile(idx, x, y, z,
         else:
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
-            pixels = pixels/9.0  #To account for spread x3
+            if category_field:
+                #Spread the category mode x3
+                pixels = pixels/9.0
             
-            sub_frame_level = math.ceil( math.log( (pixels*category_cnt)/max_bins,4) )
+            sub_frame_level = math.ceil( math.log( (pixels*category_cnt) /max_bins,4) )
             flask_app.logger.debug("SubFrame math: %spx, %s subframe level"%(pixels, sub_frame_level) )
             current_zoom = z
-            #max_zooms = int(math.log(max_bins, 2) / 2)
+            #max_zooms = int(math.log(max_bins, 2) / 2)  #TODO: Confirm this is not correct
             max_zooms = int(math.log(max_bins, 4))
             geotile_precision = current_zoom + max_zooms + sub_frame_level 
             flask_app.logger.debug("GeoTile Zoom Info: current %s, max %s, sub frame level %s, precision %s"% (current_zoom, max_zooms, sub_frame_level, geotile_precision) )
@@ -683,76 +475,87 @@ def generate_category_tile(idx, x, y, z,
             df = pd.DataFrame()
             s1 = time.time()
             for _, subframe in enumerate(subframes):
-                subfilters = [
-                            Q(
-                                "geo_bounding_box",
+                subframe_s = copy.copy(base_s)
+                subframe_s = subframe_s.params(size=0)
+                subframe_s = subframe_s.filter("geo_bounding_box",
                                 **{
                                     geopoint_field: subframe
-                                }
-                            )
-                        ]
-                if time_range[time_field]:
-                    subfilters.append(
-                        Q(
-                            "range",
-                            **time_range
-                        )
-                    )  
+                                }  )
                 
-                s = Search(index=idx).using(es).query('bool', filter=subfilters).params(size=0)
-                    
-                s.aggs.bucket(
-                    'categories',
-                    'terms',
-                    field=category_field,
-                ).bucket(
-                    'grids',
-                    'geotile_grid',
-                    field=geopoint_field,
-                    precision=geotile_precision,
-                ).metric(
-                    'centroid',
-                    'geo_centroid',
-                    field=geopoint_field
-                )                
-                resp = s.execute()
-                df = df.append(pd.DataFrame(convert(resp)), sort=False)
-                if len(df) > 0:
-                    df.loc[:, 'x'], df.loc[:, 'y'] = ds.utils.lnglat_to_meters(df.lon, df.lat)
+                #Set up the aggregations and the dataframe extraction
+                if category_field:    
+                    subframe_s.aggs.bucket(
+                        'categories',
+                        'terms',
+                        field=category_field,
+                    ).bucket(
+                        'grids',
+                        'geotile_grid',
+                        field=geopoint_field,
+                        precision=geotile_precision,
+                    ).metric(
+                        'centroid',
+                        'geo_centroid',
+                        field=geopoint_field
+                    )                
+                    resp = subframe_s.execute()
+                    df = df.append(pd.DataFrame(convert(resp)), sort=False)
+                    if len(df) > 0:
+                        df.loc[:, 'x'], df.loc[:, 'y'] = ds.utils.lnglat_to_meters(df.lon, df.lat)
+                else:
+                    subframe_s.aggs.bucket(
+                        'bins',
+                        'geotile_grid',
+                        field=geopoint_field,
+                        precision=geotile_precision,
+                        size=max_bins   #TODO:  Is this needed for the category mode?  Is precision sufficient
+                    ).metric(
+                        "centroid",
+                        'geo_centroid',
+                        field=geopoint_field
+                    )                    
+                    resp = subframe_s.execute()
+                    df = df.append(pd.DataFrame(map(convert_old, resp.aggregations.bins)))
                 
             s2 = time.time()
             flask_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))
 
             if len(df.index) == 0:
                 img = b""
-            else:
-                            
-                #NB, if len(df)==0 then this will fail            
-                df["T"] = df["t"].astype('category')
-                agg = ds.Canvas(
-                    plot_width=tile_width_px,
-                    plot_height=tile_height_px,
-                    x_range=x_range,
-                    y_range=y_range
-                ).points(df, 'x', 'y', agg=ds.count_cat('T'))
-                
+            else: #Category Mode
+                if category_field:
+                    df["T"] = df["t"].astype('category')
+                    agg = ds.Canvas(
+                        plot_width=tile_width_px,
+                        plot_height=tile_height_px,
+                        x_range=x_range,
+                        y_range=y_range
+                    ).points(df, 'x', 'y', agg=ds.count_cat('T'))
+                    
 
-                if map_filename:
-                    img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash_file(df["T"], map_filename), min_alpha=250)
-                else:
-                    img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash(df["T"]), min_alpha=250)
+                    if map_filename:
+                        img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash_file(df["T"], map_filename), min_alpha=250)
+                    else:
+                        img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash(df["T"]), min_alpha=250)
 
-                #Spread to reduce pixel count needs?
-                img = tf.spread(img, 2 ) #, shape="square")
+                    #Spread to reduce pixel count needs
+                    img = tf.spread(img, 2 )
+                else: #Heat Mode
+                    agg = ds.Canvas(
+                        plot_width=tile_width_px,
+                        plot_height=tile_height_px,
+                        x_range=x_range,
+                        y_range=y_range
+                    ).points(df, 'x', 'y', agg=ds.sum('c'))
+                    
+                    img = tf.shade(agg, cmap=cc.bmy, how="log", span=[0,500])
 
-                #Below zoom threshold spread to make individual dots large enough
-                '''
-                spread_threshold = 11
-                if z >= spread_threshold:
-                    spread_factor = math.floor(2 +(z-(spread_threshold-1))*.25)
-                    print("Spreading by %s, z=%s"%(spread_factor, z))
-                    img = tf.spread(img, spread_factor)
-                '''
+                    #Below zoom threshold spread to make individual dots large enough
+                    spread_threshold = 11
+                    if z >= spread_threshold:
+                        spread_factor = math.floor(2 +(z-(spread_threshold-1))*.25)
+                        print("Spreading by %s, z=%s"%(spread_factor, z))
+                        img = tf.spread(img, spread_factor)
 
                 img = img.to_bytesio().read()
 
@@ -761,9 +564,7 @@ def generate_category_tile(idx, x, y, z,
     except Exception as E:
         traceback.print_exc()
         print(type(E), E)
-        return b""
-
-
+        return b""   #TODO: Fix this to return a 500 rather than a blank image that gets cached
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='TMS Server with Cache')
