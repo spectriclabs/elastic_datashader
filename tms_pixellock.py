@@ -54,18 +54,7 @@ default_justification = "Software Development Testing"
 flask_app = Flask(__name__)
 _color_key_map = []
 
-def get_cache(tile, cache_dir, lifespan=60*60):
-    #See if tile exists
-    if os.path.exists(os.path.join(cache_dir+tile)):
-        #TODO: check if its too old
-        with open(os.path.join(cache_dir+tile), 'rb') as i:
-            return i.read()
-    return None
 
-def set_cache(tile, img, cache_dir):
-    pathlib.Path(os.path.dirname(os.path.join(cache_dir+tile))).mkdir(parents=True, exist_ok=True) 
-    with open(os.path.join(cache_dir+tile), 'wb') as i:
-            i.write(img)
 
 
 
@@ -232,13 +221,16 @@ def get_tms(config_name, x, y, z):
         
 
         color_map_filename = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(config_name))
-        img = generate_tile(idx, x, y, z, 
+        try:
+            img = generate_tile(idx, x, y, z, 
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
                     start_time=start_time, stop_time=stop_time,
                     category_field=category_field, map_filename=color_map_filename,
                     max_bins=10000,  #TODO: Make this configurable
                     justification=justification )
-        
+        except:
+            resp = Response("Exception Generating Tile", status=500)
+            return resp
         
         set_cache("/%s/%s/%s/%s.png"%(config_name, z, x, y), img, flask_app.config["cache_directory"])
 
@@ -252,67 +244,43 @@ def get_tms(config_name, x, y, z):
 class GeotileGrid(Bucket):
     name = 'geotile_grid'
 
-def degrees2meters(lon, lat):
-    # EPSG:4326 to EPSG:3857
-    x = lon * 20037508.34 / 180
-    lat_rad = (90 + lat) * (math.pi / 360)
-    y = math.log(math.tan(lat_rad)) / (math.pi / 180)
-    y = y * 20037508.34 / 180
+def get_cache(tile, cache_dir, lifespan=60*60):
+    #See if tile exists
+    if os.path.exists(os.path.join(cache_dir+tile)):
+        #TODO: check if its too old
+        with open(os.path.join(cache_dir+tile), 'rb') as i:
+            return i.read()
+    return None
 
-    return x, y
-
-def meters2degrees(x, y):
-    # EPSG:3857 to EPSG:4326
-    lon = x * 180 / 20037508.34
-    yy = y * math.pi / 20037508.34
-    lat = (math.atan(math.exp(yy)) * 360 / math.pi) - 90
-
-    return lon, lat
-
-
-def convert_old(bucket):
-    x, y = degrees2meters(
-        bucket.centroid.location['lon'],
-        bucket.centroid.location['lat']
-    )
-    c = bucket.centroid.count
-    return dict(x=x, y=y, c=c)
-
+def set_cache(tile, img, cache_dir):
+    pathlib.Path(os.path.dirname(os.path.join(cache_dir+tile))).mkdir(parents=True, exist_ok=True) 
+    with open(os.path.join(cache_dir+tile), 'wb') as i:
+            i.write(img)
 
 def convert(response):
     if hasattr(response.aggregations, 'categories'):
         for category in response.aggregations.categories:
             for bucket in category.grids:
+                x,y = ds.utils.lnglat_to_meters(bucket.centroid.location.lon, bucket.centroid.location.lat)
                 yield dict(
                     lon=bucket.centroid.location.lon,
                     lat=bucket.centroid.location.lat,
+                    x=x,
+                    y=y,
                     c=bucket.centroid.count,
                     t=str(category.key)
+
                 )
     else:
         for bucket in response.aggregations.grids:
+            x,y = ds.utils.lnglat_to_meters(bucket.centroid.location.lon, bucket.centroid.location.lat)
             yield dict(
                 lon=bucket.centroid.location.lon,
                 lat=bucket.centroid.location.lat,
+                x=x,
+                y=y,
                 c=bucket.centroid.count
             )
-
-def printFrame(bb_dict):
-    print("Top Left (%s Lat, %s Lon), Bottom Right (%s Lat, %s Lon)" % \
-            ( round(bb_dict["top_left"]["lat"], 3), \
-              round(bb_dict["top_left"]["lon"], 3), \
-              round(bb_dict["bottom_right"]["lat"], 3), \
-              round(bb_dict["bottom_right"]["lon"], 3)) )
-    return
-
-def checkBB(bb_dict):
-    if bb_dict["bottom_right"]["lon"] <= bb_dict["top_left"]["lon"]:
-        flask_app.logger.warning("Invalid Frame")
-        printFrame(bb_dict)
-    if bb_dict["bottom_right"]["lat"] >= bb_dict["top_left"]["lat"]:
-        flask_app.logger.warning("Invalid Frame")
-        printFrame(bb_dict)
-    print("Valid Frame")
 
 def generate_sub_frames(level, bb_dict):
     l = int(math.pow(2, level)) #l = expansion in each dimensions
@@ -442,7 +410,9 @@ def generate_tile(idx, x, y, z,
         if category_field:
             #Also need to calculate the number of categories
             count_s.aggs.metric('term_count','cardinality',field=category_field)
+            count_s = count_s.params(size=0)
             resp = count_s.execute()
+            assert len(resp.hits) == 0
             category_cnt = resp.aggregations.term_count.value
             if category_cnt <= 0:
                 category_cnt = 1
@@ -483,7 +453,7 @@ def generate_tile(idx, x, y, z,
                                 }  )
                 
                 #Set up the aggregations and the dataframe extraction
-                if category_field:    
+                if category_field:  #Category Mode  
                     subframe_s.aggs.bucket(
                         'categories',
                         'terms',
@@ -498,13 +468,9 @@ def generate_tile(idx, x, y, z,
                         'geo_centroid',
                         field=geopoint_field
                     )                
-                    resp = subframe_s.execute()
-                    df = df.append(pd.DataFrame(convert(resp)), sort=False)
-                    if len(df) > 0:
-                        df.loc[:, 'x'], df.loc[:, 'y'] = ds.utils.lnglat_to_meters(df.lon, df.lat)
-                else:
+                else: #Heat Mode
                     subframe_s.aggs.bucket(
-                        'bins',
+                        'grids',
                         'geotile_grid',
                         field=geopoint_field,
                         precision=geotile_precision,
@@ -513,17 +479,19 @@ def generate_tile(idx, x, y, z,
                         "centroid",
                         'geo_centroid',
                         field=geopoint_field
-                    )                    
-                    resp = subframe_s.execute()
-                    df = df.append(pd.DataFrame(map(convert_old, resp.aggregations.bins)))
+                    )        
+                
+                resp = subframe_s.execute()
+                assert len(resp.hits) == 0
+                df = df.append(pd.DataFrame(convert(resp)), sort=False)
                 
             s2 = time.time()
             flask_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))
 
             if len(df.index) == 0:
                 img = b""
-            else: #Category Mode
-                if category_field:
+            else: 
+                if category_field: #Category Mode
                     df["T"] = df["t"].astype('category')
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
@@ -532,11 +500,7 @@ def generate_tile(idx, x, y, z,
                         y_range=y_range
                     ).points(df, 'x', 'y', agg=ds.count_cat('T'))
                     
-
-                    if map_filename:
-                        img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash_file(df["T"], map_filename), min_alpha=250)
-                    else:
-                        img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash(df["T"]), min_alpha=250)
+                    img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash_file(df["T"], map_filename), min_alpha=250)
 
                     #Spread to reduce pixel count needs
                     img = tf.spread(img, 2 )
@@ -561,10 +525,9 @@ def generate_tile(idx, x, y, z,
 
         #Set headers and return data 
         return img
-    except Exception as E:
-        traceback.print_exc()
-        print(type(E), E)
-        return b""   #TODO: Fix this to return a 500 rather than a blank image that gets cached
+    except Exception:
+        flask_app.logger.exception()
+        raise
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='TMS Server with Cache')
@@ -573,11 +536,11 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--index_config_file', default='./index_config.yaml', help="YAML file containing information about each index")
     parser.add_argument('-t', '--cache_timeout', default=60*60, help="Cache lifespan in sec")
     parser.add_argument('-e', '--elastic', default=None, help="Elasticsearch URL")
-    parser.add_argument('-P', '--port', default=5000, help="Port to run TMS server")
+    parser.add_argument('-p', '--port', default=5000, help="Port to run TMS server")
 
     #Reverse Proxy Modes
     parser.add_argument('-H', '--proxy_host', default=None, help="Proxy host")
-    parser.add_argument('-p', '--proxy_prefix', default="", help="Proxy prefix")
+    parser.add_argument('-P', '--proxy_prefix', default="", help="Proxy prefix")
     parser.add_argument('-k', '--tms_key', default=None, help="TMS key required in header")
     
     #SSL Modes
@@ -586,7 +549,6 @@ if __name__ == '__main__':
                                                                                 SSL_SERVER_KEY, SSL_SERVER_CERT, SSL_CA_CHAIN")
     args = parser.parse_args()
 
-    #TODO: Make elastic server selectable
 
 
     #Flask App Setup
