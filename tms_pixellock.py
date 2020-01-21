@@ -94,7 +94,7 @@ def display_config():
     if flask_app.config.get("proxy_host"):
         connection_base = "https://" + flask_app.config.get('proxy_host') + "/" + flask_app.config.get("proxy_prefix") + "/tms/"
     else:
-        connection_base = "http://" + socket.getfqdn() + ":5000/tms/"
+        connection_base = "http://" + socket.getfqdn() + ":%s/tms/"%flask_app.config.get('port')
     return render_template('display_config.html', config_contents = flask_app.config["index_config"], connection_base=connection_base, cache_info=cache_info)
 
 @flask_app.route('/color_map', methods=['GET'])
@@ -772,7 +772,8 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--index_config_file', default='./index_config.yaml', help="YAML file containing information about each index")
     parser.add_argument('-t', '--cache_timeout', default=60*60, help="Cache lifespan in sec")
     parser.add_argument('-e', '--elastic', default=None, help="Elasticsearch URL")
-    
+    parser.add_argument('-P', '--port', default=5000, help="Port to run TMS server")
+
     #Reverse Proxy Modes
     parser.add_argument('-H', '--proxy_host', default=None, help="Proxy host")
     parser.add_argument('-p', '--proxy_prefix', default="", help="Proxy prefix")
@@ -793,6 +794,8 @@ if __name__ == '__main__':
         
     flask_app.config["SECRET_KEY"] = 'CSRFProtectionKey'
 
+    port = flask_app.config.get("port", 5000)
+
     #Extract index_config out
     with open(flask_app.config.get("index_config_file"), 'r') as stream:
         flask_app.config["index_config"] = yaml.safe_load(stream)
@@ -812,11 +815,11 @@ if __name__ == '__main__':
 
     if args.ssl_adhoc:
         context = 'adhoc'
-        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0' , ssl_context=context, threaded=True)
+        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0' , port=port, ssl_context=context, threaded=True)
     elif args.ssl:
         context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
         context.load_verify_locations(os.environ.get("SSL_CA_CHAIN"))
         context.load_cert_chain(os.environ.get("SSL_SERVER_CERT"), os.environ.get("SSL_SERVER_KEY") )
-        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0' , ssl_context=context, threaded=True)
+        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0', port=port, ssl_context=context, threaded=True)
     else:
-        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0', threaded=True)
+        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0', port=port, threaded=True)
