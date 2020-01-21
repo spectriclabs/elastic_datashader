@@ -83,7 +83,7 @@ def display_config():
     cache_info = {}
     for c in flask_app.config["index_config"]:
         tile_cache_path = os.path.join(flask_app.config["cache_directory"], c)
-        if os.path.exists(tile_cache_path)
+        if os.path.exists(tile_cache_path):
             try:
                 cache_info[c] = subprocess.check_output(['du','-sh', flask_app.config["cache_directory"]+'%s'%c]).split()[0].decode('utf-8')
             except OSError:
@@ -385,7 +385,7 @@ def generate_heat_tile(idx, x, y, z, geopoint_field="location", start_time=None,
 
         # Connect to Elasticsearch (TODO is it faster if this is globa?)
         es = Elasticsearch(
-            flask_app.config.get('elastic')
+            flask_app.config.get('elastic'),
             verify_certs=False,
             timeout=900,
             headers={
@@ -538,7 +538,7 @@ def create_color_key_file(categories, color_file, cmap='glasbey_category10'):
             yaml.dump(color_key_map, f)
     return color_key
 
-color_key_hash_lock = threading.lock()
+color_key_hash_lock = threading.Lock()
 def create_color_key_hash_file(categories, color_file, cmap='glasbey_bw'):
     with color_key_hash_lock:
         color_key_map = {}
@@ -809,7 +809,8 @@ if __name__ == '__main__':
             flask_app.logger.info("Making cache path %s", tile_cache_path)
             pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
 
-    if agrs.ssl_adhoc:
+
+    if args.ssl_adhoc:
         context = 'adhoc'
         flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0' , ssl_context=context, threaded=True)
     elif args.ssl:
