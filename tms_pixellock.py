@@ -181,7 +181,9 @@ def get_tms(config_name, x, y, z):
     geopoint_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("geopoint_field", None)
     timestamp_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("timestamp_field", None)
     category_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("category_field", None)
-    date_range = flask_app.config.get("index_config", {}).get(config_name, {}).get("date_range", None)
+    from_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("from_time", None)
+    to_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("to_time", "now")
+    #date_range = flask_app.config.get("index_config", {}).get(config_name, {}).get("date_range", None)
     mode = flask_app.config.get("index_config", {}).get(config_name, {}).get("mode", None)
     justification = flask_app.config.get("index_config", {}).get(config_name, {}).get('justification', default_justification)
     lucene_query = flask_app.config.get("index_config", {}).get(config_name, {}).get("lucene_query", None)
@@ -193,23 +195,42 @@ def get_tms(config_name, x, y, z):
     z = int(z)
 
     #Handle potential date ranges
-    today = datetime.utcnow().date()
-    today_start = datetime(today.year, today.month, today.day)
-    stop_time = today_start.isoformat()
-    start_time = None
-    if date_range == "1d":
-        start_time =  (today_start - timedelta(1)).isoformat()
-    elif date_range == "7d":
-        start_time =  (today_start - timedelta(7)).isoformat()
-    elif date_range == "30d":
-        start_time =  (today_start - timedelta(30)).isoformat()
-    elif date_range == "all":
-        stop_time = None
-    else:
-        flask_app.logger.warn("Selected daterange is not known: %s"%(date_range))
-        resp = Response("Selected daterange is not known: %s"%(date_range), status=500)
+    #today = datetime.utcnow().date()
+    #today_start = datetime(today.year, today.month, today.day)
+    #stop_time = today_start.isoformat()
+    #start_time = None
+    #if date_range == "1d":
+    #    start_time =  (today_start - timedelta(1)).isoformat()
+    #elif date_range == "7d":
+    #    start_time =  (today_start - timedelta(7)).isoformat()
+    #elif date_range == "30d":
+    #    start_time =  (today_start - timedelta(30)).isoformat()
+    #elif date_range == "all":
+    #    stop_time = None
+    #else:
+    #    flask_app.logger.warn("Selected daterange is not known: %s"%(date_range))
+    #    resp = Response("Selected daterange is not known: %s"%(date_range), status=500)
 
-    c = get_cache( "/%s/%s/%s/%s.png"%(config_name, z, x, y), flask_app.config["cache_directory"])
+    now = datetime.utcnow()
+    
+    stop_time = now
+    if to_time:
+        stop_time = convertKibanaTime(to_time, now)
+    start_time = None
+    if from_time:
+        start_time = convertKibanaTime(from_time, now)
+
+    start_time, stop_time = quantizeTimeRange(start_time, stop_time)
+
+
+    #Calculate a hash value for the specific parameter set
+    #These will likely be the things that are passed as arguments from Kibana in the eventual setup
+    #This includes start_time + stop_time + lucene_query at the moment
+    parameter_string = str(start_time)+str(stop_time)+str(lucene_query)
+    parameter_hash = hashlib.md5(parameter_string.encode('utf-8')).hexdigest()
+    flask_app.logger.debug("Parameters: (%s) %s"%(parameter_hash, parameter_string))
+
+    c = get_cache( "/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), flask_app.config["cache_directory"])
     if c is not None and request.args.get('force') is None:
         flask_app.logger.info("Hit cache, returning")
         #Return Cached Value
@@ -235,14 +256,80 @@ def get_tms(config_name, x, y, z):
             resp = Response("Exception Generating Tile", status=500)
             return resp
         
-        set_cache("/%s/%s/%s/%s.png"%(config_name, z, x, y), img, flask_app.config["cache_directory"])
+        set_cache("/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), img, flask_app.config["cache_directory"])
 
     resp = Response(img, status=200)
     resp.headers['Content-Type'] = 'image/png'
     resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.cache_control.max_age = 60
     return resp
 
 ###########################################################################
+def quantizeTimeRange(start_time, stop_time):
+    #Goal here is to quantize the start and end times so when Kibana uses "now" we do not constantly invalidate cache
+    
+    #If the range is all time, jsut truncate to rayday
+    if start_time == None:
+        stop_time = stop_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start_time, stop_time
+
+    #Calculate the span
+    delta_time = stop_time - start_time
+
+    if delta_time > timedelta(days=29):
+        #delta > 29 days, truncate to rayday
+        start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        stop_time = stop_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start_time, stop_time
+    elif delta_time > timedelta(days=1):
+        #More than a day, truncate to an hour
+        start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        stop_time = stop_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start_time, stop_time
+    else:
+        #truncate to 5 min
+        start_time = start_time.replace(minute=math.floor(start_time.minute/5.0)*5, second=0, microsecond=0)
+        stop_time = stop_time.replace(minute=math.floor(stop_time.minute/5.0)*5, second=0, microsecond=0)
+        return start_time, stop_time
+
+def convertKibanaTime(time_string, current_time):
+    #Can be either a ISO time string or a now-XXX style string
+    try:
+        t = datetime.fromisoformat(time_string)
+        return t
+    except:
+        pass
+
+    if time_string.startswith("now"):
+        if time_string == "now":
+            return current_time
+        elif time_string.startswith("now-"):
+            offset = time_string.split('-')[1]
+            unit = offset[-1]
+            value = int(offset[0:-1])
+            if unit == 's':
+                return current_time - timedelta(seconds=value)
+            elif unit == 'm':
+                return current_time - timedelta(minutes=value)
+            elif unit == 'h' or unit == 'H':
+                return current_time - timedelta(hours=value)
+            elif unit == 'd':
+                return current_time - timedelta(days=value)
+            elif unit == 'w':
+                return current_time - timedelta(weeks=value)
+            elif unit == 'M':
+                return current_time - timedelta(days=value*30) #Kind of a hack
+            elif unit == "y":
+                return current_time - timedelta(days=value*365) #Kind of a hack
+            else:
+                flask_app.logging.error("%s is not a valid time offset" % unit)
+                return None     
+        elif time_string.startswith("now+"):
+            flask_app.logging.error("now+ time strings are not currently supported")
+            return None
+    
+    flask_app.logging.error("Unknown time string %s"%time_string)
+    return None
 
 class GeotileGrid(Bucket):
     name = 'geotile_grid'
