@@ -184,6 +184,8 @@ def get_tms(config_name, x, y, z):
     date_range = flask_app.config.get("index_config", {}).get(config_name, {}).get("date_range", None)
     mode = flask_app.config.get("index_config", {}).get(config_name, {}).get("mode", None)
     justification = flask_app.config.get("index_config", {}).get(config_name, {}).get('justification', default_justification)
+    lucene_query = flask_app.config.get("index_config", {}).get(config_name, {}).get("lucene_query", None)
+    kuery_query = flask_app.config.get("index_config", {}).get(config_name, {}).get("kuery_query", None)
 
     # TMS tile coordinates
     x = int(x)
@@ -226,6 +228,7 @@ def get_tms(config_name, x, y, z):
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
                     start_time=start_time, stop_time=stop_time,
                     category_field=category_field, map_filename=color_map_filename,
+                    lucene_query=lucene_query, kuery_query=kuery_query,
                     max_bins=10000,  #TODO: Make this configurable
                     justification=justification )
         except:
@@ -335,6 +338,7 @@ def generate_tile(idx, x, y, z,
                     geopoint_field="location", time_field='@timestamp', 
                     start_time=None, stop_time=None,
                     category_field=None, map_filename=None,
+                    lucene_query=None, kuery_query=None,
                     max_bins=10000,
                     justification=default_justification ):
     
@@ -392,11 +396,15 @@ def generate_tile(idx, x, y, z,
 
         #Create base search 
         base_s = Search(index=idx).using(es)
+        #base_s = base_s.params(size=0)
         #Add time bounds
         if time_range[time_field]:
-            base_s = s.filter("range", **time_range)
-        #TODO: Add lucene query
-        #TODO: Add dsl query
+            base_s = base_s.filter("range", **time_range)
+        #Add lucene query
+        if lucene_query:
+            base_s = base_s.filter('query_string', query=lucene_query)
+
+        #TODO: Add dsl/kuery filtering
 
         # See how many documents are in the bounding box
         count_s = copy.copy(base_s)
@@ -409,8 +417,8 @@ def generate_tile(idx, x, y, z,
 
         if category_field:
             #Also need to calculate the number of categories
-            count_s.aggs.metric('term_count','cardinality',field=category_field)
             count_s = count_s.params(size=0)
+            count_s.aggs.metric('term_count','cardinality',field=category_field)
             resp = count_s.execute()
             assert len(resp.hits) == 0
             category_cnt = resp.aggregations.term_count.value
