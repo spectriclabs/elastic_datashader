@@ -1,40 +1,11 @@
-test-1dayByCity:
-  category_field: city.keyword
-  from_time: now-1d
-  to_time: now
-  geopoint_field: location
-  idx: test_geotimedata
-  mode: category
-  timestamp_field: '@timestamp'
-test-30dayByCountry:
-  category_field: country.keyword
-  from_time: now-30d
-  to_time: now
-  geopoint_field: location
-  idx: test_geotimedata
-  mode: category
-  timestamp_field: '@timestamp'
-test-1dayHeat:
-  category_field: None
-  from_time: now-1d
-  to_time: now
+heat-test_geotimedata:
   geopoint_field: location
   idx: test_geotimedata
   mode: heat
   timestamp_field: '@timestamp'
-test-allHeat:
-  category_field: ''
-  to_time: now
-  geopoint_field: location
+category-test_geotimedata:
   idx: test_geotimedata
-  justification: Software Dev
-  mode: heat
-  timestamp_field: '@timestamp'
-  lucene_query: 'country: "United States"' 
-test-allByCountry:
   category_field: country.keyword
-  to_time: now
-  geopoint_field: location
-  idx: test_geotimedata
   mode: category
+  geopoint_field: location
   timestamp_field: '@timestamp'

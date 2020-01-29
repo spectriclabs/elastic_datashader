@@ -39,6 +39,7 @@ import png
 import tempfile
 import socket
 import urllib3
+import json
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
@@ -181,38 +182,35 @@ def get_tms(config_name, x, y, z):
     geopoint_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("geopoint_field", None)
     timestamp_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("timestamp_field", None)
     category_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("category_field", None)
-    from_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("from_time", None)
-    to_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("to_time", "now")
+    
     #date_range = flask_app.config.get("index_config", {}).get(config_name, {}).get("date_range", None)
     mode = flask_app.config.get("index_config", {}).get(config_name, {}).get("mode", None)
     justification = flask_app.config.get("index_config", {}).get(config_name, {}).get('justification', default_justification)
     lucene_query = flask_app.config.get("index_config", {}).get(config_name, {}).get("lucene_query", None)
-    kuery_query = flask_app.config.get("index_config", {}).get(config_name, {}).get("kuery_query", None)
+    from_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("from_time", None)
+    to_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("to_time", "now")
+    dsl_filter=flask_app.config.get("index_config", {}).get(config_name, {}).get("dsl_filter", None)
+
+    #Argument Parameter, NB. These overwrite what is in index config
+    if request.args.get('params'):
+        params = json.loads(request.args.get('params'))
+        #pprint(params)
+        if params.get("timeFilters",{}).get("from"):
+            from_time = params.get("timeFilters",{}).get("from")
+        if params.get("timeFilters",{}).get("to"):
+            to_time = params.get("timeFilters",{}).get("to")
+        if params.get("filters"):
+            dsl_filter = build_dsl_filter(params.get("filters"))
+        if params.get("query"):
+            lucene_query = params.get("query").get("query")
 
     # TMS tile coordinates
     x = int(x)
     y = int(y)
     z = int(z)
 
-    #Handle potential date ranges
-    #today = datetime.utcnow().date()
-    #today_start = datetime(today.year, today.month, today.day)
-    #stop_time = today_start.isoformat()
-    #start_time = None
-    #if date_range == "1d":
-    #    start_time =  (today_start - timedelta(1)).isoformat()
-    #elif date_range == "7d":
-    #    start_time =  (today_start - timedelta(7)).isoformat()
-    #elif date_range == "30d":
-    #    start_time =  (today_start - timedelta(30)).isoformat()
-    #elif date_range == "all":
-    #    stop_time = None
-    #else:
-    #    flask_app.logger.warn("Selected daterange is not known: %s"%(date_range))
-    #    resp = Response("Selected daterange is not known: %s"%(date_range), status=500)
-
-    now = datetime.utcnow()
-    
+    #Handle time bounding
+    now = datetime.utcnow()   
     stop_time = now
     if to_time:
         stop_time = convertKibanaTime(to_time, now)
@@ -226,13 +224,13 @@ def get_tms(config_name, x, y, z):
     #Calculate a hash value for the specific parameter set
     #These will likely be the things that are passed as arguments from Kibana in the eventual setup
     #This includes start_time + stop_time + lucene_query at the moment
-    parameter_string = str(start_time)+str(stop_time)+str(lucene_query)
+    parameter_string = str(start_time)+str(stop_time)+str(dsl_filter)
     parameter_hash = hashlib.md5(parameter_string.encode('utf-8')).hexdigest()
     flask_app.logger.debug("Parameters: (%s) %s"%(parameter_hash, parameter_string))
 
     c = get_cache( "/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), flask_app.config["cache_directory"])
     if c is not None and request.args.get('force') is None:
-        flask_app.logger.info("Hit cache, returning")
+        flask_app.logger.info("Hit cache (%s), returning"%parameter_hash)
         #Return Cached Value
         img = c
     else:
@@ -240,7 +238,7 @@ def get_tms(config_name, x, y, z):
         if request.args.get('force') is not None:
             flask_app.logger.info("Forced cache flush, generating a new tile %s/%s/%s"%(z,x,y))
         else:
-            flask_app.logger.info("No cache, generating a new tile %s/%s/%s"%(z,x,y))
+            flask_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
         
 
         color_map_filename = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(config_name))
@@ -249,10 +247,11 @@ def get_tms(config_name, x, y, z):
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
                     start_time=start_time, stop_time=stop_time,
                     category_field=category_field, map_filename=color_map_filename,
-                    lucene_query=lucene_query, kuery_query=kuery_query,
+                    lucene_query=lucene_query, dsl_filter=dsl_filter,
                     max_bins=10000,  #TODO: Make this configurable
                     justification=justification )
         except:
+            logging.exception("Exception Generating Tile")
             resp = Response("Exception Generating Tile", status=500)
             return resp
         
@@ -265,6 +264,17 @@ def get_tms(config_name, x, y, z):
     return resp
 
 ###########################################################################
+def build_dsl_filter(filter_inputs):
+    if len(filter_inputs) == 0:
+        return None
+    filter = {"filter":[{"match_all":{}}], "must_not":[]}
+    for f in filter_inputs:
+        if f.get("meta").get("negate"):
+            filter["must_not"].append( f.get("query"))
+        else:
+            filter["filter"].append(f.get("query"))
+    return filter
+
 def quantizeTimeRange(start_time, stop_time):
     #Goal here is to quantize the start and end times so when Kibana uses "now" we do not constantly invalidate cache
     
@@ -425,7 +435,7 @@ def generate_tile(idx, x, y, z,
                     geopoint_field="location", time_field='@timestamp', 
                     start_time=None, stop_time=None,
                     category_field=None, map_filename=None,
-                    lucene_query=None, kuery_query=None,
+                    lucene_query=None, dsl_filter=None,
                     max_bins=10000,
                     justification=default_justification ):
     
@@ -487,11 +497,26 @@ def generate_tile(idx, x, y, z,
         #Add time bounds
         if time_range[time_field]:
             base_s = base_s.filter("range", **time_range)
+
         #Add lucene query
         if lucene_query:
             base_s = base_s.filter('query_string', query=lucene_query)
 
-        #TODO: Add dsl/kuery filtering
+        #Add dsl filtering
+        if dsl_filter:
+            #Need to convert to a dict, merge with filters then convert back to a search object
+            base_dict = base_s.to_dict()
+            if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
+                base_dict["query"]["bool"]["filter"] = []
+            for f in dsl_filter["filter"]:
+                base_dict["query"]["bool"]["filter"].append(f)
+            if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
+                base_dict["query"]["bool"]["must_not"] = []
+            for f in dsl_filter["must_not"]:
+                base_dict["query"]["bool"]["must_not"].append(f)            
+            base_s = Search.from_dict(base_dict)          
+            base_s = base_s.index(idx).using(es)
+
 
         # See how many documents are in the bounding box
         count_s = copy.copy(base_s)
@@ -621,7 +646,7 @@ def generate_tile(idx, x, y, z,
         #Set headers and return data 
         return img
     except Exception:
-        flask_app.logger.exception()
+        flask_app.logger.exception("An exception occured while attempting to generate a tile:")
         raise
 
 if __name__ == '__main__':
@@ -661,7 +686,8 @@ if __name__ == '__main__':
 
     #Limit logging at INFO, reduce if needed for debugging
     flask_app.logger.setLevel(logging.INFO)
-    flask_app.logger.setLevel(logging.DEBUG)
+    if args.debug:
+        flask_app.logger.setLevel(logging.DEBUG)
 
     #Create cache directories for all layers
     for c in flask_app.config.get("index_config", {}):
