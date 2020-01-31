@@ -550,9 +550,12 @@ def generate_tile(idx, x, y, z,
             count_s.aggs.metric('term_count','cardinality',field=category_field)
             resp = count_s.execute()
             assert len(resp.hits) == 0
-            category_cnt = resp.aggregations.term_count.value
-            if category_cnt <= 0:
-                category_cnt = 1
+            category_cnt = 0
+            if hasattr(resp.aggregations, "term_count"){
+                category_cnt = resp.aggregations.term_count.value
+                if category_cnt <= 0:
+                    category_cnt = 1
+            }
             flask_app.logger.debug("Document Count: %s, Category Count: %s"%(doc_cnt, category_cnt))
         else:
             category_cnt = 1  #Heat mode effectively has one category
