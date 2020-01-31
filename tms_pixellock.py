@@ -228,7 +228,7 @@ def get_tms(config_name, x, y, z):
     #Calculate a hash value for the specific parameter set
     #These will likely be the things that are passed as arguments from Kibana in the eventual setup
     #This includes start_time + stop_time + lucene_query at the moment
-    parameter_string = str(start_time)+str(stop_time)+str(dsl_filter)
+    parameter_string = str(start_time)+str(stop_time)+str(dsl_filter)+str(lucene_query)
     parameter_hash = hashlib.md5(parameter_string.encode('utf-8')).hexdigest()
     flask_app.logger.debug("Parameters: (%s) %s"%(parameter_hash, parameter_string))
 
