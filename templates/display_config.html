@@ -32,7 +32,7 @@
     <td>{{ c.get('category_field') }}</td>
     <td>{{ cache_info.get(name) }}</td>
     <td><a href="./clear_cache?name={{ name }}">Clear Cache</a> | <a href="./remove_config?name={{ name }}">Remove</a>{% if c.get('mode') == 'category' %} | <a href="./color_map?name={{ name }}">Color Map</a>{% endif %}</td>
-    <td>{{connection_base}}{{name}}/{z}/{x}/{y}.png</td>   
+    <td>{{connection_base}}{{name}}/{z}/{x}/{y}.png?params={params}</td>   
 </tr>
 {% endfor %}
 </table>

@@ -192,9 +192,9 @@ def get_tms(config_name, x, y, z):
     dsl_filter=flask_app.config.get("index_config", {}).get(config_name, {}).get("dsl_filter", None)
 
     #Argument Parameter, NB. These overwrite what is in index config
-    if request.args.get('params'):
+    params = request.args.get('params')
+    if params and params != '{params}':
         params = json.loads(request.args.get('params'))
-        #pprint(params)
         if params.get("timeFilters",{}).get("from"):
             from_time = params.get("timeFilters",{}).get("from")
         if params.get("timeFilters",{}).get("to"):
@@ -203,6 +203,10 @@ def get_tms(config_name, x, y, z):
             dsl_filter = build_dsl_filter(params.get("filters"))
         if params.get("query"):
             lucene_query = params.get("query").get("query")
+    elif params and params == '{params}':
+        #If the parameters haven't been provided yet
+        resp = Response("TMS parameters not yet provided", status=204)
+        return resp
 
     # TMS tile coordinates
     x = int(x)

@@ -34,9 +34,9 @@ export class TileLayer extends AbstractLayer {
     currentParams = JSON.stringify(currentParamsObj);
 
     if (this.appliedParams !== currentParams) {
-      if (this.toLayerDescriptor().sourceDescriptor.urlTemplate !== '') {
-        const baseUrl = this.toLayerDescriptor().sourceDescriptor.urlTemplate.split('?')[0];
-        const paramUrl = baseUrl + '?params=' + currentParams;
+      if (this.toLayerDescriptor().sourceDescriptor.urlTemplate) {
+        const baseUrl = this.toLayerDescriptor().sourceDescriptor.urlTemplate;
+        const paramUrl = baseUrl.replace('{params}', currentParams);
         this.toLayerDescriptor().sourceDescriptor.urlTemplate = paramUrl;
         //Swap layer
         const sourceId = this.getId();
@@ -118,9 +118,13 @@ export class TileLayer extends AbstractLayer {
         //when turning the layer back into visible, it's possible the url has not been resovled yet.
         return;
       }
-      const url = sourceDataRequest.getData();
+      let url = sourceDataRequest.getData();
       if (!url) {
         return;
+      }
+
+      if (this.appliedParams) {
+        url = url.replace('{params}', this.appliedParams)
       }
 
       const sourceId = this.getId();
