@@ -2,6 +2,8 @@ FROM python:3
 LABEL maintainer="mastley@spectric.com" \
       version="0.0.1"
 
+COPY pip.conf /root/.pip/pip.conf
+
 RUN mkdir -p /opt/elastic_datashader/tms_cache
 
 ADD requirements.txt /opt/elastic_datashader
