@@ -278,7 +278,18 @@ def build_dsl_filter(filter_inputs):
         elif f.get("meta").get("disabled") in ("true", True):
             continue
         else:
+            is_phrase_match = False
+            for match_field, match_params in f.get("query", {}).get("match", {}).items():
+                if match_params.get("type") == "phrase":
+                    match_params.pop("type", None)
+                    is_phrase_match = True
+                    break
+
+            if is_phrase_match:
+                f["query"]["match_phrase"] = f.get("query", {}).pop("match", {})
+            
             filter["filter"].append(f.get("query"))
+
     return filter
 
 def quantizeTimeRange(start_time, stop_time):
