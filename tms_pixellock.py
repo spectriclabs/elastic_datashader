@@ -199,9 +199,9 @@ def get_tms(config_name, x, y, z):
             from_time = params.get("timeFilters",{}).get("from")
         if params.get("timeFilters",{}).get("to"):
             to_time = params.get("timeFilters",{}).get("to")
-        if params.get("filters"):
+        if params.get("filters") and lucene_query is None:
             dsl_filter = build_dsl_filter(params.get("filters"))
-        if params.get("query"):
+        if params.get("query") and lucene_query is None:
             lucene_query = params.get("query").get("query")
     elif params and params == '{params}':
         #If the parameters haven't been provided yet
