@@ -275,6 +275,8 @@ def build_dsl_filter(filter_inputs):
     for f in filter_inputs:
         if f.get("meta").get("negate"):
             filter["must_not"].append( f.get("query"))
+        elif f.get("meta").get("disabled") in ("true", True):
+            continue
         else:
             filter["filter"].append(f.get("query"))
     return filter
