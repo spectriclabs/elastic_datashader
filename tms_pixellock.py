@@ -423,7 +423,7 @@ def generate_sub_frames(level, bb_dict):
     return subframes
 
 color_key_hash_lock = threading.Lock()
-def create_color_key_hash_file(categories, color_file, cmap='glasbey_bw'):
+def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
     with color_key_hash_lock:
         color_key_map = {}
         
