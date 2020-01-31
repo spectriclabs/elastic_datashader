@@ -45,8 +45,12 @@ export class TileLayer extends AbstractLayer {
           if (this.mbMap.style._layers) {
             //Remove & Add source/layer approach
             try {
-              this.mbMap.removeLayer(mbLayerId);
-              this.mbMap.removeSource(sourceId);
+              if (this.mbMap.getLayer(mbLayerId)) {
+                this.mbMap.removeLayer(mbLayerId);  
+              }
+              if (this.mbMap.getSource(sourceId)) {
+                this.mbMap.removeSource(sourceId)
+              }
               this.mbMap.addSource(sourceId, {
                 type: 'raster',
                 tiles: [paramUrl],
@@ -148,9 +152,15 @@ export class TileLayer extends AbstractLayer {
   }
 
   _setTileLayerProperties(mbMap, mbLayerId) {
-    this.syncVisibilityWithMb(mbMap, mbLayerId);
-    mbMap.setLayerZoomRange(mbLayerId, this._descriptor.minZoom, this._descriptor.maxZoom);
-    mbMap.setPaintProperty(mbLayerId, 'raster-opacity', this.getAlpha());
+    if (mbMap.getLayer(mbLayerId)) {
+      this.syncVisibilityWithMb(mbMap, mbLayerId);
+    }
+    if (mbMap.getLayer(mbLayerId)) {
+      mbMap.setLayerZoomRange(mbLayerId, this._descriptor.minZoom, this._descriptor.maxZoom);
+    }
+    if (mbMap.getLayer(mbLayerId)) {
+      mbMap.setPaintProperty(mbLayerId, 'raster-opacity', this.getAlpha());
+    }
   }
 
   getLayerTypeIconName() {
