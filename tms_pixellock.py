@@ -677,6 +677,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--cache_timeout', default=60*60, help="Cache lifespan in sec")
     parser.add_argument('-e', '--elastic', default=None, help="Elasticsearch URL")
     parser.add_argument('-p', '--port', default=5000, help="Port to run TMS server")
+    parser.add_argument('-n'), '--num_processes', defualt=32, help="Number of concurrent Flask processes to run")
 
     #Reverse Proxy Modes
     parser.add_argument('-H', '--proxy_host', default=None, help="Proxy host")
@@ -691,23 +692,17 @@ if __name__ == '__main__':
 
 
 
-    #Flask App Setup
+    #Flask App Configuration
     for k,v in vars(args).items():
         flask_app.config[k] = v
-        
     flask_app.config["SECRET_KEY"] = 'CSRFProtectionKey'
-
-    port = flask_app.config.get("port", 5000)
 
     #Extract index_config out
     with open(flask_app.config.get("index_config_file"), 'r') as stream:
         flask_app.config["index_config"] = yaml.safe_load(stream)
 
-
     #Limit logging at INFO, reduce if needed for debugging
-    flask_app.logger.setLevel(logging.INFO)
-    if args.debug:
-        flask_app.logger.setLevel(logging.DEBUG)
+    flask_app.logger.setLevel(logging.INFO)        
 
     #Create cache directories for all layers
     for c in flask_app.config.get("index_config", {}):
@@ -716,14 +711,28 @@ if __name__ == '__main__':
             flask_app.logger.info("Making cache path %s", tile_cache_path)
             pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
 
+    #TODO: Figure out colormap
 
+    #Set all the flask arguments as a dictionary
+    flask_args = {}
+    flask_args["host"] = "0.0.0.0"
+    flask_args["port"] = flask_app.config.get("port", 5000)
+    flask_args["processes"] = flask_app.config.get("num_processes", 32)
+
+
+    #Handle Debug
+    if debug=flask_app.config.get("debug"):
+        flask_args["debug"] = True
+        flask_app.logger.setLevel(logging.DEBUG)
+        flask_args["processes"] = 1
+
+    #Handle SSL
     if args.ssl_adhoc:
-        context = 'adhoc'
-        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0' , port=port, ssl_context=context, threaded=True)
+        flask_args["ssl_context"] = 'adhoc'
     elif args.ssl:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        context.load_verify_locations(os.environ.get("SSL_CA_CHAIN"))
-        context.load_cert_chain(os.environ.get("SSL_SERVER_CERT"), os.environ.get("SSL_SERVER_KEY") )
-        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0', port=port, ssl_context=context, threaded=True)
-    else:
-        flask_app.run(debug=flask_app.config.get("debug"), host='0.0.0.0', port=port, threaded=True)
+        flask_args["ssl_context"] = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+        flask_args["ssl_context"].load_verify_locations(os.environ.get("SSL_CA_CHAIN"))
+        flask_args["ssl_context"].load_cert_chain(os.environ.get("SSL_SERVER_CERT"), os.environ.get("SSL_SERVER_KEY") )
+
+    #Run Flask
+    flask_app.run(**flask_args)
