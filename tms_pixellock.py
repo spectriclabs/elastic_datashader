@@ -1,5 +1,5 @@
-
 #!/usr/bin/env python
+
 from flask import Flask, Response
 from flask import request, render_template, redirect
 from flask_wtf import FlaskForm
@@ -40,6 +40,7 @@ import tempfile
 import socket
 import urllib3
 import json
+import fctl
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
@@ -51,13 +52,24 @@ urllib3.disable_warnings(UserWarning)
 import ssl
 
 default_justification = "Software Development Testing"
-
-flask_app = Flask(__name__)
 _color_key_map = []
 
+flask_app = Flask(__name__)
+flask_app.config["index_config"] = (0, {})
 
-
-
+def get_index_config(force=False):
+    #Handles multiprocess access to the index_config.  Checks for updates every 1 minute
+    with config_lock:
+        next_check, index_config = flask_app.config["index_config"]
+        if (not index_config) or (time.time() >= next_check) or force:
+            flask_app.logger.info("Reloading index config")
+            try:
+                with open(flask_app.config.get("index_config_file"), 'r') as stream:
+                    index_config = yaml.safe_load(stream)
+                    flask_app.config["index_config"] = ((time.time() + refresh_interval), index_config)
+            except:
+                flask_app.logger.exception("Error loading index config")
+    return index_config
 
 @flask_app.route('/')
 @flask_app.route('/index')
@@ -71,7 +83,8 @@ def index():
 @flask_app.route('/display_config')
 def display_config():
     cache_info = {}
-    for c in flask_app.config["index_config"]:
+    index_config = get_index_config()
+    for c in index_config:
         tile_cache_path = os.path.join(flask_app.config["cache_directory"], c)
         if os.path.exists(tile_cache_path):
             try:
@@ -85,7 +98,7 @@ def display_config():
         connection_base = "https://" + flask_app.config.get('proxy_host') + "/" + flask_app.config.get("proxy_prefix") + "/tms/"
     else:
         connection_base = "http://" + socket.getfqdn() + ":%s/tms/"%flask_app.config.get('port')
-    return render_template('display_config.html', config_contents = flask_app.config["index_config"], connection_base=connection_base, cache_info=cache_info)
+    return render_template('display_config.html', config_contents = index_config, connection_base=connection_base, cache_info=cache_info)
 
 @flask_app.route('/color_map', methods=['GET'])
 def display_color_map():
@@ -114,6 +127,7 @@ class ConfigForm(FlaskForm):
 
 @flask_app.route('/add_config', methods=['GET', 'POST'])
 def add_config():
+    index_config = get_index_config()
     form = ConfigForm()
     if form.validate_on_submit():
         cfg = {'idx':form.idx.data,
@@ -123,11 +137,11 @@ def add_config():
                'timestamp_field':form.timestamp_field.data,
                'category_field':form.category_field.data,
                'justification':form.justification_field.data}
-        flask_app.config['index_config'][form.name.data] = cfg
+        index_config[form.name.data] = cfg
         
         #Store to file
         with open(flask_app.config.get("index_config_file"), 'w') as file:
-            yaml.dump(flask_app.config["index_config"], file)
+            yaml.dump(index_config, file)
         
         return redirect('/display_config')
 
@@ -135,12 +149,13 @@ def add_config():
 
 @flask_app.route('/remove_config', methods=['GET'])
 def remove_config():
+    index_config = get_index_config()
     if request.args.get('name') is not None:
-        flask_app.config['index_config'].pop(request.args.get('name'))
+        index_config.pop(request.args.get('name'), None)
         
         #Store to file
         with open(flask_app.config.get("index_config_file"), 'w') as file:
-            yaml.dump(flask_app.config["index_config"], file)
+            yaml.dump(index_config, file)
         
         return redirect('/display_config')
 
@@ -162,9 +177,9 @@ def clear_cache():
 
 @flask_app.route('/tms/<config_name>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
 def get_tms(config_name, x, y, z):
-
+    index_config = get_index_config()
     #Validate the request against the config
-    if config_name not in flask_app.config.get("index_config", {}).keys():
+    if config_name not in index_config.keys():
         #Index not supported
         flask_app.logger.warn("Selected configuration is not in known configurations: %s"%(config_name))
         resp = Response("Selected configuration is not in known configurations: %s"%(config_name), status=500)
@@ -173,23 +188,23 @@ def get_tms(config_name, x, y, z):
     #Validate request is from proxy if proxy mode is enabled
     if flask_app.config.get("tms_key") is not None:
         if flask_app.config.get("tms_key") != request.headers.get("TMS_PROXY_KEY"):
-            flask_app.logger.warn("TMS must be accessed via reverse proxy")
+            flask_app.logger.warn("TMS must be accessed via reverse proxy: keys %s != %s", flask_app.config("tms_key"), response.headers.get("TMS_PROXY_KEY"))
             resp = Response("TMS must be accessed via reverse proxy", status=403)
             return resp
 
     #Get params from config file
-    idx = flask_app.config.get("index_config", {}).get(config_name, {}).get("idx", None)
-    geopoint_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("geopoint_field", None)
-    timestamp_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("timestamp_field", None)
-    category_field = flask_app.config.get("index_config", {}).get(config_name, {}).get("category_field", None)
+    idx = index_config.get(config_name, {}).get("idx", None)
+    geopoint_field = index_config.get(config_name, {}).get("geopoint_field", None)
+    timestamp_field = index_config.get(config_name, {}).get("timestamp_field", None)
+    category_field = index_config.get(config_name, {}).get("category_field", None)
     
-    #date_range = flask_app.config.get("index_config", {}).get(config_name, {}).get("date_range", None)
-    mode = flask_app.config.get("index_config", {}).get(config_name, {}).get("mode", None)
-    justification = flask_app.config.get("index_config", {}).get(config_name, {}).get('justification', default_justification)
-    lucene_query = flask_app.config.get("index_config", {}).get(config_name, {}).get("lucene_query", None)
-    from_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("from_time", None)
-    to_time = flask_app.config.get("index_config", {}).get(config_name, {}).get("to_time", "now")
-    dsl_filter=flask_app.config.get("index_config", {}).get(config_name, {}).get("dsl_filter", None)
+    #date_range = index_config.get(config_name, {}).get("date_range", None)
+    mode = index_config.get(config_name, {}).get("mode", None)
+    justification = index_config.get(config_name, {}).get('justification', default_justification)
+    lucene_query = index_config.get(config_name, {}).get("lucene_query", None)
+    from_time = index_config.get(config_name, {}).get("from_time", None)
+    to_time = index_config.get(config_name, {}).get("to_time", "now")
+    dsl_filter=index_config.get(config_name, {}).get("dsl_filter", None)
 
     #Argument Parameter, NB. These overwrite what is in index config
     params = request.args.get('params')
@@ -445,7 +460,12 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
 
         if changed:
             with open(color_file, 'w') as f:
-                yaml.dump(color_key_map, f)
+                fcntl.lock(f, fcntl.LOCK_EX)
+                try:
+                    yaml.dump(color_key_map, f)
+                finally:
+                    fcntl.lock(f, fcntl.LOCK_UN)
+
         return color_key
 
 def generate_tile(idx, x, y, z, 
@@ -551,11 +571,10 @@ def generate_tile(idx, x, y, z,
             resp = count_s.execute()
             assert len(resp.hits) == 0
             category_cnt = 0
-            if hasattr(resp.aggregations, "term_count"){
+            if hasattr(resp.aggregations, "term_count"):
                 category_cnt = resp.aggregations.term_count.value
                 if category_cnt <= 0:
                     category_cnt = 1
-            }
             flask_app.logger.debug("Document Count: %s, Category Count: %s"%(doc_cnt, category_cnt))
         else:
             category_cnt = 1  #Heat mode effectively has one category
@@ -677,7 +696,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--cache_timeout', default=60*60, help="Cache lifespan in sec")
     parser.add_argument('-e', '--elastic', default=None, help="Elasticsearch URL")
     parser.add_argument('-p', '--port', default=5000, help="Port to run TMS server")
-    parser.add_argument('-n'), '--num_processes', defualt=32, help="Number of concurrent Flask processes to run")
+    parser.add_argument('-n', '--num_processes', default=32, help="Number of concurrent Flask processes to run")
 
     #Reverse Proxy Modes
     parser.add_argument('-H', '--proxy_host', default=None, help="Proxy host")
@@ -690,22 +709,16 @@ if __name__ == '__main__':
                                                                                 SSL_SERVER_KEY, SSL_SERVER_CERT, SSL_CA_CHAIN")
     args = parser.parse_args()
 
-
-
     #Flask App Configuration
     for k,v in vars(args).items():
         flask_app.config[k] = v
     flask_app.config["SECRET_KEY"] = 'CSRFProtectionKey'
 
-    #Extract index_config out
-    with open(flask_app.config.get("index_config_file"), 'r') as stream:
-        flask_app.config["index_config"] = yaml.safe_load(stream)
-
     #Limit logging at INFO, reduce if needed for debugging
     flask_app.logger.setLevel(logging.INFO)        
 
     #Create cache directories for all layers
-    for c in flask_app.config.get("index_config", {}):
+    for c in get_index_config():
         tile_cache_path = os.path.join(flask_app.config.get("cache_directory"))
         if not os.path.exists(tile_cache_path):
             flask_app.logger.info("Making cache path %s", tile_cache_path)
@@ -718,10 +731,11 @@ if __name__ == '__main__':
     flask_args["host"] = "0.0.0.0"
     flask_args["port"] = flask_app.config.get("port", 5000)
     flask_args["processes"] = flask_app.config.get("num_processes", 32)
+    flask_args["threaded"] = False
 
 
     #Handle Debug
-    if debug=flask_app.config.get("debug"):
+    if flask_app.config.get("debug"):
         flask_args["debug"] = True
         flask_app.logger.setLevel(logging.DEBUG)
         flask_args["processes"] = 1
