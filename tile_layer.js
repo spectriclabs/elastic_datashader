@@ -128,7 +128,7 @@ export class TileLayer extends AbstractLayer {
       }
 
       if (this.appliedParams) {
-        url = url.replace('{params}', this.appliedParams)
+        url = url.replace('{params}', this.appliedParams);
       }
 
       const sourceId = this.getId();

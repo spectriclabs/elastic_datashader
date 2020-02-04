@@ -40,7 +40,7 @@ import tempfile
 import socket
 import urllib3
 import json
-import fctl
+import fcntl
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
@@ -55,9 +55,10 @@ default_justification = "Software Development Testing"
 _color_key_map = []
 
 flask_app = Flask(__name__)
+config_lock = threading.Lock()
 flask_app.config["index_config"] = (0, {})
 
-def get_index_config(force=False):
+def get_index_config(force=False, refresh_interval=60):
     #Handles multiprocess access to the index_config.  Checks for updates every 1 minute
     with config_lock:
         next_check, index_config = flask_app.config["index_config"]
@@ -181,7 +182,7 @@ def get_tms(config_name, x, y, z):
     #Validate the request against the config
     if config_name not in index_config.keys():
         #Index not supported
-        flask_app.logger.warn("Selected configuration is not in known configurations: %s"%(config_name))
+        flask_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
         resp = Response("Selected configuration is not in known configurations: %s"%(config_name), status=500)
         return resp
 
@@ -392,7 +393,7 @@ def set_cache(tile, img, cache_dir):
 
 def check_cache_dir(layer_name):
     tile_cache_path = os.path.join(flask_app.config.get("cache_directory"), layer_name)
-    if not os.path.exists(tile_cache_path)
+    if not os.path.exists(tile_cache_path):
         pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
 
 def check_cache_dirs():
@@ -457,7 +458,10 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
             #Load the file
             with open(color_file, 'r') as c:
                 color_key_map = yaml.safe_load(c)        
-
+            #If file is blank load a blank dictionary
+            if color_key_map == None:
+                color_key_map = {}
+        
         changed = False
         color_key = {}
         for k in set(categories):
@@ -470,11 +474,11 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
 
         if changed:
             with open(color_file, 'w') as f:
-                fcntl.lock(f, fcntl.LOCK_EX)
+                fcntl.lockf(f, fcntl.LOCK_EX)
                 try:
                     yaml.dump(color_key_map, f)
                 finally:
-                    fcntl.lock(f, fcntl.LOCK_UN)
+                    fcntl.lockf(f, fcntl.LOCK_UN)
 
         return color_key
 
@@ -689,9 +693,9 @@ def generate_tile(idx, x, y, z,
                             agg, 
                             cmap=cc.glasbey_category10, 
                             color_key=create_color_key_hash_file(df["T"], map_filename), 
-                            min_alpha=250,
+                            min_alpha=min_alpha,
                             how='log',
-                            span=[min_span, 200])
+                            span=[min_span, max_span])
 
                     #Spread to reduce pixel count needs
                     if spread_factor > 1:
