@@ -260,8 +260,8 @@ def get_tms(config_name, x, y, z):
         else:
             flask_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
         
-
-        color_map_filename = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(config_name))
+        check_cache_dir(config_name)
+        color_map_filename = os.path.join(flask_app.config["cache_directory"], config_name, "colormap.json")
         try:
             img = generate_tile(idx, x, y, z, 
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
@@ -389,6 +389,15 @@ def set_cache(tile, img, cache_dir):
     pathlib.Path(os.path.dirname(os.path.join(cache_dir+tile))).mkdir(parents=True, exist_ok=True) 
     with open(os.path.join(cache_dir+tile), 'wb') as i:
             i.write(img)
+
+def check_cache_dir(layer_name):
+    tile_cache_path = os.path.join(flask_app.config.get("cache_directory"), layer_name)
+    if not os.path.exists(tile_cache_path)
+        pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
+
+def check_cache_dirs():
+    for c in get_index_config():
+        check_cache_dir(c)
 
 def convert(response):
     if hasattr(response.aggregations, 'categories'):
@@ -743,11 +752,7 @@ if __name__ == '__main__':
     flask_app.logger.setLevel(logging.INFO)        
 
     #Create cache directories for all layers
-    for c in get_index_config():
-        tile_cache_path = os.path.join(flask_app.config.get("cache_directory"))
-        if not os.path.exists(tile_cache_path):
-            flask_app.logger.info("Making cache path %s", tile_cache_path)
-            pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
+    check_cache_dirs()
 
     #TODO: Figure out colormap
 
