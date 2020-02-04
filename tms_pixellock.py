@@ -660,10 +660,34 @@ def generate_tile(idx, x, y, z,
                         y_range=y_range
                     ).points(df, 'x', 'y', agg=ds.count_cat('T'))
                     
-                    img = tf.shade(agg, cmap=cc.glasbey_category10, color_key=create_color_key_hash_file(df["T"], map_filename), min_alpha=250)
+                    min_span = 0
+                    max_span = ((doc_cnt / category_cnt) / max_bins)
+                    max_span = max(max_span, 1)
+                    flask_app.logger.debug("doc:%s cat:%s bins:%s span_max:%s span_min:%s", doc_cnt, category_cnt, max_bins, max_span, min_span)
+
+                    #Increase min_alpha as zoom levels increase
+                    if z <= 8:
+                        min_alpha = 100
+                        spread_factor = 1
+                    elif z <= 12:
+                        min_alpha = 150
+                        spread_factor = 2
+                    else:
+                        min_alpha = 200
+                        spread_factor = 3
+
+                    img = tf.shade(
+                            agg, 
+                            cmap=cc.glasbey_category10, 
+                            color_key=create_color_key_hash_file(df["T"], map_filename), 
+                            min_alpha=250,
+                            how='log',
+                            span=[min_span, 200])
 
                     #Spread to reduce pixel count needs
-                    img = tf.spread(img, 2 )
+                    if spread_factor > 1:
+                        img = tf.spread(img, spread_factor)
+                    
                 else: #Heat Mode
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
