@@ -205,6 +205,7 @@ def get_tms(config_name, x, y, z):
     from_time = index_config.get(config_name, {}).get("from_time", None)
     to_time = index_config.get(config_name, {}).get("to_time", "now")
     dsl_filter=index_config.get(config_name, {}).get("dsl_filter", None)
+    cmap=index_config.get(config_name, {}).get("cmap", "bmy")
 
     #Argument Parameter, NB. These overwrite what is in index config
     params = request.args.get('params')
@@ -265,7 +266,7 @@ def get_tms(config_name, x, y, z):
             img = generate_tile(idx, x, y, z, 
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
                     start_time=start_time, stop_time=stop_time,
-                    category_field=category_field, map_filename=color_map_filename,
+                    category_field=category_field, map_filename=color_map_filename, cmap=cmap,
                     lucene_query=lucene_query, dsl_filter=dsl_filter,
                     max_bins=10000,  #TODO: Make this configurable
                     justification=justification )
@@ -471,7 +472,7 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
 def generate_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
                     start_time=None, stop_time=None,
-                    category_field=None, map_filename=None,
+                    category_field=None, map_filename=None, cmap='bmy',
                     lucene_query=None, dsl_filter=None,
                     max_bins=10000,
                     justification=default_justification ):
@@ -671,7 +672,7 @@ def generate_tile(idx, x, y, z,
                         y_range=y_range
                     ).points(df, 'x', 'y', agg=ds.sum('c'))
                     
-                    img = tf.shade(agg, cmap=cc.bmy, how="log", span=[0,500])
+                    img = tf.shade(agg, cmap=getattr(cc, cmap, cc.bmy), how="log", span=[0,500])
 
                     #Below zoom threshold spread to make individual dots large enough
                     spread_threshold = 11
