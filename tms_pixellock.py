@@ -568,6 +568,8 @@ def generate_tile(idx, x, y, z,
             base_s = Search.from_dict(base_dict)          
             base_s = base_s.index(idx).using(es)
 
+        #Get global document count for this index
+        global_doc_cnt = base_s.count()
 
         # See how many documents are in the bounding box
         count_s = copy.copy(base_s)
@@ -673,28 +675,43 @@ def generate_tile(idx, x, y, z,
                         y_range=y_range
                     ).points(df, 'x', 'y', agg=ds.count_cat('T'))
                     
+                    #Estimate the number of points per tile assuming uniform density
+                    num_tiles_at_level = 2**z
+                    num_bins_at_level = num_tiles_at_level * pixels
+                    estimated_bin_cnt = global_doc_cnt / num_bins_at_level
                     min_span = 0
-                    max_span = ((doc_cnt / category_cnt) / max_bins)
-                    max_span = max(max_span, 1)
-                    flask_app.logger.debug("doc:%s cat:%s bins:%s span_max:%s span_min:%s", doc_cnt, category_cnt, max_bins, max_span, min_span)
-
+                    
                     #Increase min_alpha as zoom levels increase
-                    if z <= 8:
-                        min_alpha = 100
-                        spread_factor = 1
-                    elif z <= 12:
-                        min_alpha = 150
+                    if estimated_bin_cnt < 0.1:
+                        min_alpha = 200
+                        max_span = 1
                         spread_factor = 2
                     else:
-                        min_alpha = 200
-                        spread_factor = 3
+                        if z <= 6:
+                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
+                            spread_factor = 1
+                        elif z <= 9:
+                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
+                            spread_factor = 1
+                        elif z <= 11:
+                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
+                            spread_factor = 2
+                        else:
+                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
+                            spread_factor = 3
+                        if max_span <= 0:
+                            max_span = 1
+                        #Increase dynamic range for larger spans
+                        alpha_span = int(max_span) * 25
+                        min_alpha = 255 - min(alpha_span, 225)
 
+                    flask_app.logger.debug("MinAlpha:%s MaxSpan:%s Spread:%s z:%s GlobalDocs:%s Docs:%s", min_alpha, max_span, spread_factor, z, global_doc_cnt, doc_cnt)
                     img = tf.shade(
                             agg, 
                             cmap=cc.glasbey_category10, 
                             color_key=create_color_key_hash_file(df["T"], map_filename), 
                             min_alpha=min_alpha,
-                            how='log',
+                            how="log",
                             span=[min_span, max_span])
 
                     #Spread to reduce pixel count needs

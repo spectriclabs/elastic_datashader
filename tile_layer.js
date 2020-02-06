@@ -37,7 +37,6 @@ export class TileLayer extends AbstractLayer {
       if (this.toLayerDescriptor().sourceDescriptor.urlTemplate) {
         const baseUrl = this.toLayerDescriptor().sourceDescriptor.urlTemplate;
         const paramUrl = baseUrl.replace('{params}', currentParams);
-        this.toLayerDescriptor().sourceDescriptor.urlTemplate = paramUrl;
         //Swap layer
         const sourceId = this.getId();
         const mbLayerId = this._getMbLayerId();
