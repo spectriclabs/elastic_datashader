@@ -72,6 +72,15 @@ def get_index_config(force=False, refresh_interval=60):
                 flask_app.logger.exception("Error loading index config")
     return index_config
 
+def get_connection_base():
+    # TODO - this incorrectly assumes that proxy always implies HTTP an no-proxy is always HTTP
+    if flask_app.config.get("proxy_host"):
+        connection_base = "https://" + flask_app.config.get('proxy_host') + "/" + flask_app.config.get("proxy_prefix") + "/tms/"
+    else:
+        connection_base = "http://" + socket.getfqdn() + ":%s/tms/"%flask_app.config.get('port')
+
+    return connection_base
+
 @flask_app.route('/')
 @flask_app.route('/index')
 def index():
@@ -95,10 +104,8 @@ def display_config():
         else:
             cache_info[c] = "N/A"
 
-    if flask_app.config.get("proxy_host"):
-        connection_base = "https://" + flask_app.config.get('proxy_host') + "/" + flask_app.config.get("proxy_prefix") + "/tms/"
-    else:
-        connection_base = "http://" + socket.getfqdn() + ":%s/tms/"%flask_app.config.get('port')
+    connection_base = get_connection_base()
+
     return render_template('display_config.html', config_contents = index_config, connection_base=connection_base, cache_info=cache_info)
 
 @flask_app.route('/color_map', methods=['GET'])
