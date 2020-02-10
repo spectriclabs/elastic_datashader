@@ -183,6 +183,28 @@ def clear_cache():
         return Response("Completed clearing cache for: %s"%(request.args.get('name')), status=200)
     return Response("Unknown config: %s"%(request.args.get('name')), status=500)
 
+@flask_app.route('/tms/<config_name>/tile.json', methods=['GET'])
+def get_tile_json(config_name):
+    connection_base = get_connection_base()
+    tiles_url = connection_base + config_name + "/{z}/{x}/{y}.png"
+
+    tile_json = {
+        "tilejson": "2.2.0",
+        "name": config_name,
+        "legend": "<ul><li>Item 1</li><li>Item 2</li></ul>", # TODO make this a legend the renders pretty
+        "tiles": [
+            tiles_url
+        ],
+    }
+
+    data = json.dumps(tile_json)
+    resp = Response(data, status=200)
+    resp.headers['Content-Type'] = 'application/json'
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.cache_control.max_age = 60
+
+    return resp
+
 @flask_app.route('/tms/<config_name>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
 def get_tms(config_name, x, y, z):
     index_config = get_index_config()
