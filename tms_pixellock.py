@@ -51,6 +51,10 @@ urllib3.disable_warnings(UserWarning)
 #from OpenSSL import SSL
 import ssl
 
+#Import helpers to assist with datashader
+from datashader_helpers import sum_cat
+
+
 default_justification = "Software Development Testing"
 _color_key_map = []
 
@@ -702,7 +706,7 @@ def generate_tile(idx, x, y, z,
                         plot_height=tile_height_px,
                         x_range=x_range,
                         y_range=y_range
-                    ).points(df, 'x', 'y', agg=ds.count_cat('T'))
+                    ).points(df, 'x', 'y', agg=sum_cat('T', 'c'))
                     
                     #Estimate the number of points per tile assuming uniform density
                     num_tiles_at_level = 2**z

@@ -12,6 +12,7 @@ RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r /opt/elastic_datashader/requirements.txt
 
 ADD tms_pixellock.py /opt/elastic_datashader
+ADD datashader_helpers.py /opt/elastic_datashader
 ADD templates /opt/elastic_datashader/templates
 ADD data_shader.patch /var/tmp
 
