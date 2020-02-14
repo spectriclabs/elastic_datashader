@@ -129,31 +129,31 @@ def display_color_map():
 class ConfigForm(FlaskForm):
     name = wtforms.StringField('Name', description="Name of map layer", validators=[wtforms.validators.DataRequired()])
     idx = wtforms.StringField('Index', description="Index name", validators=[wtforms.validators.DataRequired()])
-    daterange = wtforms.SelectField('Date Range', choices=[('1d', 'Yesterday'), ('7d', 'Last 7 Days'), ('30d', 'Last 30 Days'), ('all', 'All Time')] )
     mode = wtforms.SelectField('Mode', choices=[('heat', 'Heat Map'), ('category', 'Category Map')] )
     geopoint_field = wtforms.StringField('Geopoint Field', description="Required", validators=[wtforms.validators.DataRequired()])
     timestamp_field = wtforms.StringField('Timestamp Field', description="Optional, needed if Date Range is not All")
     category_field = wtforms.StringField('Category Field', description="Optional, needed if mode is category")
-    justification_field = wtforms.StringField('Justification', description="Required, Justification for ES search", validators=[wtforms.validators.DataRequired()])
     submit = wtforms.SubmitField('Add Config')
 
 @flask_app.route('/add_config', methods=['GET', 'POST'])
 def add_config():
-    index_config = get_index_config()
+    
     form = ConfigForm()
     if form.validate_on_submit():
         cfg = {'idx':form.idx.data,
-               'date_range':form.daterange.data,
                'mode':form.mode.data,
                'geopoint_field':form.geopoint_field.data,
                'timestamp_field':form.timestamp_field.data,
-               'category_field':form.category_field.data,
-               'justification':form.justification_field.data}
-        index_config[form.name.data] = cfg
+               'category_field':form.category_field.data}
         
-        #Store to file
-        with open(flask_app.config.get("index_config_file"), 'w') as file:
-            yaml.dump(index_config, file)
+        
+        #Store to file once you have the config lock
+        with config_lock:
+            with open(flask_app.config.get("index_config_file"), 'r') as stream:
+                index_config = yaml.safe_load(stream)
+            index_config[form.name.data] = cfg
+            with open(flask_app.config.get("index_config_file"), 'w') as stream:
+                yaml.dump(index_config, stream)
         
         return redirect('/display_config')
 
@@ -161,17 +161,15 @@ def add_config():
 
 @flask_app.route('/remove_config', methods=['GET'])
 def remove_config():
-    index_config = get_index_config()
-    if request.args.get('name') is not None:
-        index_config.pop(request.args.get('name'), None)
-        
-        #Store to file
-        with open(flask_app.config.get("index_config_file"), 'w') as file:
-            yaml.dump(index_config, file)
-        
-        return redirect('/display_config')
-
-    return render_template('add_config.html', title='Add Config', form=form)
+    with config_lock:
+        with open(flask_app.config.get("index_config_file"), 'r') as stream:
+            index_config = yaml.safe_load(stream)
+        if request.args.get('name') is not None:
+            index_config.pop(request.args.get('name'), None)
+        with open(flask_app.config.get("index_config_file"), 'w') as stream:
+            yaml.dump(index_config, stream)
+            
+    return redirect('/display_config')
 
 @flask_app.route('/clear_cache', methods=['GET'])
 def clear_cache():
