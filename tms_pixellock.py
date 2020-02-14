@@ -218,7 +218,7 @@ def get_tms(config_name, x, y, z):
     #Validate request is from proxy if proxy mode is enabled
     if flask_app.config.get("tms_key") is not None:
         if flask_app.config.get("tms_key") != request.headers.get("TMS_PROXY_KEY"):
-            flask_app.logger.warn("TMS must be accessed via reverse proxy: keys %s != %s", flask_app.config("tms_key"), response.headers.get("TMS_PROXY_KEY"))
+            flask_app.logger.warning("TMS must be accessed via reverse proxy: keys %s != %s", flask_app.config.get("tms_key"), request.headers.get("TMS_PROXY_KEY"))
             resp = Response("TMS must be accessed via reverse proxy", status=403)
             return resp
 
@@ -694,7 +694,7 @@ def generate_tile(idx, x, y, z,
 
             if len(df.index) == 0:
                 img = b""
-            else: 
+            else:
                 if category_field: #Category Mode
                     df["T"] = df["t"].astype('category')
                     agg = ds.Canvas(
