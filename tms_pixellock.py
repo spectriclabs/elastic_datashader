@@ -265,10 +265,21 @@ def get_tms(config_name, x, y, z):
     now = datetime.utcnow()   
     stop_time = now
     if to_time:
-        stop_time = convertKibanaTime(to_time, now)
+        try:
+            stop_time = convertKibanaTime(to_time, now)
+        except ValueError:
+            flask_app.logger.exception("invalid to_time parameter")
+            resp = Response("invalid to_time parameter", status=500)
+            return resp
+
     start_time = None
     if from_time:
-        start_time = convertKibanaTime(from_time, now)
+        try:
+            start_time = convertKibanaTime(from_time, now)
+        except ValueError:
+            flask_app.logger.exception("invalid from_time parameter")
+            resp = Response("invalid from_time parameter", status=500)
+            return resp
 
     start_time, stop_time = quantizeTimeRange(start_time, stop_time)
 
@@ -342,6 +353,8 @@ def build_dsl_filter(filter_inputs):
 
 def quantizeTimeRange(start_time, stop_time):
     #Goal here is to quantize the start and end times so when Kibana uses "now" we do not constantly invalidate cache
+    if stop_time is None:
+        raise ValueError('stop time must be provided')
     
     #If the range is all time, jsut truncate to rayday
     if start_time == None:
@@ -368,13 +381,6 @@ def quantizeTimeRange(start_time, stop_time):
         return start_time, stop_time
 
 def convertKibanaTime(time_string, current_time):
-    #Can be either a ISO time string or a now-XXX style string
-    try:
-        t = datetime.fromisoformat(time_string)
-        return t
-    except:
-        pass
-
     if time_string.startswith("now"):
         if time_string == "now":
             return current_time
@@ -397,14 +403,21 @@ def convertKibanaTime(time_string, current_time):
             elif unit == "y":
                 return current_time - timedelta(days=value*365) #Kind of a hack
             else:
-                flask_app.logging.error("%s is not a valid time offset" % unit)
-                return None     
+                raise ValueError("%s is not a valid time offset" % unit)
         elif time_string.startswith("now+"):
-            flask_app.logging.error("now+ time strings are not currently supported")
-            return None
+            raise ValueError("now+ time strings are not currently supported")
+    elif time_string[10] == 'T':
+        # fromisoformat doesn't support the 'Z'
+        if time_string[-1] == 'Z':
+            time_string = time_string[:-1]
+
+        try:
+             t = datetime.fromisoformat(time_string)
+             return t
+        except ValueError:
+            raise ValueError("error parsing isoformat time %s", time_string)
     
-    flask_app.logging.error("Unknown time string %s"%time_string)
-    return None
+    raise ValueError("unknown time string %s" % time_string)
 
 class GeotileGrid(Bucket):
     name = 'geotile_grid'
