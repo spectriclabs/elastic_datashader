@@ -62,6 +62,23 @@ flask_app = Flask(__name__)
 config_lock = threading.Lock()
 flask_app.config["index_config"] = (0, {})
 
+# If ElasticAPM can be loaded, then attempt to configure
+# if via environment variable.  To install APM
+# run `pip install elastic-apm[flask]` then before
+# running the application set the following environment
+# variables:
+#
+#    ELASTIC_APM_SERVICE_NAME
+#    ELASTIC_APM_SERVER_URL
+#
+# Additional parameters can be found here:
+#    https://www.elastic.co/guide/en/apm/agent/python/current/configuration.html
+try:
+    from elasticapm.contrib.flask import ElasticAPM
+    apm = ElasticAPM(flask_app, logging=logging.ERROR)
+except ImportError:
+    ElasticAPM = None
+
 def get_index_config(force=False, refresh_interval=60):
     #Handles multiprocess access to the index_config.  Checks for updates every 1 minute
     with config_lock:
