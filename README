@@ -1,0 +1,29 @@
+To run in debug development mode:
+
+```
+python tms_pixellock.py --debug -p 6002 -e http://user:password@host:9200
+```
+
+To run in quasi-production mode:
+
+```
+python tms_pixellock.py -p 6002 -e http://user:password@host:9200
+```
+
+To build a Docker image
+
+```
+make
+```
+
+To run in production mode via Docker+Gunicorn:
+
+```
+docker run -it --rm=true -p 6002:6002 \
+    elastic_datashader:0.0.2 \
+    --log-level=debug \
+    -b :6002 \
+    --workers 32 \
+    --env DATASHADER_ELASTIC=http://user:passwordt@host:9200 \
+    --env DATASHADER_LOG_LEVEL=DEBUG
+```

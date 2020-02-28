@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
-from flask import Flask, Response
+from flask import Flask, Response, current_app
 from flask import request, render_template, redirect
+from flask import Blueprint
 from flask_wtf import FlaskForm
 import wtforms
 
@@ -54,72 +55,56 @@ import ssl
 #Import helpers to assist with datashader
 from datashader_helpers import sum_cat
 
+class Config(object):
+    """
+    The default configuration; configuration parameters need
+    to be in all upper case to be loaded correctly by
+    the flask helpers
+    """
 
+    # Internal configuration
+    INDEX_CONFIG = (0, {})
+
+    # Configuration that can be modifed by the user
+    LOG_LEVEL =   os.environ.get("DATASHADER_LOG_LEVEL", None)
+
+    CACHE_DIRECTORY =   os.environ.get("DATASHADER_CACHE_DIRECTORY", "./tms-cache/")
+    INDEX_CONFIG_FILE = os.environ.get("DATASHADER_INDEX_CONFIG_FILE", "./index_config.yaml")
+    CACHE_TIMEOUT = int(os.environ.get("DATASHADER_CACHE_TIMEOUT", 60*60))
+    ELASTIC = os.environ.get("DATASHADER_ELASTIC", "http://localhost:9200")
+    PROXY_HOST = os.environ.get("DATASHADER_PROXY_HOST", None)
+    PROXY_PREFIX = os.environ.get("DATASHADER_PROXY_PREFIX", "")
+    TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
+
+# Globals
 default_justification = "Software Development Testing"
 _color_key_map = []
-
-flask_app = Flask(__name__)
 config_lock = threading.Lock()
-flask_app.config["index_config"] = (0, {})
 
-# If ElasticAPM can be loaded, then attempt to configure
-# if via environment variable.  To install APM
-# run `pip install elastic-apm[flask]` then before
-# running the application set the following environment
-# variables:
-#
-#    ELASTIC_APM_SERVICE_NAME
-#    ELASTIC_APM_SERVER_URL
-#
-# Additional parameters can be found here:
-#    https://www.elastic.co/guide/en/apm/agent/python/current/configuration.html
-try:
-    from elasticapm.contrib.flask import ElasticAPM
-    apm = ElasticAPM(flask_app, logging=logging.ERROR)
-except ImportError:
-    ElasticAPM = None
+##############################################################################
+# API
+##############################################################################
 
-def get_index_config(force=False, refresh_interval=60):
-    #Handles multiprocess access to the index_config.  Checks for updates every 1 minute
-    with config_lock:
-        next_check, index_config = flask_app.config["index_config"]
-        if (not index_config) or (time.time() >= next_check) or force:
-            flask_app.logger.info("Reloading index config")
-            try:
-                with open(flask_app.config.get("index_config_file"), 'r') as stream:
-                    index_config = yaml.safe_load(stream)
-                    flask_app.config["index_config"] = ((time.time() + refresh_interval), index_config)
-            except:
-                flask_app.logger.exception("Error loading index config")
-    return index_config
+api = Blueprint('rest_api', __name__, template_folder='templates')
 
-def get_connection_base():
-    # TODO - this incorrectly assumes that proxy always implies HTTP an no-proxy is always HTTP
-    if flask_app.config.get("proxy_host"):
-        connection_base = "https://" + flask_app.config.get('proxy_host') + "/" + flask_app.config.get("proxy_prefix") + "/tms/"
-    else:
-        connection_base = "http://" + socket.getfqdn() + ":%s/tms/"%flask_app.config.get('port')
-
-    return connection_base
-
-@flask_app.route('/')
-@flask_app.route('/index')
+@api.route('/')
+@api.route('/index')
 def index():
     #Calc Cache Size
-    cache_size = subprocess.check_output(['du','-sh', flask_app.config["cache_directory"]]).split()[0].decode('utf-8')
+    cache_size = subprocess.check_output(['du','-sh', current_app.config["CACHE_DIRECTORY"]]).split()[0].decode('utf-8')
     #TODO: Add other info?    
     return render_template('index.html', title='Status', cache_size=cache_size)
 
-@flask_app.route('/config')
-@flask_app.route('/display_config')
+@api.route('/config')
+@api.route('/display_config')
 def display_config():
     cache_info = {}
     index_config = get_index_config()
     for c in index_config:
-        tile_cache_path = os.path.join(flask_app.config["cache_directory"], c)
+        tile_cache_path = os.path.join(current_app.config["CACHE_DIRECTORY"], c)
         if os.path.exists(tile_cache_path):
             try:
-                cache_info[c] = subprocess.check_output(['du','-sh', os.path.join(flask_app.config["cache_directory"], c)]).split()[0].decode('utf-8')
+                cache_info[c] = subprocess.check_output(['du','-sh', os.path.join(current_app.config["CACHE_DIRECTORY"], c)]).split()[0].decode('utf-8')
             except OSError:
                 cache_info[c] = "Error"
         else:
@@ -129,10 +114,10 @@ def display_config():
 
     return render_template('display_config.html', config_contents = index_config, connection_base=connection_base, cache_info=cache_info)
 
-@flask_app.route('/color_map', methods=['GET'])
+@api.route('/color_map', methods=['GET'])
 def display_color_map():
     color_key_map = {}
-    color_file = os.path.join(flask_app.config["cache_directory"]+"/%s/colormap.json"%(request.args.get('name')))
+    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"/%s/colormap.json"%(request.args.get('name')))
     if os.path.exists(color_file):
         with open(color_file, 'r') as c:
             color_key_map = yaml.safe_load(c)
@@ -152,57 +137,57 @@ class ConfigForm(FlaskForm):
     category_field = wtforms.StringField('Category Field', description="Optional, needed if mode is category")
     submit = wtforms.SubmitField('Add Config')
 
-@flask_app.route('/add_config', methods=['GET', 'POST'])
+@api.route('/add_config', methods=['GET', 'POST'])
 def add_config():
     
     form = ConfigForm()
     if form.validate_on_submit():
         cfg = {'idx':form.idx.data,
-               'mode':form.mode.data,
-               'geopoint_field':form.geopoint_field.data,
-               'timestamp_field':form.timestamp_field.data,
-               'category_field':form.category_field.data}
+            'mode':form.mode.data,
+            'geopoint_field':form.geopoint_field.data,
+            'timestamp_field':form.timestamp_field.data,
+            'category_field':form.category_field.data}
         
         
         #Store to file once you have the config lock
         with config_lock:
-            with open(flask_app.config.get("index_config_file"), 'r') as stream:
+            with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
                 index_config = yaml.safe_load(stream)
             index_config[form.name.data] = cfg
-            with open(flask_app.config.get("index_config_file"), 'w') as stream:
+            with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w') as stream:
                 yaml.dump(index_config, stream)
         
         return redirect('/display_config')
 
     return render_template('add_config.html', title='Add Config', form=form)
 
-@flask_app.route('/remove_config', methods=['GET'])
+@api.route('/remove_config', methods=['GET'])
 def remove_config():
     with config_lock:
-        with open(flask_app.config.get("index_config_file"), 'r') as stream:
+        with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
             index_config = yaml.safe_load(stream)
         if request.args.get('name') is not None:
             index_config.pop(request.args.get('name'), None)
-        with open(flask_app.config.get("index_config_file"), 'w') as stream:
+        with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w') as stream:
             yaml.dump(index_config, stream)
             
     return redirect('/display_config')
 
-@flask_app.route('/clear_cache', methods=['GET'])
+@api.route('/clear_cache', methods=['GET'])
 def clear_cache():
     if request.args.get('name') is not None:
         #delete the cache
-        tile_cache_path = os.path.join(flask_app.config.get("cache_directory"), request.args.get('name'))
+        tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), request.args.get('name'))
         try:
             shutil.rmtree(tile_cache_path)
         except FileNotFoundError:
             pass
-        flask_app.logger.warn("Recreating cache path %s", tile_cache_path)
+        current_app.logger.warn("Recreating cache path %s", tile_cache_path)
         pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
         return Response("Completed clearing cache for: %s"%(request.args.get('name')), status=200)
     return Response("Unknown config: %s"%(request.args.get('name')), status=500)
 
-@flask_app.route('/tms/<config_name>/tile.json', methods=['GET'])
+@api.route('/tms/<config_name>/tile.json', methods=['GET'])
 def get_tile_json(config_name):
     connection_base = get_connection_base()
     tiles_url = connection_base + config_name + "/{z}/{x}/{y}.png"
@@ -224,20 +209,20 @@ def get_tile_json(config_name):
 
     return resp
 
-@flask_app.route('/tms/<config_name>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
+@api.route('/tms/<config_name>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
 def get_tms(config_name, x, y, z):
     index_config = get_index_config()
     #Validate the request against the config
     if config_name not in index_config.keys():
         #Index not supported
-        flask_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
+        current_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
         resp = Response("Selected configuration is not in known configurations: %s"%(config_name), status=500)
         return resp
 
     #Validate request is from proxy if proxy mode is enabled
-    if flask_app.config.get("tms_key") is not None:
-        if flask_app.config.get("tms_key") != request.headers.get("TMS_PROXY_KEY"):
-            flask_app.logger.warning("TMS must be accessed via reverse proxy: keys %s != %s", flask_app.config.get("tms_key"), request.headers.get("TMS_PROXY_KEY"))
+    if current_app.config.get("TMS_KEY") is not None:
+        if current_app.config.get("TMS_KEY") != request.headers.get("TMS_PROXY_KEY"):
+            current_app.logger.warning("TMS must be accessed via reverse proxy: keys %s != %s", current_app.config.get("TMS_KEY"), request.headers.get("TMS_PROXY_KEY"))
             resp = Response("TMS must be accessed via reverse proxy", status=403)
             return resp
 
@@ -285,7 +270,7 @@ def get_tms(config_name, x, y, z):
         try:
             stop_time = convertKibanaTime(to_time, now)
         except ValueError:
-            flask_app.logger.exception("invalid to_time parameter")
+            current_app.logger.exception("invalid to_time parameter")
             resp = Response("invalid to_time parameter", status=500)
             return resp
 
@@ -294,7 +279,7 @@ def get_tms(config_name, x, y, z):
         try:
             start_time = convertKibanaTime(from_time, now)
         except ValueError:
-            flask_app.logger.exception("invalid from_time parameter")
+            current_app.logger.exception("invalid from_time parameter")
             resp = Response("invalid from_time parameter", status=500)
             return resp
 
@@ -306,22 +291,22 @@ def get_tms(config_name, x, y, z):
     #This includes start_time + stop_time + lucene_query at the moment
     parameter_string = str(start_time)+str(stop_time)+str(dsl_filter)+str(lucene_query)
     parameter_hash = hashlib.md5(parameter_string.encode('utf-8')).hexdigest()
-    flask_app.logger.debug("Parameters: (%s) %s"%(parameter_hash, parameter_string))
+    current_app.logger.debug("Parameters: (%s) %s"%(parameter_hash, parameter_string))
 
-    c = get_cache( "/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), flask_app.config["cache_directory"])
+    c = get_cache( "/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), current_app.config["CACHE_DIRECTORY"])
     if c is not None and request.args.get('force') is None:
-        flask_app.logger.info("Hit cache (%s), returning"%parameter_hash)
+        current_app.logger.info("Hit cache (%s), returning"%parameter_hash)
         #Return Cached Value
         img = c
     else:
         #Generate a tile
         if request.args.get('force') is not None:
-            flask_app.logger.info("Forced cache flush, generating a new tile %s/%s/%s"%(z,x,y))
+            current_app.logger.info("Forced cache flush, generating a new tile %s/%s/%s"%(z,x,y))
         else:
-            flask_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
+            current_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
         
         check_cache_dir(config_name)
-        color_map_filename = os.path.join(flask_app.config["cache_directory"], config_name, "colormap.json")
+        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], config_name, "colormap.json")
         try:
             img = generate_tile(idx, x, y, z, 
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
@@ -335,7 +320,7 @@ def get_tms(config_name, x, y, z):
             resp = Response("Exception Generating Tile", status=500)
             return resp
         
-        set_cache("/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), img, flask_app.config["cache_directory"])
+        set_cache("/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), img, current_app.config["CACHE_DIRECTORY"])
 
     resp = Response(img, status=200)
     resp.headers['Content-Type'] = 'image/png'
@@ -344,6 +329,34 @@ def get_tms(config_name, x, y, z):
     return resp
 
 ###########################################################################
+# Utility Functions
+###########################################################################
+
+def get_index_config(force=False, refresh_interval=60):
+    #Handles multiprocess access to the index_config.  Checks for updates every 1 minute
+    with config_lock:
+        next_check, index_config = current_app.config["INDEX_CONFIG"]
+        if (not index_config) or (time.time() >= next_check) or force:
+            current_app.logger.info("Reloading index config")
+            try:
+                with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
+                    index_config = yaml.safe_load(stream)
+                    current_app.config["INDEX_CONFIG"] = ((time.time() + refresh_interval), index_config)
+            except:
+                current_app.logger.exception("Error loading index config")
+            current_app.logger.info("Loaded index config")
+
+    return index_config
+
+def get_connection_base():
+    # TODO - this incorrectly assumes that proxy always implies HTTP an no-proxy is always HTTP
+    if current_app.config.get("PROXY_HOST"):
+        connection_base = "https://" + current_app.config.get('PROXY_HOST') + "/" + current_app.config.get("PROXY_PREFIX") + "/tms/"
+    else:
+        connection_base = "http://" + socket.getfqdn() + ":%s/tms/"%current_app.config.get('PORT')
+
+    return connection_base
+
 def build_dsl_filter(filter_inputs):
     if len(filter_inputs) == 0:
         return None
@@ -453,7 +466,7 @@ def set_cache(tile, img, cache_dir):
             i.write(img)
 
 def check_cache_dir(layer_name):
-    tile_cache_path = os.path.join(flask_app.config.get("cache_directory"), layer_name)
+    tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), layer_name)
     if not os.path.exists(tile_cache_path):
         pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
 
@@ -551,7 +564,7 @@ def generate_tile(idx, x, y, z,
                     max_bins=10000,
                     justification=default_justification ):
     
-    flask_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
+    current_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
     try:
         # Preconfigured tile size
         tile_height_px = 256
@@ -597,7 +610,7 @@ def generate_tile(idx, x, y, z,
 
         # Connect to Elasticsearch (TODO is it faster if this is global?)
         es = Elasticsearch(
-            flask_app.config.get("elastic"),
+            current_app.config.get("ELASTIC"),
             verify_certs=False,
             timeout=900,
             headers={"acecard-justification":justification}
@@ -652,14 +665,14 @@ def generate_tile(idx, x, y, z,
                 category_cnt = resp.aggregations.term_count.value
                 if category_cnt <= 0:
                     category_cnt = 1
-            flask_app.logger.debug("Document Count: %s, Category Count: %s"%(doc_cnt, category_cnt))
+            current_app.logger.debug("Document Count: %s, Category Count: %s"%(doc_cnt, category_cnt))
         else:
             category_cnt = 1  #Heat mode effectively has one category
 
         #If count is zero then return a null image
-        flask_app.logger.debug("Count: %s"%doc_cnt)
+        current_app.logger.debug("Count: %s"%doc_cnt)
         if doc_cnt == 0:
-            flask_app.logger.debug("No points in bounding box")
+            current_app.logger.debug("No points in bounding box")
             img = b""
         else:
             # Find number of pixels in required image
@@ -669,12 +682,12 @@ def generate_tile(idx, x, y, z,
                 pixels = pixels/9.0
             
             sub_frame_level = math.ceil( math.log( (pixels*category_cnt) /max_bins,4) )
-            flask_app.logger.debug("SubFrame math: %spx, %s subframe level"%(pixels, sub_frame_level) )
+            current_app.logger.debug("SubFrame math: %spx, %s subframe level"%(pixels, sub_frame_level) )
             current_zoom = z
             #max_zooms = int(math.log(max_bins, 2) / 2)  #TODO: Confirm this is not correct
             max_zooms = int(math.log(max_bins, 4))
             geotile_precision = current_zoom + max_zooms + sub_frame_level 
-            flask_app.logger.debug("GeoTile Zoom Info: current %s, max %s, sub frame level %s, precision %s"% (current_zoom, max_zooms, sub_frame_level, geotile_precision) )
+            current_app.logger.debug("GeoTile Zoom Info: current %s, max %s, sub frame level %s, precision %s"% (current_zoom, max_zooms, sub_frame_level, geotile_precision) )
 
             #generate n subframe bounding boxes
             subframes = generate_sub_frames(sub_frame_level, bb_dict)
@@ -722,7 +735,7 @@ def generate_tile(idx, x, y, z,
                 df = df.append(pd.DataFrame(convert(resp)), sort=False)
                 
             s2 = time.time()
-            flask_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))
+            current_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))
 
             if len(df.index) == 0:
                 img = b""
@@ -766,7 +779,7 @@ def generate_tile(idx, x, y, z,
                         alpha_span = int(max_span) * 25
                         min_alpha = 255 - min(alpha_span, 225)
 
-                    flask_app.logger.debug("MinAlpha:%s MaxSpan:%s Spread:%s z:%s GlobalDocs:%s Docs:%s", min_alpha, max_span, spread_factor, z, global_doc_cnt, doc_cnt)
+                    current_app.logger.debug("MinAlpha:%s MaxSpan:%s Spread:%s z:%s GlobalDocs:%s Docs:%s", min_alpha, max_span, spread_factor, z, global_doc_cnt, doc_cnt)
                     img = tf.shade(
                             agg, 
                             cmap=cc.glasbey_category10, 
@@ -801,55 +814,113 @@ def generate_tile(idx, x, y, z,
         #Set headers and return data 
         return img
     except Exception:
-        flask_app.logger.exception("An exception occured while attempting to generate a tile:")
+        current_app.logger.exception("An exception occured while attempting to generate a tile:")
         raise
+
+##############################################################################
+# Application Factory
+##############################################################################
+
+def create_app(args=None):
+    """
+    Use factory pattern as shown in:
+
+    https://flask.palletsprojects.com/en/1.1.x/tutorial/factory/
+    """
+
+    flask_app = Flask(__name__)
+
+    # Load default settings
+    flask_app.config.from_object(Config())
+
+    # Load from configuration file
+    if os.environ.get("ELASTIC_DATASHADER_SETTINGS"):
+        flask_app.config.from_envvar("ELASTIC_DATASHADER_SETTINGS")
+
+    # Load command-line arguments (if provided)
+    if args:
+        for k,v in vars(args).items():
+            if k.upper() in flask_app.config:
+                flask_app.config[k.upper()] = v
+    flask_app.config["SECRET_KEY"] = 'CSRFProtectionKey'
+ 
+ 
+    #Limit logging at INFO, reduce if needed for debugging
+    if flask_app.config["LOG_LEVEL"]:
+        flask_app.logger.setLevel(getattr(logging, flask_app.config["LOG_LEVEL"]))
+
+    flask_app.logger.info("Loaded configuration %s", flask_app.config)
+    flask_app.logger.info("Loaded environment %s", os.environ)
+
+    #Create cache directories for all layers
+    flask_app.logger.info("Checking cache directories")
+
+    with flask_app.app_context():
+        check_cache_dirs()
+
+    flask_app.logger.info("Registering API")
+
+    # Register the API
+    flask_app.register_blueprint(api)
+
+
+    # If ElasticAPM can be loaded, then attempt to configure
+    # if via environment variable.  To install APM
+    # run `pip install elastic-apm[flask]` then before
+    # running the application set the following environment
+    # variables:
+    #
+    #    ELASTIC_APM_SERVICE_NAME
+    #    ELASTIC_APM_SERVER_URL
+    #
+    # Additional parameters can be found here:
+    #    https://www.elastic.co/guide/en/apm/agent/python/current/configuration.html
+    try:
+        from elasticapm.contrib.flask import ElasticAPM
+        apm = ElasticAPM(flask_app, logging=logging.ERROR)
+    except ImportError:
+        ElasticAPM = None
+
+    return flask_app
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='TMS Server with Cache')
+
+    # App configuration
+    parser.add_argument('-d', '--cache_directory', default=Config.CACHE_DIRECTORY, help="Directory for tile cache")
+    parser.add_argument('-f', '--index_config_file', default=Config.INDEX_CONFIG_FILE, help="YAML file containing information about each index")
+    parser.add_argument('-t', '--cache_timeout', default=Config.CACHE_TIMEOUT, help="Cache lifespan in sec")
+    parser.add_argument('-e', '--elastic', default=Config.ELASTIC, help="Elasticsearch URL")
+    parser.add_argument('-H', '--proxy_host', default=Config.PROXY_HOST, help="Proxy host")
+    parser.add_argument('-P', '--proxy_prefix', default=Config.PROXY_PREFIX, help="Proxy prefix")
+    parser.add_argument('-k', '--tms_key', default=Config.TMS_KEY, help="TMS key required in header")
+
+    # Development server arguments
     parser.add_argument('--debug', default=False, action='store_true', help="Enable Flask debug mode")
-    parser.add_argument('-d', '--cache_directory', default='./tms-cache/', help="Directory for tile cache")
-    parser.add_argument('-f', '--index_config_file', default='./index_config.yaml', help="YAML file containing information about each index")
-    parser.add_argument('-t', '--cache_timeout', default=60*60, help="Cache lifespan in sec")
-    parser.add_argument('-e', '--elastic', default=None, help="Elasticsearch URL")
+
     parser.add_argument('-p', '--port', default=5000, help="Port to run TMS server")
     parser.add_argument('-n', '--num_processes', default=32, help="Number of concurrent Flask processes to run")
 
-    #Reverse Proxy Modes
-    parser.add_argument('-H', '--proxy_host', default=None, help="Proxy host")
-    parser.add_argument('-P', '--proxy_prefix', default="", help="Proxy prefix")
-    parser.add_argument('-k', '--tms_key', default=None, help="TMS key required in header")
-    
-    #SSL Modes
     parser.add_argument('--ssl_adhoc', default=False, action='store_true', help="Enable SSL in ad-hoc mode")
     parser.add_argument('-s', '--ssl', default=False, action='store_true', help="Enable SSL, set environment variables to confgure: \
                                                                                 SSL_SERVER_KEY, SSL_SERVER_CERT, SSL_CA_CHAIN")
     args = parser.parse_args()
 
-    #Flask App Configuration
-    for k,v in vars(args).items():
-        flask_app.config[k] = v
-    flask_app.config["SECRET_KEY"] = 'CSRFProtectionKey'
-
-    #Limit logging at INFO, reduce if needed for debugging
-    flask_app.logger.setLevel(logging.INFO)        
-
-    #Create cache directories for all layers
-    check_cache_dirs()
-
-    #TODO: Figure out colormap
+    app = create_app(args)
 
     #Set all the flask arguments as a dictionary
     flask_args = {}
     flask_args["host"] = "0.0.0.0"
-    flask_args["port"] = flask_app.config.get("port", 5000)
-    flask_args["processes"] = flask_app.config.get("num_processes", 32)
+    flask_args["port"] = args.port
+    flask_args["processes"] = args.num_processes
     flask_args["threaded"] = False
 
+    logging.getLogger().setLevel(logging.INFO)
 
     #Handle Debug
-    if flask_app.config.get("debug"):
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
         flask_args["debug"] = True
-        flask_app.logger.setLevel(logging.DEBUG)
         flask_args["processes"] = 1
 
     #Handle SSL
@@ -861,4 +932,4 @@ if __name__ == '__main__':
         flask_args["ssl_context"].load_cert_chain(os.environ.get("SSL_SERVER_CERT"), os.environ.get("SSL_SERVER_KEY") )
 
     #Run Flask
-    flask_app.run(**flask_args)
+    app.run(**flask_args)
