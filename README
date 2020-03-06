@@ -27,3 +27,14 @@ docker run -it --rm=true -p 6002:6002 \
     --env DATASHADER_ELASTIC=http://user:passwordt@host:9200 \
     --env DATASHADER_LOG_LEVEL=DEBUG
 ```
+
+To add Elastic APM support:
+
+```
+pip install elastic-apm[flask]
+
+export ELASTIC_APM_SERVICE_NAME=elastic_datashader
+export ELASTIC_APM_SERVER_URL=http://localhost:7200
+```
+
+Then run as normal.  (NOTE: only works in --debug or Gunicorn mode)
