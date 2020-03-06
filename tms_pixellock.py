@@ -76,6 +76,7 @@ class Config(object):
     PROXY_PREFIX = os.environ.get("DATASHADER_PROXY_PREFIX", "")
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
     PORT = None
+    HOSTNAME = socket.getfqdn()
 
 # Globals
 default_justification = "Software Development Testing"
@@ -354,7 +355,7 @@ def get_connection_base():
     if current_app.config.get("PROXY_HOST"):
         connection_base = "https://" + current_app.config.get('PROXY_HOST') + "/" + current_app.config.get("PROXY_PREFIX") + "/tms/"
     else:
-        connection_base = "http://" + socket.getfqdn() + ":%s/tms/"%current_app.config.get('PORT')
+        connection_base = "http://" + current_app.config.get("HOSTNAME") + ":%s/tms/"%current_app.config.get('PORT')
 
     return connection_base
 
@@ -907,6 +908,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--index_config_file', default=Config.INDEX_CONFIG_FILE, help="YAML file containing information about each index")
     parser.add_argument('-t', '--cache_timeout', default=Config.CACHE_TIMEOUT, help="Cache lifespan in sec")
     parser.add_argument('-e', '--elastic', default=Config.ELASTIC, help="Elasticsearch URL")
+    parser.add_argument('--hostname', default=socket.getfqdn(), help="node hostname")
     parser.add_argument('-H', '--proxy_host', default=Config.PROXY_HOST, help="Proxy host")
     parser.add_argument('-P', '--proxy_prefix', default=Config.PROXY_PREFIX, help="Proxy prefix")
     parser.add_argument('-k', '--tms_key', default=Config.TMS_KEY, help="TMS key required in header")
