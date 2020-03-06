@@ -75,6 +75,7 @@ class Config(object):
     PROXY_HOST = os.environ.get("DATASHADER_PROXY_HOST", None)
     PROXY_PREFIX = os.environ.get("DATASHADER_PROXY_PREFIX", "")
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
+    PORT = None
 
 # Globals
 default_justification = "Software Development Testing"
