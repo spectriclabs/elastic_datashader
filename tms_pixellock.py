@@ -81,7 +81,7 @@ class Config(object):
 # Globals
 default_justification = "Software Development Testing"
 _color_key_map = []
-config_lock = threading.Lock()
+#config_lock = threading.Lock()
 
 ##############################################################################
 # API
@@ -152,12 +152,15 @@ def add_config():
         
         
         #Store to file once you have the config lock
-        with config_lock:
-            with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
+        with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w+') as stream:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX)
                 index_config = yaml.safe_load(stream)
-            index_config[form.name.data] = cfg
-            with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w') as stream:
+                index_config[form.name.data] = cfg
+                stream.seek(0)
                 yaml.dump(index_config, stream)
+            finally:
+                fcntl.flock(stream, fcntl.LOCK_UN)
         
         return redirect('/display_config')
 
@@ -165,13 +168,16 @@ def add_config():
 
 @api.route('/remove_config', methods=['GET'])
 def remove_config():
-    with config_lock:
-        with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
+    with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w+') as stream:
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX)
             index_config = yaml.safe_load(stream)
-        if request.args.get('name') is not None:
-            index_config.pop(request.args.get('name'), None)
-        with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w') as stream:
+            if request.args.get('name') is not None:
+                index_config.pop(request.args.get('name'), None)
+            stream.seek(0)
             yaml.dump(index_config, stream)
+        finally:
+            fcntl.flock(stream, fcntl.LOCK_UN)
             
     return redirect('/display_config')
 
@@ -336,17 +342,20 @@ def get_tms(config_name, x, y, z):
 
 def get_index_config(force=False, refresh_interval=60):
     #Handles multiprocess access to the index_config.  Checks for updates every 1 minute
-    with config_lock:
-        next_check, index_config = current_app.config["INDEX_CONFIG"]
-        if (not index_config) or (time.time() >= next_check) or force:
-            current_app.logger.info("Reloading index config")
-            try:
-                with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
+    next_check, index_config = current_app.config["INDEX_CONFIG"]
+    if (not index_config) or (time.time() >= next_check) or force:
+        current_app.logger.info("Reloading index config")
+        try:
+            with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
+                try:
+                    fcntl.flock(stream, fcntl.LOCK_EX)
                     index_config = yaml.safe_load(stream)
                     current_app.config["INDEX_CONFIG"] = ((time.time() + refresh_interval), index_config)
-            except:
-                current_app.logger.exception("Error loading index config")
-            current_app.logger.info("Loaded index config")
+                finally:
+                    fcntl.flock(stream, fcntl.LOCK_UN)
+        except:
+            current_app.logger.exception("Error loading index config")
+        current_app.logger.info("Loaded index config")
 
     return index_config
 
@@ -539,39 +548,35 @@ def generate_sub_frames(level, bb_dict):
 
     return subframes
 
-color_key_hash_lock = threading.Lock()
 def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
-    with color_key_hash_lock:
-        color_key_map = {}
-        
-        #See if you need to load the file
-        if os.path.exists(color_file):
-            #Load the file
-            with open(color_file, 'r') as c:
-                color_key_map = yaml.safe_load(c)        
+    color_key_map = {}
+    
+
+    #Load the file
+    with open(color_file, 'w+') as stream:
+        color_key_map = yaml.safe_load(stream)
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX)     
             #If file is blank load a blank dictionary
             if color_key_map == None:
                 color_key_map = {}
-        
-        changed = False
-        color_key = {}
-        for k in set(categories):
-            # Set the global color key for this category
-            color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
-            if k not in color_key_map:
-                #Add it to the map to return
-                color_key_map[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
-                changed = True
+    
+            changed = False
+            color_key = {}
+            for k in set(categories):
+                # Set the global color key for this category
+                color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
+                if k not in color_key_map:
+                    #Add it to the map to return
+                    color_key_map[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
+                    changed = True
+            if changed:
+                stream.seek(0)
+                yaml.dump(color_key_map, stream)
+        finally:
+            fcntl.lockf(stream, fcntl.LOCK_UN)
 
-        if changed:
-            with open(color_file, 'w') as f:
-                fcntl.lockf(f, fcntl.LOCK_EX)
-                try:
-                    yaml.dump(color_key_map, f)
-                finally:
-                    fcntl.lockf(f, fcntl.LOCK_UN)
-
-        return color_key
+    return color_key
 
 def generate_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
