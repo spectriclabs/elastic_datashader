@@ -1036,7 +1036,7 @@ if __name__ == '__main__':
     parser.add_argument('--debug', default=False, action='store_true', help="Enable Flask debug mode")
 
     parser.add_argument('-p', '--port', default=5000, help="Port to run TMS server")
-    parser.add_argument('-n', '--num_processes', default=32, help="Number of concurrent Flask processes to run")
+    parser.add_argument('-n', '--num_processes', default=32, type=int, help="Number of concurrent Flask processes to run")
 
     parser.add_argument('--ssl_adhoc', default=False, action='store_true', help="Enable SSL in ad-hoc mode")
     parser.add_argument('-s', '--ssl', default=False, action='store_true', help="Enable SSL, set environment variables to confgure: \
