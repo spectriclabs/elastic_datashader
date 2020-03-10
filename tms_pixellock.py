@@ -750,10 +750,6 @@ def generate_tile(idx, x, y, z,
         else:
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
-            if category_field:
-                #Spread the category mode x3
-                x = math.floor( math.log(category_cnt, 4 ) )
-                pixels = pixels/ (x * x)
 
             current_zoom = z
 
@@ -761,6 +757,10 @@ def generate_tile(idx, x, y, z,
             # every zoom level halves the number of pixels per bin
             # assuming a square tile
             agg_zooms = math.ceil(math.log(pixels, 4))
+
+            # TODO consider adding 'grid resolution' coarse, fine, finest (pixel-lock)
+            if category_field:
+                agg_zooms -= 1
             geotile_precision = current_zoom + agg_zooms
 
             # calculate how many sub_frames are required to avoid more than max_bins per
