@@ -213,13 +213,6 @@ def get_tile_json(config_name):
 
 @api.route('/tms/<config_name>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
 def get_tms(config_name, x, y, z):
-    index_config = get_index_config()
-    #Validate the request against the config
-    if config_name not in index_config.keys():
-        #Index not supported
-        current_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
-        resp = Response("Selected configuration is not in known configurations: %s"%(config_name), status=500)
-        return resp
 
     #Validate request is from proxy if proxy mode is enabled
     if current_app.config.get("TMS_KEY") is not None:
@@ -228,20 +221,37 @@ def get_tms(config_name, x, y, z):
             resp = Response("TMS must be accessed via reverse proxy", status=403)
             return resp
 
-    #Get params from config file
-    idx = index_config.get(config_name, {}).get("idx", None)
-    geopoint_field = index_config.get(config_name, {}).get("geopoint_field", None)
-    timestamp_field = index_config.get(config_name, {}).get("timestamp_field", None)
-    category_field = index_config.get(config_name, {}).get("category_field", None)
-    
-    #date_range = index_config.get(config_name, {}).get("date_range", None)
-    mode = index_config.get(config_name, {}).get("mode", None)
-    justification = index_config.get(config_name, {}).get('justification', default_justification)
-    lucene_query = index_config.get(config_name, {}).get("lucene_query", None)
-    from_time = index_config.get(config_name, {}).get("from_time", None)
-    to_time = index_config.get(config_name, {}).get("to_time", "now")
-    dsl_filter=index_config.get(config_name, {}).get("dsl_filter", None)
-    cmap=index_config.get(config_name, {}).get("cmap", "bmy")
+    index_config = get_index_config()
+
+    if config_name in index_config.keys():
+        #Get params from config file
+        idx = index_config.get(config_name, {}).get("idx", None)
+        geopoint_field = index_config.get(config_name, {}).get("geopoint_field", None)
+        timestamp_field = index_config.get(config_name, {}).get("timestamp_field", None)
+        category_field = index_config.get(config_name, {}).get("category_field", None)
+        
+        #date_range = index_config.get(config_name, {}).get("date_range", None)
+        mode = index_config.get(config_name, {}).get("mode", "heat")
+        justification = index_config.get(config_name, {}).get('justification', default_justification)
+        lucene_query = index_config.get(config_name, {}).get("lucene_query", None)
+        from_time = index_config.get(config_name, {}).get("from_time", None)
+        to_time = index_config.get(config_name, {}).get("to_time", "now")
+        dsl_filter=index_config.get(config_name, {}).get("dsl_filter", None)
+        cmap=index_config.get(config_name, {}).get("cmap", "bmy")
+    else:
+        current_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
+
+        idx = config_name
+        mode = "heat"
+        justification = default_justification
+        lucene_query = None
+        from_time = None
+        to_time = "now"
+        dsl_filter = None
+        cmap = None
+        geopoint_field = None
+        timestamp_field = None
+        category_field = None
 
     #Argument Parameter, NB. These overwrite what is in index config
     params = request.args.get('params')
@@ -261,12 +271,21 @@ def get_tms(config_name, x, y, z):
         return resp
 
     # Custom parameters can be provided by the URL
+    mode = request.args.get('mode', default=mode)
+    category_field = request.args.get('category_field', default=category_field)
     cmap = request.args.get('cmap', default=cmap)
     try:
         spread = int(request.args.get('spread'))
     except (TypeError, ValueError):
         spread = None
     span_range = request.args.get('span', default="auto")
+    geopoint_field = request.args.get('geopoint_field', default=geopoint_field)
+    timestamp_field = request.args.get('timestamp_field', default=timestamp_field)
+
+    # TODO handle dumb javascript on the client side
+    if category_field == "null":
+        category_field = None
+    current_app.logger.info("geopoint %s timestamp %s", geopoint_field, timestamp_field)
 
     # TMS tile coordinates
     x = int(x)
@@ -305,7 +324,9 @@ def get_tms(config_name, x, y, z):
         lucene_query,
         cmap,
         spread,
-        span_range
+        span_range,
+        mode,
+        category_field
     ]
     parameter_hash = hashlib.md5()
     for param in hashable_params:
