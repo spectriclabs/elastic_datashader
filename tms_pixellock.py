@@ -260,6 +260,14 @@ def get_tms(config_name, x, y, z):
         resp = Response("TMS parameters not yet provided", status=204)
         return resp
 
+    # Custom parameters can be provided by the URL
+    cmap = request.args.get('cmap', default=cmap)
+    try:
+        spread = int(request.args.get('spread'))
+    except (TypeError, ValueError):
+        spread = None
+    span_range = request.args.get('span', default="auto")
+
     # TMS tile coordinates
     x = int(x)
     y = int(y)
@@ -287,13 +295,23 @@ def get_tms(config_name, x, y, z):
 
     start_time, stop_time = quantizeTimeRange(start_time, stop_time)
 
-
     #Calculate a hash value for the specific parameter set
     #These will likely be the things that are passed as arguments from Kibana in the eventual setup
     #This includes start_time + stop_time + lucene_query at the moment
-    parameter_string = str(start_time)+str(stop_time)+str(dsl_filter)+str(lucene_query)
-    parameter_hash = hashlib.md5(parameter_string.encode('utf-8')).hexdigest()
-    current_app.logger.debug("Parameters: (%s) %s"%(parameter_hash, parameter_string))
+    hashable_params = [
+        start_time,
+        stop_time,
+        dsl_filter,
+        lucene_query,
+        cmap,
+        spread,
+        span_range
+    ]
+    parameter_hash = hashlib.md5()
+    for param in hashable_params:
+        parameter_hash.update(str(param).encode("utf-8"))
+    parameter_hash = parameter_hash.hexdigest()
+    current_app.logger.debug("Parameters: (%s)", parameter_hash)
 
     c = get_cache( "/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), current_app.config["CACHE_DIRECTORY"])
     if c is not None and request.args.get('force') is None:
@@ -313,12 +331,13 @@ def get_tms(config_name, x, y, z):
             img = generate_tile(idx, x, y, z, 
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
                     start_time=start_time, stop_time=stop_time,
-                    category_field=category_field, map_filename=color_map_filename, cmap=cmap,
+                    category_field=category_field, map_filename=color_map_filename,
+                    cmap=cmap, spread=spread, span_range=span_range,
                     lucene_query=lucene_query, dsl_filter=dsl_filter,
                     max_bins=10000,  #TODO: Make this configurable
                     justification=justification )
         except:
-            logging.exception("Exception Generating Tile")
+            logging.exception("Exception Generating Tile for request %s", request)
             resp = Response("Exception Generating Tile", status=500)
             return resp
         
@@ -516,29 +535,6 @@ def convert(response):
                 c=bucket.centroid.count
             )
 
-def generate_sub_frames(level, bb_dict):
-    l = int(math.pow(2, level)) #l = expansion in each dimensions
-    subframes = []
-    lon_range = bb_dict["bottom_right"]["lon"] - bb_dict["top_left"]["lon"]
-    lat_range = bb_dict["top_left"]["lat"] - bb_dict["bottom_right"]["lat"]
-    
-    lon_origin = bb_dict["top_left"]["lon"]
-    lat_origin = bb_dict["bottom_right"]["lat"]
-    for lon_i in range(l):
-        for lat_i in range(l):
-            subframes.append({
-                    "top_left": {
-                        "lat": lat_origin + ((lat_i+1)/l)*lat_range,
-                        "lon": lon_origin + (lon_i/l)*lon_range,
-                    },
-                    "bottom_right": {
-                        "lat": lat_origin + (lat_i/l)*lat_range,
-                        "lon": lon_origin + ((lon_i+1)/l)*lon_range,
-                    }
-            })
-
-    return subframes
-
 color_key_hash_lock = threading.Lock()
 def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
     with color_key_hash_lock:
@@ -576,7 +572,8 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
 def generate_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
                     start_time=None, stop_time=None,
-                    category_field=None, map_filename=None, cmap='bmy',
+                    category_field=None, map_filename=None, cmap='bmy', spread=None,
+                    span_range='auto',
                     lucene_query=None, dsl_filter=None,
                     max_bins=10000,
                     justification=default_justification ):
@@ -728,68 +725,128 @@ def generate_tile(idx, x, y, z,
             pixels = tile_height_px * tile_width_px
             if category_field:
                 #Spread the category mode x3
-                pixels = pixels/9.0
-            
-            sub_frame_level = math.ceil( math.log( (pixels*category_cnt) /max_bins,4) )
-            current_app.logger.debug("SubFrame math: %spx, %s subframe level"%(pixels, sub_frame_level) )
+                x = math.floor( math.log(category_cnt, 4 ) )
+                pixels = pixels/ (x * x)
+
             current_zoom = z
-            #max_zooms = int(math.log(max_bins, 2) / 2)  #TODO: Confirm this is not correct
-            max_zooms = int(math.log(max_bins, 4))
-            geotile_precision = current_zoom + max_zooms + sub_frame_level 
-            current_app.logger.debug("GeoTile Zoom Info: current %s, max %s, sub frame level %s, precision %s"% (current_zoom, max_zooms, sub_frame_level, geotile_precision) )
+
+            # calculate the geo precision that ensure we have at most one bin per 'pixel'
+            # every zoom level halves the number of pixels per bin
+            # assuming a square tile
+            agg_zooms = math.ceil(math.log(pixels, 4))
+            geotile_precision = current_zoom + agg_zooms
+
+            # calculate how many sub_frames are required to avoid more than max_bins per
+            # sub frame.  The number of bins in a sub-frame is 4**Z_delta so we need
+            # to move up the zoom-level no further than that
+            sub_frame_backout = int( math.log( max_bins, 4) )
+
+            # adding more categories limits how big a sub_frame can be
+            if category_cnt <= max_bins:
+                max_sub_frame_backout = math.floor( math.log ( max_bins / category_cnt, 4) )
+            else:
+                # if there are more categories than max_bins, the situation is hopeless
+                max_sub_frame_backout = 0
+
+            sub_frame_backout = min(sub_frame_backout, max_sub_frame_backout)
+            sub_frame_level = geotile_precision - sub_frame_backout
+
+            geo_bins_per_subframe = 4 ** sub_frame_backout
+
+            current_app.logger.debug(
+                "GeoTile Zoom Info: pixels %s, current %s, agg %s, backout %s, sub frame level %s, precision %s, bins %s",
+                pixels, current_zoom, agg_zooms, sub_frame_backout, sub_frame_level, geotile_precision, geo_bins_per_subframe 
+            )
 
             #generate n subframe bounding boxes
-            subframes = generate_sub_frames(sub_frame_level, bb_dict)
+            subframes = mercantile.tiles(   
+                bb_dict["top_left"]["lon"], # west
+                bb_dict["bottom_right"]["lat"], # south
+                bb_dict["bottom_right"]["lon"], # east
+                bb_dict["top_left"]["lat"], # north
+                sub_frame_level
+            )
+
             df = pd.DataFrame()
             s1 = time.time()
             for _, subframe in enumerate(subframes):
+                subframe_bounds = mercantile.bounds(subframe)
+                subframe_bbox = {
+                    "top_left": {
+                        "lat": subframe_bounds.north,
+                        "lon": subframe_bounds.west,
+                    },
+                    "bottom_right": {
+                        "lat": subframe_bounds.south,
+                        "lon": subframe_bounds.east,
+                    }
+                }
+
                 subframe_s = copy.copy(base_s)
                 subframe_s = subframe_s.params(size=0)
                 subframe_s = subframe_s.filter("geo_bounding_box",
                                 **{
-                                    geopoint_field: subframe
+                                    geopoint_field: subframe_bbox
                                 }  )
                 
                 #Set up the aggregations and the dataframe extraction
-                if category_field:  #Category Mode  
+                if category_field:  #Category Mode
+                    assert (category_cnt * geo_bins_per_subframe) < max_bins
                     subframe_s.aggs.bucket(
                         'categories',
                         'terms',
                         field=category_field,
+                        size=category_cnt
                     ).bucket(
                         'grids',
                         'geotile_grid',
                         field=geopoint_field,
                         precision=geotile_precision,
+                        size=geo_bins_per_subframe
                     ).metric(
                         'centroid',
                         'geo_centroid',
                         field=geopoint_field
                     )                
                 else: #Heat Mode
+                    assert geo_bins_per_subframe < max_bins
                     subframe_s.aggs.bucket(
                         'grids',
                         'geotile_grid',
                         field=geopoint_field,
                         precision=geotile_precision,
-                        size=max_bins   #TODO:  Is this needed for the category mode?  Is precision sufficient
+                        size=geo_bins_per_subframe
                     ).metric(
                         "centroid",
                         'geo_centroid',
                         field=geopoint_field
                     )        
                 
-                resp = subframe_s.execute()
-                assert len(resp.hits) == 0
+                try:
+                    resp = subframe_s.execute()
+                except:
+                    current_app.logger.exception("failed to generate subframe %s subframe %s categories %s %s %s %s", 
+                    subframe, subframe_bounds, category_cnt, current_zoom, sub_frame_level, request)
+                    raise
+
+                assert len(resp.hits) == 0   
+
                 df = df.append(pd.DataFrame(convert(resp)), sort=False)
                 
             s2 = time.time()
             current_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))
 
+            #Estimate the number of points per tile assuming uniform density
+            num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
+            estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+            current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
+
             if len(df.index) == 0:
                 img = b""
             else:
-                if category_field: #Category Mode
+                ###############################################################
+                # Category Mode
+                if category_field:
                     df["T"] = df["t"].astype('category')
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
@@ -798,49 +855,31 @@ def generate_tile(idx, x, y, z,
                         y_range=y_range
                     ).points(df, 'x', 'y', agg=sum_cat('T', 'c'))
                     
-                    #Estimate the number of points per tile assuming uniform density
-                    num_tiles_at_level = 2**z
-                    num_bins_at_level = num_tiles_at_level * pixels
-                    estimated_bin_cnt = global_doc_cnt / num_bins_at_level
-                    min_span = 0
-                    
-                    #Increase min_alpha as zoom levels increase
-                    if estimated_bin_cnt < 0.1:
+                    if span_range == 'narrow':
+                        span=[0, math.log(1e3)]
                         min_alpha = 200
-                        max_span = 1
-                        spread_factor = 2
+                    elif span_range == 'normal':
+                        span=[0, math.log(1e6)]
+                        min_alpha = 100
+                    elif span_range == 'wide':
+                        span=[0,  math.log(1e9)]
+                        min_alpha = 50
                     else:
-                        if z <= 6:
-                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
-                            spread_factor = 1
-                        elif z <= 9:
-                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
-                            spread_factor = 1
-                        elif z <= 11:
-                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
-                            spread_factor = 2
-                        else:
-                            max_span = math.ceil( math.log(estimated_bin_cnt * 2) )
-                            spread_factor = 3
-                        if max_span <= 0:
-                            max_span = 1
-                        #Increase dynamic range for larger spans
-                        alpha_span = int(max_span) * 25
+                        span=[0, math.log(max(estimated_points_per_tile*2, 2))]
+                        alpha_span = int(span[1]) * 25
                         min_alpha = 255 - min(alpha_span, 225)
 
-                    current_app.logger.debug("MinAlpha:%s MaxSpan:%s Spread:%s z:%s GlobalDocs:%s Docs:%s", min_alpha, max_span, spread_factor, z, global_doc_cnt, doc_cnt)
+                    current_app.logger.debug("MinAlpha:%s Span:%s", min_alpha, span)
                     img = tf.shade(
                             agg, 
                             cmap=cc.glasbey_category10, 
                             color_key=create_color_key_hash_file(df["T"], map_filename), 
                             min_alpha=min_alpha,
                             how="log",
-                            span=[min_span, max_span])
+                            span=span)
 
-                    #Spread to reduce pixel count needs
-                    if spread_factor > 1:
-                        img = tf.spread(img, spread_factor)
-                    
+                ###############################################################
+                # Heat Mode
                 else: #Heat Mode
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
@@ -849,14 +888,35 @@ def generate_tile(idx, x, y, z,
                         y_range=y_range
                     ).points(df, 'x', 'y', agg=ds.sum('c'))
                     
-                    img = tf.shade(agg, cmap=getattr(cc, cmap, cc.bmy), how="log", span=[0,500])
+                    # Handle span range, the span applies the color map across 
+                    # the span range, so for example, if span is narrow, any
+                    # bins that have 1000 or more items will be colored full
+                    # scale
+                    if span_range == 'narrow':
+                        span=[0, math.log(1e3)]
+                    elif span_range == 'normal':
+                        span=[0, math.log(1e6)]
+                    elif span_range == 'wide':
+                        span=[0,  math.log(1e9)]
+                    else:
+                        span=[0, math.log(max(estimated_points_per_tile*2, 2))]
 
-                    #Below zoom threshold spread to make individual dots large enough
+                    current_app.logger.debug("Span %s %s", span, span_range)
+                    img = tf.shade(agg, cmap=getattr(cc, cmap, cc.bmy), how="log", span=span)
+
+                ###############################################################
+                # Common
+
+                #Below zoom threshold spread to make individual dots large enough
+                if spread is None or spread < 0:
+                    # Automatic spread
                     spread_threshold = 11
                     if z >= spread_threshold:
                         spread_factor = math.floor(2 +(z-(spread_threshold-1))*.25)
-                        print("Spreading by %s, z=%s"%(spread_factor, z))
                         img = tf.spread(img, spread_factor)
+                else:
+                    current_app.logger.info("Spreading by fixed %s", spread)
+                    img = tf.spread(img, spread)
 
                 img = img.to_bytesio().read()
 
