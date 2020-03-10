@@ -38,3 +38,5 @@ export ELASTIC_APM_SERVER_URL=http://localhost:7200
 ```
 
 Then run as normal.  (NOTE: only works in --debug or Gunicorn mode)
+
+patch -d env/lib/python3.7/site-packages/datashader/transfer_functions -p1 < data_shader.patch
