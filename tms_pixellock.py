@@ -659,22 +659,50 @@ def generate_tile(idx, x, y, z,
             base_s = Search.from_dict(base_dict)          
             base_s = base_s.index(idx).using(es)
 
-        #Get global document count for this index
-        global_doc_cnt = base_s.count()
+        #See how far the data spans and how many points are in it
+        bounds_s = copy.copy(base_s)
+        bounds_s = bounds_s.params(size=0)
+        bounds_s.aggs.metric(
+            'viewport','geo_bounds',field=geopoint_field
+        ).metric(
+            'point_count','value_count',field=geopoint_field
+        )
 
-        # See how many documents are in the bounding box
+        resp = bounds_s.execute()
+        assert len(resp.hits) == 0
+
+        #west, south, east, north
+        doc_bounds = [ -180, -90, 180, 90 ]
+        global_doc_cnt = 0
+
+        if hasattr(resp.aggregations, "viewport"):
+            current_app.logger.info(resp.aggregations.viewport.bounds.top_left)
+            current_app.logger.info(resp.aggregations.viewport.bounds.bottom_right)
+            doc_bounds = [ 
+                resp.aggregations.viewport.bounds.top_left.lon,
+                resp.aggregations.viewport.bounds.bottom_right.lat,
+                resp.aggregations.viewport.bounds.bottom_right.lon,
+                resp.aggregations.viewport.bounds.top_left.lat,
+            ]
+        if hasattr(resp.aggregations, "point_count"):
+            global_doc_cnt = resp.aggregations.point_count.value
+
+        # Now find out how many documents 
         count_s = copy.copy(base_s)
         count_s = count_s.filter("geo_bounding_box",
-                **{
-                    geopoint_field: bb_dict
-                } )
-        doc_cnt = count_s.count()
-
+            **{
+                geopoint_field: bb_dict
+            }
+        )
 
         if category_field:
             #Also need to calculate the number of categories
             count_s = count_s.params(size=0)
-            count_s.aggs.metric('term_count','cardinality',field=category_field)
+            count_s.aggs.metric(
+                'term_count','cardinality',field=category_field
+            ).metric(
+                'point_count','value_count',field=geopoint_field
+            )
             resp = count_s.execute()
             assert len(resp.hits) == 0
             category_cnt = 0
@@ -682,12 +710,16 @@ def generate_tile(idx, x, y, z,
                 category_cnt = resp.aggregations.term_count.value
                 if category_cnt <= 0:
                     category_cnt = 1
-            current_app.logger.debug("Document Count: %s, Category Count: %s"%(doc_cnt, category_cnt))
+            if hasattr(resp.aggregations, "point_count"):
+                doc_cnt = resp.aggregations.point_count.value
+
+            current_app.logger.info("Document Count: %s, Category Count: %s", doc_cnt, category_cnt)
         else:
             category_cnt = 1  #Heat mode effectively has one category
+            doc_cnt = count_s.count()
+            current_app.logger.info("Document Count: %s", doc_cnt)
 
         #If count is zero then return a null image
-        current_app.logger.debug("Count: %s"%doc_cnt)
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
             img = b""
