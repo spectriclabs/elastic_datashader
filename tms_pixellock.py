@@ -20,6 +20,7 @@ import subprocess
 import shutil
 import threading
 import copy
+import collections
 
 from datetime import datetime, timedelta
 from pprint import pprint, pformat
@@ -98,37 +99,56 @@ def index():
     return render_template('index.html', title='Status', cache_size=cache_size)
 
 @api.route('/config')
-@api.route('/display_config')
+@api.route('/index_config')
 def display_config():
     cache_info = {}
     index_config = get_index_config()
-    for c in index_config:
-        tile_cache_path = os.path.join(current_app.config["CACHE_DIRECTORY"], c)
-        if os.path.exists(tile_cache_path):
-            try:
-                cache_info[c] = subprocess.check_output(['du','-sh', os.path.join(current_app.config["CACHE_DIRECTORY"], c)]).split()[0].decode('utf-8')
-            except OSError:
-                cache_info[c] = "Error"
-        else:
-            cache_info[c] = "N/A"
+    return render_template('index_config.html', config_contents = index_config)
 
-    connection_base = get_connection_base()
+@api.route('/layers')
+def display_layers():
+    layer_info = {}
+    layers = os.listdir(current_app.config["CACHE_DIRECTORY"])
+    for l in layers:
+        if not os.path.isfile(current_app.config["CACHE_DIRECTORY"]+l):
+            hashes = os.listdir(current_app.config["CACHE_DIRECTORY"]+l+"/")
+            for h in hashes:
+                if os.path.exists(current_app.config["CACHE_DIRECTORY"]+l+"/"+h+"/params.json"):
+                    with open(current_app.config["CACHE_DIRECTORY"]+l+'/'+h+"/params.json") as f:
+                        params = json.loads(f.read())
+                    #Check age of hash
+                    params['age_timestamp'] = os.path.getmtime(current_app.config["CACHE_DIRECTORY"]+l+"/"+h+"/params.json")
+                    params['age'] = pretty_time_delta(time.time()-params['age_timestamp'])
+                    #Check size of hash
+                    try:
+                        params['size'] = subprocess.check_output(['du','-sh', current_app.config["CACHE_DIRECTORY"]+l+"/"+h]).split()[0].decode('utf-8')
+                    except OSError:
+                        params['size'] = "Error"
+                    if layer_info.get(l) == None:
+                        layer_info[l] = collections.OrderedDict()
+                    layer_info[l][h] = params
+            
+            #Order hashes based off age, newest to oldest
+            if layer_info.get(l):
+                layer_info[l] = collections.OrderedDict(reversed(sorted(layer_info[l].items(), key=lambda x: x[1]['age_timestamp'])))
 
-    return render_template('display_config.html', config_contents = index_config, connection_base=connection_base, cache_info=cache_info)
+    return render_template('layers.html', layer_info=layer_info)
 
 @api.route('/color_map', methods=['GET'])
 def display_color_map():
     color_key_map = {}
-    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"/%s/colormap.json"%(request.args.get('name')))
+    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"/%s/%s-colormap.json"%(request.args.get('name'), request.args.get('field')))
     if os.path.exists(color_file):
         with open(color_file, 'r') as c:
             color_key_map = yaml.safe_load(c)
+    else:
+        current_app.logger.warning("No colormap found at: %s", color_file)
     
     color_key_hash = {}
     for k in color_key_map.keys():
         color_key_hash[k] = int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)
 
-    return render_template('color_map.html', color_key_map=color_key_map, color_key_hash=color_key_hash)
+    return render_template('color_map.html', color_key_map=color_key_map)
 
 class ConfigForm(FlaskForm):
     name = wtforms.StringField('Name', description="Name of map layer", validators=[wtforms.validators.DataRequired()])
@@ -139,77 +159,38 @@ class ConfigForm(FlaskForm):
     category_field = wtforms.StringField('Category Field', description="Optional, needed if mode is category")
     submit = wtforms.SubmitField('Add Config')
 
-@api.route('/add_config', methods=['GET', 'POST'])
-def add_config():
-    
-    form = ConfigForm()
-    if form.validate_on_submit():
-        cfg = {'idx':form.idx.data,
-            'mode':form.mode.data,
-            'geopoint_field':form.geopoint_field.data,
-            'timestamp_field':form.timestamp_field.data,
-            'category_field':form.category_field.data}
-        
-        
-        #Store to file once you have the config lock
-        with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w+') as stream:
-            try:
-                fcntl.flock(stream, fcntl.LOCK_EX)
-                index_config = yaml.safe_load(stream)
-                index_config[form.name.data] = cfg
-                stream.seek(0)
-                yaml.dump(index_config, stream)
-            finally:
-                fcntl.flock(stream, fcntl.LOCK_UN)
-        
-        return redirect('/display_config')
-
-    return render_template('add_config.html', title='Add Config', form=form)
-
-@api.route('/remove_config', methods=['GET'])
-def remove_config():
-    with open(current_app.config.get("INDEX_CONFIG_FILE"), 'w+') as stream:
-        try:
-            fcntl.flock(stream, fcntl.LOCK_EX)
-            index_config = yaml.safe_load(stream)
-            if request.args.get('name') is not None:
-                index_config.pop(request.args.get('name'), None)
-            stream.seek(0)
-            yaml.dump(index_config, stream)
-        finally:
-            fcntl.flock(stream, fcntl.LOCK_UN)
-            
-    return redirect('/display_config')
-
 @api.route('/clear_cache', methods=['GET'])
 def clear_cache():
     if request.args.get('name') is not None:
         #delete the cache
         tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), request.args.get('name'))
+        if request.args.get('hash') is not None:
+            tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), request.args.get('name'), request.args.get('hash'))
         try:
             shutil.rmtree(tile_cache_path)
         except FileNotFoundError:
             pass
         current_app.logger.warn("Recreating cache path %s", tile_cache_path)
         pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
-        return Response("Completed clearing cache for: %s"%(request.args.get('name')), status=200)
-    return Response("Unknown config: %s"%(request.args.get('name')), status=500)
+        
+        return redirect(request.referrer)
+    return Response("Unknown config: %s / %s"%(request.args.get('name'), request.args.get('hash')), status=500)
 
-@api.route('/tms/<config_name>/tile.json', methods=['GET'])
-def get_tile_json(config_name):
-    connection_base = get_connection_base()
-    tiles_url = connection_base + config_name + "/{z}/{x}/{y}.png"
-
-    tile_json = {
-        "tilejson": "2.2.0",
-        "name": config_name,
-        "legend": "<ul><li>Item 1</li><li>Item 2</li></ul>", # TODO make this a legend the renders pretty
-        "tiles": [
-            tiles_url
-        ],
-    }
-
-    data = json.dumps(tile_json)
+@api.route('/<config_name>/<field_name>/legend.json', methods=['GET'])
+def provide_legend(config_name, field_name):
+    color_key_map = {}
+    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"%s/%s-colormap.json"%(config_name, field_name))
+    if os.path.exists(color_file):
+        with open(color_file, 'r') as c:
+            color_key_map = yaml.safe_load(c)
+    else:
+        current_app.logger.warning("No colormap found at: %s", color_file)
+    
+    color_key_hash = {}
+    for k in color_key_map.keys():
+        color_key_hash[k] = int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)
+    
+    data = json.dumps(color_key_map)
     resp = Response(data, status=200)
     resp.headers['Content-Type'] = 'application/json'
     resp.headers['Access-Control-Allow-Origin'] = '*'
@@ -321,25 +302,30 @@ def get_tms(config_name, x, y, z):
     start_time, stop_time = quantizeTimeRange(start_time, stop_time)
 
     #Calculate a hash value for the specific parameter set
-    #These will likely be the things that are passed as arguments from Kibana in the eventual setup
-    #This includes start_time + stop_time + lucene_query at the moment
-    hashable_params = [
-        start_time,
-        stop_time,
-        dsl_filter,
-        lucene_query,
-        cmap,
-        spread,
-        span_range,
-        mode,
-        category_field
-    ]
+    hashable_params = {
+        "start_time":start_time,
+        "stop_time":stop_time,
+        "dsl_filter":dsl_filter,
+        "lucene_query":lucene_query,
+        "cmap":cmap,
+        "spread":spread,
+        "span_range":span_range,
+        "mode":mode,
+        "category_field":category_field
+    }
+    for k in hashable_params.keys():
+        if isinstance(hashable_params[k], datetime):
+                hashable_params[k] = hashable_params[k].isoformat()
+
     parameter_hash = hashlib.md5()
-    for param in hashable_params:
+    for key, param in sorted(hashable_params.items()):
         parameter_hash.update(str(param).encode("utf-8"))
     parameter_hash = parameter_hash.hexdigest()
-    current_app.logger.debug("Parameters: (%s)", parameter_hash)
+    current_app.logger.debug("Parameters: %s (%s)", hashable_params, parameter_hash)
+    
+    set_cache_params("/%s/%s/params.json"%(config_name, parameter_hash), current_app.config["CACHE_DIRECTORY"], hashable_params)
 
+    #Check if the cached image already exists
     c = get_cache( "/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), current_app.config["CACHE_DIRECTORY"])
     if c is not None and request.args.get('force') is None:
         current_app.logger.info("Hit cache (%s), returning"%parameter_hash)
@@ -353,7 +339,7 @@ def get_tms(config_name, x, y, z):
             current_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
         
         check_cache_dir(config_name)
-        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], config_name, "colormap.json")
+        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], config_name, "%s-colormap.json"%category_field)
         try:
             img = generate_tile(idx, x, y, z, 
                     geopoint_field=geopoint_field, time_field=timestamp_field, 
@@ -515,13 +501,41 @@ def convertKibanaTime(time_string, current_time):
     
     raise ValueError("unknown time string %s" % time_string)
 
+
+def pretty_time_delta(seconds):
+    sign_string = '-' if seconds < 0 else ''
+    seconds = abs(int(seconds))
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    if days > 0:
+        return '%s%dd%dh%dm%ds' % (sign_string, days, hours, minutes, seconds)
+    elif hours > 0:
+        return '%s%dh%dm%ds' % (sign_string, hours, minutes, seconds)
+    elif minutes > 0:
+        return '%s%dm%ds' % (sign_string, minutes, seconds)
+    else:
+        return '%s%ds' % (sign_string, seconds)
+
+
 class GeotileGrid(Bucket):
     name = 'geotile_grid'
+
+def set_cache_params(paramsfile, cache_dir, params):
+    
+    pathlib.Path(os.path.dirname(os.path.join(cache_dir+paramsfile))).mkdir(parents=True, exist_ok=True) 
+    if os.path.exists(os.path.join(cache_dir+paramsfile)) == False:
+        #Write params dict if it does not exist
+        with open(os.path.join(cache_dir+paramsfile), 'w') as i:
+            i.write(json.dumps(params))
+    else:
+        #Touch the file to update last accessed time
+        os.utime(os.path.join(cache_dir+paramsfile))
+    return None
 
 def get_cache(tile, cache_dir, lifespan=60*60):
     #See if tile exists
     if os.path.exists(os.path.join(cache_dir+tile)):
-        #TODO: check if its too old
         with open(os.path.join(cache_dir+tile), 'rb') as i:
             return i.read()
     return None
@@ -700,14 +714,15 @@ def generate_tile(idx, x, y, z,
         global_doc_cnt = 0
 
         if hasattr(resp.aggregations, "viewport"):
-            current_app.logger.info(resp.aggregations.viewport.bounds.top_left)
-            current_app.logger.info(resp.aggregations.viewport.bounds.bottom_right)
-            doc_bounds = [ 
-                resp.aggregations.viewport.bounds.top_left.lon,
-                resp.aggregations.viewport.bounds.bottom_right.lat,
-                resp.aggregations.viewport.bounds.bottom_right.lon,
-                resp.aggregations.viewport.bounds.top_left.lat,
-            ]
+            if hasattr(resp.aggregations.viewport, "bounds"):
+                current_app.logger.info(resp.aggregations.viewport.bounds.top_left)
+                current_app.logger.info(resp.aggregations.viewport.bounds.bottom_right)
+                doc_bounds = [ 
+                    resp.aggregations.viewport.bounds.top_left.lon,
+                    resp.aggregations.viewport.bounds.bottom_right.lat,
+                    resp.aggregations.viewport.bounds.bottom_right.lon,
+                    resp.aggregations.viewport.bounds.top_left.lat,
+                ]
         if hasattr(resp.aggregations, "point_count"):
             global_doc_cnt = resp.aggregations.point_count.value
 

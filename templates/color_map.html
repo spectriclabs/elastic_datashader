@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+
 <table>
   <style>
     table, th, td {
@@ -9,12 +10,12 @@
   </style>
 <tr>
   <th>Color</th>
-  <th>Signal</th>
+  <th>Category</th>
 </tr>
-{% for signal, c in color_key_map.items() %}
+{% for category, color in color_key_map.items() %}
 <tr>
-  <td bgcolor={{ c }}>   </td>
-  <td>{{ signal }}</td>
+  <td bgcolor={{ color }}></td>
+  <td>{{ category }}&nbsp;</td>
 </tr>
 {% endfor %}
 </table>

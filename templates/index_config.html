@@ -14,9 +14,6 @@
     <th>Geopoint Field</th>
     <th>Timestamp Field</th>
     <th>Category Field</th>
-    <th>Cache Size</th>
-    <th>Actions</th>
-    <th>TMS Server URL for Kibana</th>
 </tr>
 {% for name,c in config_contents.items() %}
 <tr>
@@ -26,9 +23,6 @@
     <td>{{ c.get('geopoint_field') }}</td>
     <td>{{ c.get('timestamp_field') }}</td>
     <td>{{ c.get('category_field') }}</td>
-    <td>{{ cache_info.get(name) }}</td>
-    <td><a href="./clear_cache?name={{ name }}">Clear Cache</a> | <a href="./remove_config?name={{ name }}">Remove</a>{% if c.get('mode') == 'category' %} | <a href="./color_map?name={{ name }}">Color Map</a>{% endif %}</td>
-    <td>{{connection_base}}{{name}}/{z}/{x}/{y}.png?params={params}</td>   
 </tr>
 {% endfor %}
 </table>
