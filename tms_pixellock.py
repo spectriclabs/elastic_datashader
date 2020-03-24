@@ -44,6 +44,8 @@ import urllib3
 import json
 import fcntl
 
+from flask_apscheduler import APScheduler
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
 urllib3.disable_warnings(urllib3.exceptions.SNIMissingWarning)
@@ -55,6 +57,9 @@ import ssl
 
 #Import helpers to assist with datashader
 from datashader_helpers import sum_cat
+
+#Logging for non-Flask items
+logging.basicConfig(level=logging.INFO)
 
 class Config(object):
     """
@@ -162,19 +167,46 @@ class ConfigForm(FlaskForm):
 @api.route('/clear_cache', methods=['GET'])
 def clear_cache():
     if request.args.get('name') is not None:
-        #delete the cache
+        #delete a specific cache
         tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), request.args.get('name'))
         if request.args.get('hash') is not None:
             tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), request.args.get('name'), request.args.get('hash'))
-        try:
-            shutil.rmtree(tile_cache_path)
-        except FileNotFoundError:
-            pass
-        current_app.logger.warn("Recreating cache path %s", tile_cache_path)
-        pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
         
-        return redirect(request.referrer)
-    return Response("Unknown config: %s / %s"%(request.args.get('name'), request.args.get('hash')), status=500)
+        #Check if it exists
+        if os.path.exists(tile_cache_path):
+            shutil.rmtree(tile_cache_path)
+            current_app.logger.info("Clearing hash/layer : %s"%(tile_cache_path))
+        
+        #Not needed with the hashing approach?
+        #current_app.logger.warn("Recreating cache path %s", tile_cache_path)
+        #pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
+        
+        return redirect(request.referrer)   
+    return Response("Unknown request: %s / %s"%(request.args.get('name'), request.args.get('hash')), status=500)
+
+@api.route('/age_cache', methods=['GET'])
+def age_cache():
+    #Either the index name or age must be set.  We do not allow blanket deletes  
+    if request.args.get('age') is not None:
+        age_limit = int(request.args.get('age'))
+        cache_dir = current_app.config["CACHE_DIRECTORY"]
+        check_cache_age(cache_dir, age_limit)
+        return redirect(request.referrer)   
+    return Response("Unknown request: %s / %s"%(request.args.get('name'), request.args.get('hash')), status=500)
+
+def check_cache_age(cache_dir, age_limit):
+    layers = os.listdir(cache_dir)
+    for l in layers:
+        if not os.path.isfile(cache_dir+l):
+            hashes = os.listdir(cache_dir+l+"/")
+            for h in hashes:
+                if os.path.exists(cache_dir+l+"/"+h+"/params.json"):
+                    #Check age of hash
+                    age_timestamp = time.time() - os.path.getmtime(cache_dir+l+'/'+h+"/params.json")
+                    if age_timestamp > age_limit:
+                        shutil.rmtree(cache_dir+l+"/"+h)
+                        logging.info("Removing hash due to age: %s (%s>%s)"%(cache_dir+l+"/"+h, age_timestamp, age_limit))
+
 
 @api.route('/<config_name>/<field_name>/legend.json', methods=['GET'])
 def provide_legend(config_name, field_name):
@@ -1032,7 +1064,28 @@ def create_app(args=None):
     except ImportError:
         ElasticAPM = None
 
+    scheduler = APScheduler()
+    scheduler.init_app(flask_app)
+    scheduler.start()
+    job_id = 'CleanupThread_'+str(os.getpid())
+    scheduler.add_job(func=scheduled_task, trigger='interval',  seconds=5*60, args=[job_id, flask_app.config.get("CACHE_DIRECTORY")], id=job_id)
     return flask_app
+
+#@flask_app.scheduler.task('interval', id='CleanupThread_'+str(os.getpid()), seconds=30, misfire_grace_time=900)
+def scheduled_task(id, cache_dir):
+    #See last update file
+    logging.info("Checking for old cache (%s) at %s" % (id, cache_dir))
+    if not os.path.exists(cache_dir+"/cache.age.check"):
+        logging.info("Had to recreate check file (%s) at %s" % (id, cache_dir))
+        open(cache_dir+"/cache.age.check", 'a').close()
+
+    check_age = time.time() - os.path.getmtime(cache_dir+"/cache.age.check")
+    logging.info("Checking age(%s) at %s" % (id, check_age))
+    if check_age > 5*60:
+        os.utime(cache_dir+"/cache.age.check")
+        logging.info("Doing age check (%s)" % (id))
+        check_cache_age(cache_dir, 24*60*60) #24 hours cleanup
+        logging.info("Cache check complete (%s)" % (id))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='TMS Server with Cache')

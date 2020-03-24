@@ -8,3 +8,4 @@ pandas
 colorcet
 mercantile
 pypng
+Flask-APScheduler

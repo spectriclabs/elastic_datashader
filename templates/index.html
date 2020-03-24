@@ -2,5 +2,10 @@
 
 {% block content %}
 <h1>Current Status</h1>
-<body>Total Cache Size {{ cache_size }}</body>
+<body>
+    Total Cache Size {{ cache_size }}
+    <br><a href="./age_cache?age=86400">Age out cache - 24 hr</a>
+    <br><a href="./age_cache?age=3600">Age out cache - 1 hr</a>
+    <br><a href="./age_cache?age=300">Age out cache - 5 min</a>
+</body>
 {% endblock %}
