@@ -30,6 +30,7 @@ import datashader as ds
 import pandas as pd
 import colorcet as cc
 import datashader.transfer_functions as tf
+import datashader.reductions as rd
 
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, A, Q
@@ -51,6 +52,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
 urllib3.disable_warnings(urllib3.exceptions.SNIMissingWarning)
 urllib3.disable_warnings(UserWarning)
 
+from numba import jit
+from numpy import linspace, pi, sin, cos 
 
 #from OpenSSL import SSL
 import ssl
@@ -251,6 +254,7 @@ def get_tms(config_name, x, y, z):
         
         #date_range = index_config.get(config_name, {}).get("date_range", None)
         mode = index_config.get(config_name, {}).get("mode", "heat")
+        ellipse = index_config.get(config_name, {}).get("ellipse", False)
         justification = index_config.get(config_name, {}).get('justification', default_justification)
         lucene_query = index_config.get(config_name, {}).get("lucene_query", None)
         from_time = index_config.get(config_name, {}).get("from_time", None)
@@ -259,9 +263,9 @@ def get_tms(config_name, x, y, z):
         cmap=index_config.get(config_name, {}).get("cmap", "bmy")
     else:
         current_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
-
         idx = config_name
         mode = "heat"
+        ellipse = False
         justification = default_justification
         lucene_query = None
         from_time = None
@@ -291,6 +295,7 @@ def get_tms(config_name, x, y, z):
 
     # Custom parameters can be provided by the URL
     mode = request.args.get('mode', default=mode)
+    ellipse = request.args.get('ellipse', default=ellipse)
     category_field = request.args.get('category_field', default=category_field)
     cmap = request.args.get('cmap', default=cmap)
     try:
@@ -343,6 +348,7 @@ def get_tms(config_name, x, y, z):
         "spread":spread,
         "span_range":span_range,
         "mode":mode,
+        "ellipse":ellipse,
         "category_field":category_field
     }
     for k in hashable_params.keys():
@@ -372,15 +378,27 @@ def get_tms(config_name, x, y, z):
         
         check_cache_dir(config_name)
         color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], config_name, "%s-colormap.json"%category_field)
+        
+        #Separate call for ellipse
         try:
-            img = generate_tile(idx, x, y, z, 
-                    geopoint_field=geopoint_field, time_field=timestamp_field, 
-                    start_time=start_time, stop_time=stop_time,
-                    category_field=category_field, map_filename=color_map_filename,
-                    cmap=cmap, spread=spread, span_range=span_range,
-                    lucene_query=lucene_query, dsl_filter=dsl_filter,
-                    max_bins=10000,  #TODO: Make this configurable
-                    justification=justification )
+            if ellipse:
+                img = generate_nonaggregated_tile(idx, x, y, z, 
+                        geopoint_field=geopoint_field, time_field=timestamp_field, 
+                        start_time=start_time, stop_time=stop_time,
+                        category_field=category_field, map_filename=color_map_filename,
+                        cmap=cmap, spread=spread, span_range=span_range,
+                        lucene_query=lucene_query, dsl_filter=dsl_filter,
+                        max_bins=10000,  #TODO: Make this configurable
+                        justification=justification )
+            else:
+                img = generate_tile(idx, x, y, z, 
+                        geopoint_field=geopoint_field, time_field=timestamp_field, 
+                        start_time=start_time, stop_time=stop_time,
+                        category_field=category_field, map_filename=color_map_filename,
+                        cmap=cmap, spread=spread, span_range=span_range,
+                        lucene_query=lucene_query, dsl_filter=dsl_filter,
+                        max_bins=10000,  #TODO: Make this configurable
+                        justification=justification )
         except:
             logging.exception("Exception Generating Tile for request %s", request)
             resp = Response("Exception Generating Tile", status=500)
@@ -641,6 +659,204 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
             fcntl.lockf(stream, fcntl.LOCK_UN)
 
     return color_key
+
+#Accelerated helper function for generating ellipses from point data
+@jit(nopython=True)
+def ellipse(ra,rb,ang,x0,y0,Nb=16):
+    xpos,ypos=x0,y0
+    radm,radn=ra,rb
+    an=ang
+
+    co,si=cos(an),sin(an)
+    the=linspace(0,2*pi,Nb)
+    X=radm*cos(the)*co-si*radn*sin(the)+xpos
+    Y=radm*cos(the)*si+co*radn*sin(the)+ypos
+    return X,Y
+
+def generate_nonaggregated_tile(idx, x, y, z, 
+                    geopoint_field="location", time_field='@timestamp', 
+                    start_time=None, stop_time=None,
+                    category_field=None, map_filename=None, cmap='bmy', spread=None,
+                    span_range='auto',
+                    lucene_query=None, dsl_filter=None,
+                    max_bins=10000,
+                    justification=default_justification,
+                    maximum_cep = 50, maximum_ellipses_per_tile = 1000000):
+
+    current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
+    try:
+        # Preconfigured tile size
+        tile_height_px = 256
+        tile_width_px = 256
+
+        # Get the web mercador bounds for the tile
+        xy_bounds = mercantile.xy_bounds(x, y, z)
+        # Calculate the x/y range in meters
+        x_range = xy_bounds.left, xy_bounds.right
+        y_range = xy_bounds.bottom, xy_bounds.top
+        # Swap the numbers so that [0] is always lowest
+        if x_range[0] > x_range[1]:
+            x_range = x_range[1], x_range[0]
+        if y_range[0] > y_range[1]:
+            y_range = y_range[1], y_range[0]
+        
+        #Expand this by maximum CEP value to get adjacent geos that overlap into our tile
+        extend_meters = maximum_cep * 1852
+
+
+        # Get the top_left/bot_rght for the tile
+        top_left = mercantile.lnglat(x_range[0]-extend_meters, y_range[1]+extend_meters)
+        bot_rght = mercantile.lnglat(x_range[1]+extend_meters, y_range[0]-extend_meters)        
+        
+        bb_dict = {
+            "top_left": {
+                "lat": min(90, max(-90, top_left[1])),
+                "lon": min(180, max(-180, top_left[0]))
+            },
+            "bottom_right": {
+                "lat": min(90, max(-90, bot_rght[1])),
+                "lon": min(180, max(-180, bot_rght[0]))
+            } }
+
+
+        # Figure out how big the tile is in meters
+        xwidth = (x_range[1] - x_range[0])
+        yheight = (y_range[1] - y_range[0])
+        # And now the area of the tile
+        area = xwidth * yheight
+
+        #Handle time calculations
+        time_range = { time_field: {} }
+        if start_time != None:
+            time_range[time_field]["gte"] = start_time
+        if stop_time != None:
+            time_range[time_field]["lte"] = stop_time
+
+        # Connect to Elasticsearch (TODO is it faster if this is global?)
+        es = Elasticsearch(
+            current_app.config.get("ELASTIC"),
+            verify_certs=False,
+            timeout=900,
+            headers={"acecard-justification":justification}
+        )
+
+        #Create base search 
+        base_s = Search(index=idx).using(es).params(size=max_bins)
+        #base_s = base_s.params(size=0)
+        #Add time bounds
+        if time_range[time_field]:
+            base_s = base_s.filter("range", **time_range)
+
+        #Add lucene query
+        if lucene_query:
+            base_s = base_s.filter('query_string', query=lucene_query)
+
+        #Add dsl filtering
+        if dsl_filter:
+            #Need to convert to a dict, merge with filters then convert back to a search object
+            base_dict = base_s.to_dict()
+            if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
+                base_dict["query"]["bool"]["filter"] = []
+            for f in dsl_filter["filter"]:
+                base_dict["query"]["bool"]["filter"].append(f)
+            if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
+                base_dict["query"]["bool"]["must_not"] = []
+            for f in dsl_filter["must_not"]:
+                base_dict["query"]["bool"]["must_not"].append(f)
+            base_s = Search.from_dict(base_dict)
+            base_s = base_s.index(idx).using(es)
+
+        # Now find out how many documents 
+        count_s = copy.copy(base_s)
+        count_s = count_s.filter("geo_bounding_box",
+            **{
+                geopoint_field: bb_dict
+            }
+        )
+
+        #Process the hits (geos) into a list of points
+        s1 = time.time()
+        geos = 0
+        points = []
+        nan_line = {'x':None, 'y': None, 'c':"None"}
+        for hit in count_s.scan():
+        # Get the scroll ID
+            #Handle deg->Meters conversion and everything else
+            x0,y0 = ds.utils.lnglat_to_meters(hit[geopoint_field]["lon"], hit[geopoint_field]["lat"])
+            major = hit["major_nm"]*1852 #nm to meters
+            minor = hit["minor_nm"]*1852
+            angle = hit["angle"]
+            #expel above CEP limit
+            if major > extend_meters or minor > extend_meters:
+                continue
+
+            X,Y = ellipse(minor,major,angle,x0,y0, Nb=16) #Points per ellipse
+            if category_field:
+                c = hit[category_field]
+            else:
+                c = "None"
+            
+            for p in zip(X,Y,len(X)*[c]):
+                points.append({'x':p[0], 'y':p[1], 'c':p[2]})
+            points.append(nan_line) #Break between geos
+            geos += 1
+
+            #Check if we hit the geos bound
+            if geos >= maximum_ellipses_per_tile:
+                break
+
+        df = pd.DataFrame.from_dict(points)           
+        s2 = time.time()
+        
+        current_app.logger.debug("ES took %s for %s" % ((s2-s1), geos))        
+        
+        #If count is zero then return a null image
+        if len(df) == 0:
+            current_app.logger.debug("No points in bounding box")
+            img = b""
+        else:
+            
+            df["C"] = df["c"].astype('category')
+            
+            # Find number of pixels in required image
+            pixels = tile_height_px * tile_width_px
+
+            #TODO: Get all the data?
+            
+
+            if len(df.index) == 0:
+                img = b""
+            else:
+                agg = ds.Canvas(
+                    plot_width=tile_width_px,
+                    plot_height=tile_height_px,
+                    x_range=x_range,
+                    y_range=y_range
+                ).line(df, 'x', 'y', agg=rd.count_cat('C'))
+        
+
+                #img = tf.shade(agg)
+                span=[1, math.log(1e6)]
+                min_alpha = 200                
+                img = tf.shade(
+                            agg, 
+                            cmap=cc.glasbey_category10, 
+                            color_key=create_color_key_hash_file(df["C"], map_filename),
+                            min_alpha=min_alpha,
+                            how="log",
+                            span=span)
+                
+                #spread = 1
+                #img = tf.spread(img, spread)
+                img = img.to_bytesio().read()
+
+        #Set headers and return data 
+        return img
+    except Exception:
+        current_app.logger.exception("An exception occured while attempting to generate a tile:")
+        raise
+
+####################################################
 
 def generate_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
