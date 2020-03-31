@@ -55,6 +55,9 @@ urllib3.disable_warnings(UserWarning)
 from numba import jit
 from numpy import linspace, pi, sin, cos 
 
+from PIL import Image, ImageDraw
+
+
 #from OpenSSL import SSL
 import ssl
 
@@ -371,7 +374,7 @@ def get_tms(idx, x, y, z):
                         justification=justification,
                         ellipse_major=ellipse_major, ellipse_minor=ellipse_minor, 
                         ellipse_tilt=ellipse_tilt, ellipse_units=ellipse_units,
-                        maximum_cep = 50, maximum_ellipses_per_tile = 1000000 )
+                        maximum_cep = 50, maximum_ellipses_per_tile = 100000 )
             else:
                 img = generate_tile(idx, x, y, z, 
                         geopoint_field=geopoint_field, time_field=timestamp_field, 
@@ -642,7 +645,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
                     justification=default_justification,
                     ellipse_major="", ellipse_minor="", 
                     ellipse_tilt="", ellipse_units=None,
-                    maximum_cep = 50, maximum_ellipses_per_tile = 1000000):
+                    maximum_cep = 50, maximum_ellipses_per_tile = 100000):
 
     current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
     try:
@@ -746,6 +749,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
         #Process the hits (geos) into a list of points
         s1 = time.time()
         geos = 0
+        over_max = False
         points = []
         nan_line = {'x':None, 'y': None, 'c':"None"}
         for hit in count_s.scan():
@@ -783,6 +787,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
 
             #Check if we hit the geos per tile bound
             if geos >= maximum_ellipses_per_tile:
+                over_max = True
                 break
 
         df = pd.DataFrame.from_dict(points)           
@@ -823,15 +828,35 @@ def generate_nonaggregated_tile(idx, x, y, z,
                             how="log",
                             span=span)
                 
+                #TODO: Handle spread?
                 #spread = 1
                 #img = tf.spread(img, spread)
+                
+                
                 img = img.to_bytesio().read()
+
+                if over_max:
+                    #Put hashing on image to indicate that it is over maximum
+                    current_app.logger.info("Generating overlay for tile")
+                    img = gen_overlay(img)
 
         #Set headers and return data 
         return img
     except Exception:
         current_app.logger.exception("An exception occured while attempting to generate a tile:")
         raise
+
+def gen_overlay(img, thickness=8):
+    base = Image.open(io.BytesIO(img))
+    overlay = Image.new('RGBA', base.size)
+    width, height = base.size
+    draw = ImageDraw.Draw(overlay)
+    for s in range(0, max(height,width), thickness*2):
+        draw.line( [(s-width,s+height), (s+width,s-height)], (255,0,0,64), thickness)
+    out = Image.alpha_composite(base, overlay)
+    with io.BytesIO() as output:
+        out.save(output, format='PNG')
+        return output.getvalue()
 
 ####################################################
 

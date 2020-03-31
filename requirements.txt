@@ -9,3 +9,4 @@ colorcet
 mercantile
 pypng
 Flask-APScheduler
+Pillow
