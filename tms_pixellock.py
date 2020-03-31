@@ -243,6 +243,7 @@ def get_tms(idx, x, y, z):
     geopoint_field = None
     timestamp_field = None
     category_field = None
+    category_type = None
     ellipse_major = ""
     ellipse_minor = ""
     ellipse_tilt = ""
@@ -279,6 +280,7 @@ def get_tms(idx, x, y, z):
             ellipses = False
     
     category_field = request.args.get('category_field', default=category_field)
+    category_type = request.args.get('category_type', default=category_type)
     cmap = request.args.get('cmap', default=cmap)
     try:
         spread = int(request.args.get('spread'))
@@ -370,7 +372,7 @@ def get_tms(idx, x, y, z):
                 img = generate_nonaggregated_tile(idx, x, y, z, 
                         geopoint_field=geopoint_field, time_field=timestamp_field, 
                         start_time=start_time, stop_time=stop_time,
-                        category_field=category_field, map_filename=color_map_filename,
+                        category_field=category_field, category_type=category_type, map_filename=color_map_filename,
                         cmap=cmap, spread=spread, span_range=span_range,
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
                         max_bins=current_app.config["MAX_BINS"],
@@ -382,7 +384,7 @@ def get_tms(idx, x, y, z):
                 img = generate_tile(idx, x, y, z, 
                         geopoint_field=geopoint_field, time_field=timestamp_field, 
                         start_time=start_time, stop_time=stop_time,
-                        category_field=category_field, map_filename=color_map_filename,
+                        category_field=category_field, category_type=category_type, map_filename=color_map_filename,
                         cmap=cmap, spread=spread, span_range=span_range,
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
                         max_bins=current_app.config["MAX_BINS"],
@@ -641,7 +643,7 @@ def ellipse(ra,rb,ang,x0,y0,Nb=16):
 def generate_nonaggregated_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
                     start_time=None, stop_time=None,
-                    category_field=None, map_filename=None, cmap='bmy', spread=None,
+                    category_field=None, category_type=None, map_filename=None, cmap='bmy', spread=None,
                     span_range='auto',
                     lucene_query=None, dsl_filter=None,
                     max_bins=10000,
@@ -866,7 +868,7 @@ def gen_overlay(img, thickness=8):
 def generate_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
                     start_time=None, stop_time=None,
-                    category_field=None, map_filename=None, cmap='bmy', spread=None,
+                    category_field=None, category_type=None, map_filename=None, cmap='bmy', spread=None,
                     span_range='auto',
                     lucene_query=None, dsl_filter=None,
                     max_bins=10000,
@@ -953,31 +955,36 @@ def generate_tile(idx, x, y, z,
         #See how far the data spans and how many points are in it
         bounds_s = copy.copy(base_s)
         bounds_s = bounds_s.params(size=0)
-        bounds_s.aggs.metric(
+        bounds_agg = bounds_s.aggs.metric(
             'viewport','geo_bounds',field=geopoint_field
         ).metric(
             'point_count','value_count',field=geopoint_field
         )
 
-        resp = bounds_s.execute()
-        assert len(resp.hits) == 0
+        #If the field is a number, we need to figure out it's min/max globally
+        if category_type == "number":
+            bounds_agg.metric(
+                'field_stats', 'stats', field=category_field
+            )
+
+
+        bounds_resp = bounds_s.execute()
+        assert len(bounds_resp.hits) == 0
 
         #west, south, east, north
         doc_bounds = [ -180, -90, 180, 90 ]
         global_doc_cnt = 0
 
-        if hasattr(resp.aggregations, "viewport"):
-            if hasattr(resp.aggregations.viewport, "bounds"):
-                current_app.logger.info(resp.aggregations.viewport.bounds.top_left)
-                current_app.logger.info(resp.aggregations.viewport.bounds.bottom_right)
+        if hasattr(bounds_resp.aggregations, "viewport"):
+            if hasattr(bounds_resp.aggregations.viewport, "bounds"):
                 doc_bounds = [ 
-                    resp.aggregations.viewport.bounds.top_left.lon,
-                    resp.aggregations.viewport.bounds.bottom_right.lat,
-                    resp.aggregations.viewport.bounds.bottom_right.lon,
-                    resp.aggregations.viewport.bounds.top_left.lat,
+                    bounds_resp.aggregations.viewport.bounds.top_left.lon,
+                    bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
+                    bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
+                    bounds_resp.aggregations.viewport.bounds.top_left.lat,
                 ]
-        if hasattr(resp.aggregations, "point_count"):
-            global_doc_cnt = resp.aggregations.point_count.value
+        if hasattr(bounds_resp.aggregations, "point_count"):
+            global_doc_cnt = bounds_resp.aggregations.point_count.value
 
         # Now find out how many documents 
         count_s = copy.copy(base_s)
@@ -987,6 +994,8 @@ def generate_tile(idx, x, y, z,
             }
         )
 
+        category_cnt = 0
+        histogram_interval = None
         if category_field:
             #Also need to calculate the number of categories
             count_s = count_s.params(size=0)
@@ -997,7 +1006,6 @@ def generate_tile(idx, x, y, z,
             )
             resp = count_s.execute()
             assert len(resp.hits) == 0
-            category_cnt = 0
             if hasattr(resp.aggregations, "term_count"):
                 category_cnt = resp.aggregations.term_count.value
                 if category_cnt <= 0:
@@ -1005,7 +1013,29 @@ def generate_tile(idx, x, y, z,
             if hasattr(resp.aggregations, "point_count"):
                 doc_cnt = resp.aggregations.point_count.value
 
+            # circuit breaker, if someone wants to color by category and there are
+            # more than 10000, they will only get the first 1000 cateogries
+            category_cnt = min(category_cnt, 1000)
             current_app.logger.info("Document Count: %s, Category Count: %s", doc_cnt, category_cnt)
+
+            # In a numeric field, we can fall back to histogram mode if there are too many unique values
+            if category_cnt >= 1000 and category_type == "number":
+                current_app.logger.info("attempting histogram")
+                if hasattr(bounds_resp.aggregations, 'field_stats'):
+                    current_app.logger.info("field stats %s", bounds_resp.aggregations.field_stats)
+                    # to prevent strain on the cluster, if there are over 1million
+                    # documents given the current parameters, reduce the number of histogram
+                    # bins.  Note this is kinda a wag...maybe something smarter can be done
+                    if global_doc_cnt > 1000000:
+                        category_cnt = 100
+                    else:
+                        category_cnt = 1000
+                    # determine the range of category values
+                    histogram_range = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)
+                    # round to the nearest larger power of 10
+                    histogram_range = math.pow(10, math.ceil(math.log10(histogram_range)))
+                    histogram_interval = histogram_range / category_cnt
+                    current_app.logger.info("histogram params %s %s %s", histogram_range, histogram_interval, category_cnt)
         else:
             category_cnt = 1  #Heat mode effectively has one category
             doc_cnt = count_s.count()
@@ -1086,7 +1116,7 @@ def generate_tile(idx, x, y, z,
                                 }  )
                 
                 #Set up the aggregations and the dataframe extraction
-                if category_field:  #Category Mode
+                if category_field and histogram_interval == None:  #Category Mode
                     assert (category_cnt * geo_bins_per_subframe) <= max_bins
                     subframe_s.aggs.bucket(
                         'categories',
@@ -1103,7 +1133,27 @@ def generate_tile(idx, x, y, z,
                         'centroid',
                         'geo_centroid',
                         field=geopoint_field
-                    )                
+                    )
+                elif category_field and histogram_interval != None:  #Histogram Mode
+                    assert histogram_interval != None
+                    assert (category_cnt * geo_bins_per_subframe) <= max_bins
+                    subframe_s.aggs.bucket(
+                        'categories',
+                        'histogram',
+                        field=category_field,
+                        interval=histogram_interval,
+                        min_doc_count=1,
+                    ).bucket(
+                        'grids',
+                        'geotile_grid',
+                        field=geopoint_field,
+                        precision=geotile_precision,
+                        size=geo_bins_per_subframe
+                    ).metric(
+                        'centroid',
+                        'geo_centroid',
+                        field=geopoint_field
+                    )
                 else: #Heat Mode
                     assert geo_bins_per_subframe <= max_bins
                     subframe_s.aggs.bucket(
