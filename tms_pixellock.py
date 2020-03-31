@@ -84,6 +84,7 @@ class Config(object):
     PROXY_HOST = os.environ.get("DATASHADER_PROXY_HOST", None)
     PROXY_PREFIX = os.environ.get("DATASHADER_PROXY_PREFIX", "")
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
+    MAX_BINS = os.environ.get("DATASHADER_MAX_BINS", 10000)
     PORT = None
     HOSTNAME = socket.getfqdn()
 
@@ -372,7 +373,7 @@ def get_tms(idx, x, y, z):
                         category_field=category_field, map_filename=color_map_filename,
                         cmap=cmap, spread=spread, span_range=span_range,
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
-                        max_bins=10000,  #TODO: Make this configurable
+                        max_bins=current_app.config["MAX_BINS"],
                         justification=justification,
                         ellipse_major=ellipse_major, ellipse_minor=ellipse_minor, 
                         ellipse_tilt=ellipse_tilt, ellipse_units=ellipse_units,
@@ -384,7 +385,7 @@ def get_tms(idx, x, y, z):
                         category_field=category_field, map_filename=color_map_filename,
                         cmap=cmap, spread=spread, span_range=span_range,
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
-                        max_bins=10000,  #TODO: Make this configurable
+                        max_bins=current_app.config["MAX_BINS"],
                         justification=justification )
         except:
             logging.exception("Exception Generating Tile for request %s", request)
@@ -1026,7 +1027,8 @@ def generate_tile(idx, x, y, z,
             agg_zooms = math.ceil(math.log(pixels, 4))
 
             # TODO consider adding 'grid resolution' coarse, fine, finest (pixel-lock)
-            if category_field:
+            # In category-mode, zoom out if max_bins has not been increased
+            if category_field and max_bins < 65536:
                 agg_zooms -= 1
             geotile_precision = current_zoom + agg_zooms
 
@@ -1085,7 +1087,7 @@ def generate_tile(idx, x, y, z,
                 
                 #Set up the aggregations and the dataframe extraction
                 if category_field:  #Category Mode
-                    assert (category_cnt * geo_bins_per_subframe) < max_bins
+                    assert (category_cnt * geo_bins_per_subframe) <= max_bins
                     subframe_s.aggs.bucket(
                         'categories',
                         'terms',
@@ -1103,7 +1105,7 @@ def generate_tile(idx, x, y, z,
                         field=geopoint_field
                     )                
                 else: #Heat Mode
-                    assert geo_bins_per_subframe < max_bins
+                    assert geo_bins_per_subframe <= max_bins
                     subframe_s.aggs.bucket(
                         'grids',
                         'geotile_grid',
