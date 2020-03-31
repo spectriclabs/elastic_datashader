@@ -1,11 +1,49 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Current Status</h1>
-<body>
-    Total Cache Size {{ cache_size }}
-    <br><a href="./age_cache?age=86400">Age out cache - 24 hr</a>
-    <br><a href="./age_cache?age=3600">Age out cache - 1 hr</a>
-    <br><a href="./age_cache?age=300">Age out cache - 5 min</a>
-</body>
+<table>
+    <style>
+        table, th, td {
+            border: 1px solid black;
+        }
+    </style>
+<tr>
+    <th></th>
+    <th>Index Name / Hash</th>
+    <th>Size</th>
+    <th>Age</th>
+    <th>Start</th>
+    <th>Stop</th>
+    <th>Category</th>
+    <th>Ellipse</th>
+    <th>Other</th>
+</tr>
+{% for l,hashes in layer_info.items() %}
+<tr>
+    <td><a href="./clear_cache?name={{ l }}">Clear</a></td>
+    <td>{{ l }}</td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+</tr>
+{% for h,params in hashes.items() %}
+<tr>
+    <td><a href="./clear_cache?name={{ l }}&hash={{ h }}">Clear</a></td>
+    <td>&nbsp;&nbsp;&nbsp;&nbsp;{{ h }}</td>
+    <td>{{ params['size'] }}</td>
+    <td>{{ params['age'] }}</td>
+    <td>{{ params['start_time'] }}</td>
+    <td>{{ params['stop_time'] }}</td>
+    <td>{{ params['category_field'] }}</td>
+    <td>{{ params['ellipses'] }}</td>
+    <td>{% if params['category_field'] %} <a href="./color_map?name={{l}}&field={{params['category_field']}}">MAP</a>  {% endif %}</td>
+</tr>
+{% endfor %}
+{% endfor %}
+</table>
+
 {% endblock %}

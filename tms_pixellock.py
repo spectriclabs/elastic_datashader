@@ -71,14 +71,9 @@ class Config(object):
     the flask helpers
     """
 
-    # Internal configuration
-    INDEX_CONFIG = (0, {})
-
     # Configuration that can be modifed by the user
     LOG_LEVEL =   os.environ.get("DATASHADER_LOG_LEVEL", None)
-
     CACHE_DIRECTORY =   os.environ.get("DATASHADER_CACHE_DIRECTORY", "./tms-cache/")
-    INDEX_CONFIG_FILE = os.environ.get("DATASHADER_INDEX_CONFIG_FILE", "./index_config.yaml")
     CACHE_TIMEOUT = int(os.environ.get("DATASHADER_CACHE_TIMEOUT", 60*60))
     ELASTIC = os.environ.get("DATASHADER_ELASTIC", "http://localhost:9200")
     PROXY_HOST = os.environ.get("DATASHADER_PROXY_HOST", None)
@@ -103,18 +98,7 @@ api = Blueprint('rest_api', __name__, template_folder='templates')
 def index():
     #Calc Cache Size
     cache_size = subprocess.check_output(['du','-sh', current_app.config["CACHE_DIRECTORY"]]).split()[0].decode('utf-8')
-    #TODO: Add other info?    
-    return render_template('index.html', title='Status', cache_size=cache_size)
-
-@api.route('/config')
-@api.route('/index_config')
-def display_config():
-    cache_info = {}
-    index_config = get_index_config()
-    return render_template('index_config.html', config_contents = index_config)
-
-@api.route('/layers')
-def display_layers():
+    #Build Layer Info
     layer_info = {}
     layers = os.listdir(current_app.config["CACHE_DIRECTORY"])
     for l in layers:
@@ -139,8 +123,7 @@ def display_layers():
             #Order hashes based off age, newest to oldest
             if layer_info.get(l):
                 layer_info[l] = collections.OrderedDict(reversed(sorted(layer_info[l].items(), key=lambda x: x[1]['age_timestamp'])))
-
-    return render_template('layers.html', layer_info=layer_info)
+    return render_template('index.html', title='Elastic Data Shader Server', cache_size=cache_size, layer_info=layer_info)
 
 @api.route('/color_map', methods=['GET'])
 def display_color_map():
@@ -156,7 +139,7 @@ def display_color_map():
     for k in color_key_map.keys():
         color_key_hash[k] = int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)
 
-    return render_template('color_map.html', color_key_map=color_key_map)
+    return render_template('color_map.html', name=request.args.get('name'), field=request.args.get('field'), color_key_map=color_key_map)
 
 class ConfigForm(FlaskForm):
     name = wtforms.StringField('Name', description="Name of map layer", validators=[wtforms.validators.DataRequired()])
@@ -211,10 +194,10 @@ def check_cache_age(cache_dir, age_limit):
                         logging.info("Removing hash due to age: %s (%s>%s)"%(cache_dir+l+"/"+h, age_timestamp, age_limit))
 
 
-@api.route('/<config_name>/<field_name>/legend.json', methods=['GET'])
-def provide_legend(config_name, field_name):
+@api.route('/<idx>/<field_name>/legend.json', methods=['GET'])
+def provide_legend(idx, field_name):
     color_key_map = {}
-    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"%s/%s-colormap.json"%(config_name, field_name))
+    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"%s/%s-colormap.json"%(idx, field_name))
     if os.path.exists(color_file):
         with open(color_file, 'r') as c:
             color_key_map = yaml.safe_load(c)
@@ -233,8 +216,8 @@ def provide_legend(config_name, field_name):
 
     return resp
 
-@api.route('/tms/<config_name>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
-def get_tms(config_name, x, y, z):
+@api.route('/tms/<idx>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
+def get_tms(idx, x, y, z):
 
     #Validate request is from proxy if proxy mode is enabled
     if current_app.config.get("TMS_KEY") is not None:
@@ -243,42 +226,21 @@ def get_tms(config_name, x, y, z):
             resp = Response("TMS must be accessed via reverse proxy", status=403)
             return resp
 
-    index_config = get_index_config()
-
-    if config_name in index_config.keys():
-        #Get params from config file
-        idx = index_config.get(config_name, {}).get("idx", None)
-        geopoint_field = index_config.get(config_name, {}).get("geopoint_field", None)
-        timestamp_field = index_config.get(config_name, {}).get("timestamp_field", None)
-        category_field = index_config.get(config_name, {}).get("category_field", None)
-        ellipses = index_config.get(config_name, {}).get("ellipses", False)
-        justification = index_config.get(config_name, {}).get('justification', default_justification)
-        lucene_query = index_config.get(config_name, {}).get("lucene_query", None)
-        from_time = index_config.get(config_name, {}).get("from_time", None)
-        to_time = index_config.get(config_name, {}).get("to_time", "now")
-        dsl_filter=index_config.get(config_name, {}).get("dsl_filter", None)
-        cmap=index_config.get(config_name, {}).get("cmap", "bmy")
-        ellipse_major = ""
-        ellipse_minor = ""
-        ellipse_tilt = ""
-        ellipse_units = ""        
-    else:
-        current_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
-        idx = config_name
-        ellipses = False
-        justification = default_justification
-        lucene_query = None
-        from_time = None
-        to_time = "now"
-        dsl_filter = None
-        cmap = None
-        geopoint_field = None
-        timestamp_field = None
-        category_field = None
-        ellipse_major = ""
-        ellipse_minor = ""
-        ellipse_tilt = ""
-        ellipse_units = ""
+    #Default values
+    ellipses = False
+    justification = default_justification
+    lucene_query = None
+    from_time = None
+    to_time = "now"
+    dsl_filter = None
+    cmap = None
+    geopoint_field = None
+    timestamp_field = None
+    category_field = None
+    ellipse_major = ""
+    ellipse_minor = ""
+    ellipse_tilt = ""
+    ellipse_units = ""
 
     #Argument Parameter, NB. These overwrite what is in index config
     params = request.args.get('params')
@@ -378,10 +340,10 @@ def get_tms(config_name, x, y, z):
     parameter_hash = parameter_hash.hexdigest()
     current_app.logger.debug("Parameters: %s (%s)", hashable_params, parameter_hash)
     
-    set_cache_params("/%s/%s/params.json"%(config_name, parameter_hash), current_app.config["CACHE_DIRECTORY"], hashable_params)
+    set_cache_params("/%s/%s/params.json"%(idx, parameter_hash), current_app.config["CACHE_DIRECTORY"], hashable_params)
 
     #Check if the cached image already exists
-    c = get_cache( "/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), current_app.config["CACHE_DIRECTORY"])
+    c = get_cache( "/%s/%s/%s/%s/%s.png"%(idx, parameter_hash, z, x, y), current_app.config["CACHE_DIRECTORY"])
     if c is not None and request.args.get('force') is None:
         current_app.logger.info("Hit cache (%s), returning"%parameter_hash)
         #Return Cached Value
@@ -393,8 +355,8 @@ def get_tms(config_name, x, y, z):
         else:
             current_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
         
-        check_cache_dir(config_name)
-        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], config_name, "%s-colormap.json"%category_field)
+        check_cache_dir(idx)
+        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s-colormap.json"%category_field)
         
         #Separate call for ellipse
         try:
@@ -424,7 +386,7 @@ def get_tms(config_name, x, y, z):
             resp = Response("Exception Generating Tile", status=500)
             return resp
         
-        set_cache("/%s/%s/%s/%s/%s.png"%(config_name, parameter_hash, z, x, y), img, current_app.config["CACHE_DIRECTORY"])
+        set_cache("/%s/%s/%s/%s/%s.png"%(idx, parameter_hash, z, x, y), img, current_app.config["CACHE_DIRECTORY"])
 
     resp = Response(img, status=200)
     resp.headers['Content-Type'] = 'image/png'
@@ -435,25 +397,6 @@ def get_tms(config_name, x, y, z):
 ###########################################################################
 # Utility Functions
 ###########################################################################
-
-def get_index_config(force=False, refresh_interval=60):
-    #Handles multiprocess access to the index_config.  Checks for updates every 1 minute
-    next_check, index_config = current_app.config["INDEX_CONFIG"]
-    if (not index_config) or (time.time() >= next_check) or force:
-        current_app.logger.info("Reloading index config")
-        try:
-            with open(current_app.config.get("INDEX_CONFIG_FILE"), 'r') as stream:
-                try:
-                    fcntl.flock(stream, fcntl.LOCK_EX)
-                    index_config = yaml.safe_load(stream)
-                    current_app.config["INDEX_CONFIG"] = ((time.time() + refresh_interval), index_config)
-                finally:
-                    fcntl.flock(stream, fcntl.LOCK_UN)
-        except:
-            current_app.logger.exception("Error loading index config")
-        current_app.logger.info("Loaded index config")
-
-    return index_config
 
 def get_connection_base():
     # TODO - this incorrectly assumes that proxy always implies HTTP an no-proxy is always HTTP
@@ -619,10 +562,6 @@ def check_cache_dir(layer_name):
     tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), layer_name)
     if not os.path.exists(tile_cache_path):
         pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
-
-def check_cache_dirs():
-    for c in get_index_config():
-        check_cache_dir(c)
 
 def convert(response):
     if hasattr(response.aggregations, 'categories'):
@@ -1289,15 +1228,8 @@ def create_app(args=None):
     flask_app.logger.info("Loaded configuration %s", flask_app.config)
     flask_app.logger.info("Loaded environment %s", os.environ)
 
-    #Create cache directories for all layers
-    flask_app.logger.info("Checking cache directories")
-
-    with flask_app.app_context():
-        check_cache_dirs()
-
-    flask_app.logger.info("Registering API")
-
     # Register the API
+    flask_app.logger.info("Registering API")
     flask_app.register_blueprint(api)
 
 
@@ -1346,7 +1278,6 @@ if __name__ == '__main__':
 
     # App configuration
     parser.add_argument('-d', '--cache_directory', default=Config.CACHE_DIRECTORY, help="Directory for tile cache")
-    parser.add_argument('-f', '--index_config_file', default=Config.INDEX_CONFIG_FILE, help="YAML file containing information about each index")
     parser.add_argument('-t', '--cache_timeout', default=Config.CACHE_TIMEOUT, help="Cache lifespan in sec")
     parser.add_argument('-e', '--elastic', default=Config.ELASTIC, help="Elasticsearch URL")
     parser.add_argument('--hostname', default=socket.getfqdn(), help="node hostname")

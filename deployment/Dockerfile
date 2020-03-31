@@ -21,12 +21,10 @@ RUN patch -p1 -d /usr/local/lib/python3.7/site-packages/datashader/transfer_func
 VOLUME ["/opt/elastic_datashader/tms-cache"]
 
 COPY deployment/gunicorn_config.py /opt/elastic_datashader
-COPY index_config.yaml /opt/elastic_datashader/tms-cache/index_config.yaml
 
 ENTRYPOINT [ "gunicorn", \
     "--chdir", "/opt/elastic_datashader", \
     "-c", "/opt/elastic_datashader/gunicorn_config.py", \
-    "--env", "DATASHADER_INDEX_CONFIG_FILE=/opt/elastic_datashader/tms-cache/index_config.yaml", \
     "--env", "DATASHADER_CACHE_DIR=/opt/elastic_datashader/tms-cache", \
     "tms_pixellock:create_app()" \
 ]
