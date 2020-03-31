@@ -66,6 +66,8 @@ from datashader_helpers import sum_cat
 
 #Logging for non-Flask items
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("elasticsearch").setLevel(logging.WARN)
+logging.getLogger("urllib3").setLevel(logging.WARN)
 
 class Config(object):
     """
