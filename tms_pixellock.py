@@ -251,21 +251,21 @@ def get_tms(config_name, x, y, z):
         geopoint_field = index_config.get(config_name, {}).get("geopoint_field", None)
         timestamp_field = index_config.get(config_name, {}).get("timestamp_field", None)
         category_field = index_config.get(config_name, {}).get("category_field", None)
-        
-        #date_range = index_config.get(config_name, {}).get("date_range", None)
-        mode = index_config.get(config_name, {}).get("mode", "heat")
-        ellipse = index_config.get(config_name, {}).get("ellipse", False)
+        ellipses = index_config.get(config_name, {}).get("ellipses", False)
         justification = index_config.get(config_name, {}).get('justification', default_justification)
         lucene_query = index_config.get(config_name, {}).get("lucene_query", None)
         from_time = index_config.get(config_name, {}).get("from_time", None)
         to_time = index_config.get(config_name, {}).get("to_time", "now")
         dsl_filter=index_config.get(config_name, {}).get("dsl_filter", None)
         cmap=index_config.get(config_name, {}).get("cmap", "bmy")
+        ellipse_major = ""
+        ellipse_minor = ""
+        ellipse_tilt = ""
+        ellipse_units = ""        
     else:
         current_app.logger.warning("Selected configuration is not in known configurations: %s"%(config_name))
         idx = config_name
-        mode = "heat"
-        ellipse = False
+        ellipses = False
         justification = default_justification
         lucene_query = None
         from_time = None
@@ -275,6 +275,10 @@ def get_tms(config_name, x, y, z):
         geopoint_field = None
         timestamp_field = None
         category_field = None
+        ellipse_major = ""
+        ellipse_minor = ""
+        ellipse_tilt = ""
+        ellipse_units = ""
 
     #Argument Parameter, NB. These overwrite what is in index config
     params = request.args.get('params')
@@ -294,8 +298,18 @@ def get_tms(config_name, x, y, z):
         return resp
 
     # Custom parameters can be provided by the URL
-    mode = request.args.get('mode', default=mode)
-    ellipse = request.args.get('ellipse', default=ellipse)
+    ellipses = request.args.get('ellipses', default=ellipses)
+    if ellipses == "false" or ellipses==False:
+        ellipses = False
+    else:
+        #Handle the other fields
+        ellipse_major = request.args.get('ellipse_major', default="")
+        ellipse_minor = request.args.get('ellipse_minor', default="")
+        ellipse_tilt = request.args.get('ellipse_tilt', default="")
+        ellipse_units = request.args.get('ellipse_units', default="")
+        if ellipse_major == "" or ellipse_major == "" or ellipse_major == "":
+            ellipses = False
+    
     category_field = request.args.get('category_field', default=category_field)
     cmap = request.args.get('cmap', default=cmap)
     try:
@@ -347,9 +361,12 @@ def get_tms(config_name, x, y, z):
         "cmap":cmap,
         "spread":spread,
         "span_range":span_range,
-        "mode":mode,
-        "ellipse":ellipse,
-        "category_field":category_field
+        "category_field":category_field,
+        "ellipses":ellipses,
+        "ellipse_major":ellipse_major,
+        "ellipse_minor":ellipse_minor,
+        "ellipse_tilt":ellipse_tilt,
+        "ellipse_units":ellipse_units
     }
     for k in hashable_params.keys():
         if isinstance(hashable_params[k], datetime):
@@ -381,7 +398,7 @@ def get_tms(config_name, x, y, z):
         
         #Separate call for ellipse
         try:
-            if ellipse:
+            if ellipses:
                 img = generate_nonaggregated_tile(idx, x, y, z, 
                         geopoint_field=geopoint_field, time_field=timestamp_field, 
                         start_time=start_time, stop_time=stop_time,
@@ -389,7 +406,10 @@ def get_tms(config_name, x, y, z):
                         cmap=cmap, spread=spread, span_range=span_range,
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
                         max_bins=10000,  #TODO: Make this configurable
-                        justification=justification )
+                        justification=justification,
+                        ellipse_major=ellipse_major, ellipse_minor=ellipse_minor, 
+                        ellipse_tilt=ellipse_tilt, ellipse_units=ellipse_units,
+                        maximum_cep = 50, maximum_ellipses_per_tile = 1000000 )
             else:
                 img = generate_tile(idx, x, y, z, 
                         geopoint_field=geopoint_field, time_field=timestamp_field, 
@@ -681,6 +701,8 @@ def generate_nonaggregated_tile(idx, x, y, z,
                     lucene_query=None, dsl_filter=None,
                     max_bins=10000,
                     justification=default_justification,
+                    ellipse_major="", ellipse_minor="", 
+                    ellipse_tilt="", ellipse_units=None,
                     maximum_cep = 50, maximum_ellipses_per_tile = 1000000):
 
     current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
@@ -742,7 +764,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
 
         #Create base search 
         base_s = Search(index=idx).using(es).params(size=max_bins)
-        #base_s = base_s.params(size=0)
+
         #Add time bounds
         if time_range[time_field]:
             base_s = base_s.filter("range", **time_range)
@@ -766,7 +788,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
             base_s = Search.from_dict(base_dict)
             base_s = base_s.index(idx).using(es)
 
-        # Now find out how many documents 
+        # Add expanded bounding box
         count_s = copy.copy(base_s)
         count_s = count_s.filter("geo_bounding_box",
             **{
@@ -774,19 +796,38 @@ def generate_nonaggregated_tile(idx, x, y, z,
             }
         )
 
+        #trim category field postfixes
+        if category_field:
+            if category_field.endswith(".keyword"):
+                category_field = category_field[:-len(".keyword")]
+            elif category_field.endswith(".raw"):
+                category_field = category_field[:-len(".raw")]
+        #TODO: Handle the limiting to only the fields required for processing
+
         #Process the hits (geos) into a list of points
         s1 = time.time()
         geos = 0
         points = []
         nan_line = {'x':None, 'y': None, 'c':"None"}
         for hit in count_s.scan():
-        # Get the scroll ID
             #Handle deg->Meters conversion and everything else
             x0,y0 = ds.utils.lnglat_to_meters(hit[geopoint_field]["lon"], hit[geopoint_field]["lat"])
-            major = hit["major_nm"]*1852 #nm to meters
-            minor = hit["minor_nm"]*1852
-            angle = hit["angle"]
+            major = hit[ellipse_major]
+            minor = hit[ellipse_minor]
+            angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
+            if ellipse_units == "majmin_nm":
+                major *= 1852 #nm to meters
+                minor *= 1852 #nm to meters
+            elif ellipse_units == "semi_majmin_nm":
+                major *= 2 * 1852 #nm to meters, semi to full
+                minor *= 2 * 1852 #nm to meters, semi to full
+            elif ellipse_units == "semi_majmin_m":
+                major *= 2 #semi to full
+                minor *= 2 #semi to full
+            #NB. assume "majmin_m" if any others
+            
             #expel above CEP limit
+            #TODO: Figure out how we will handle CEP maximums
             if major > extend_meters or minor > extend_meters:
                 continue
 
@@ -801,7 +842,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
             points.append(nan_line) #Break between geos
             geos += 1
 
-            #Check if we hit the geos bound
+            #Check if we hit the geos per tile bound
             if geos >= maximum_ellipses_per_tile:
                 break
 
@@ -815,14 +856,11 @@ def generate_nonaggregated_tile(idx, x, y, z,
             current_app.logger.debug("No points in bounding box")
             img = b""
         else:
-            
+            #Generate the image
             df["C"] = df["c"].astype('category')
             
             # Find number of pixels in required image
-            pixels = tile_height_px * tile_width_px
-
-            #TODO: Get all the data?
-            
+            pixels = tile_height_px * tile_width_px            
 
             if len(df.index) == 0:
                 img = b""
