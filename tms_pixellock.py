@@ -788,6 +788,55 @@ def generate_nonaggregated_tile(idx, x, y, z,
             base_s = Search.from_dict(base_dict)
             base_s = base_s.index(idx).using(es)
 
+        #west, south, east, north
+        doc_bounds = [ -180, -90, 180, 90 ]
+        global_doc_cnt = 0
+
+        # if span_range is auto we need to estimate the density
+        bounds_s = copy.copy(base_s)
+        bounds_s = bounds_s.params(size=0)
+
+        if span_range == "auto":
+            #See how far the data spans and how many points are in it
+            bounds_s.aggs.metric(
+                'viewport','geo_bounds',field=geopoint_field
+            ).metric(
+                'point_count','value_count',field=geopoint_field
+            )
+
+        #If the field is a number, we need to figure out it's min/max globally
+        if category_type == "number":
+            bounds_s.metric(
+                'field_stats', 'stats', field=category_field
+            )
+
+        # We only need to do a global query if we are in span 'auto' or
+        # using a numeric category    
+        if len(list(bounds_s.aggs)) > 0:
+            bounds_resp = bounds_s.execute()
+            assert len(bounds_resp.hits) == 0
+
+            if hasattr(bounds_resp.aggregations, "viewport"):
+                if hasattr(bounds_resp.aggregations.viewport, "bounds"):
+                    doc_bounds = [ 
+                        bounds_resp.aggregations.viewport.bounds.top_left.lon,
+                        bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
+                        bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
+                        bounds_resp.aggregations.viewport.bounds.top_left.lat,
+                    ]
+            if hasattr(bounds_resp.aggregations, "point_count"):
+                global_doc_cnt = bounds_resp.aggregations.point_count.value
+        else:
+            current_app.logger.debug("Skipping global query")
+
+        estimated_points_per_tile = None
+        # Estimate the number of points per tile assuming uniform density
+        if span_range == "auto":
+            num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
+            estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+            current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
+
+
         # Add expanded bounding box
         count_s = copy.copy(base_s)
         count_s = count_s.filter("geo_bounding_box",
@@ -854,9 +903,24 @@ def generate_nonaggregated_tile(idx, x, y, z,
                 ).line(df, 'x', 'y', agg=rd.count_cat('C'))
         
 
-                #img = tf.shade(agg)
-                span=[1, math.log(1e6)]
-                min_alpha = 200                
+                span = None
+                if span_range == 'flat':
+                    min_alpha = 255
+                elif span_range == 'narrow':
+                    span=[0, math.log(1e3)]
+                    min_alpha = 200
+                elif span_range == 'normal':
+                    span=[0, math.log(1e6)]
+                    min_alpha = 100
+                elif span_range == 'wide':
+                    span=[0,  math.log(1e9)]
+                    min_alpha = 50
+                else:
+                    assert estimated_points_per_tile != None
+                    span=[0, math.log(max(estimated_points_per_tile*2, 2))]
+                    alpha_span = int(span[1]) * 25
+                    min_alpha = 255 - min(alpha_span, 225)
+
                 img = tf.shade(
                             agg, 
                             cmap=cc.glasbey_category10, 
