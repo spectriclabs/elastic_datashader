@@ -795,6 +795,10 @@ def generate_nonaggregated_tile(idx, x, y, z,
             }
         )
 
+        # Per ES documentation, sorting by _doc improves scroll speed
+        # TODO allow users to specify other sort field
+        count_s.sort("_doc")
+
         #trim category field postfixes
         if category_field:
             if category_field.endswith(".keyword"):
