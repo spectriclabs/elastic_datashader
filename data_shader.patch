@@ -9,7 +9,7 @@
      if cupy and isinstance(agg.data, cupy.ndarray):
          from ._cuda_utils import interp
          array = cupy.array
-@@ -352,13 +352,18 @@
+@@ -352,13 +352,21 @@
          r = (data.dot(rs)/total).astype(np.uint8)
          g = (data.dot(gs)/total).astype(np.uint8)
          b = (data.dot(bs)/total).astype(np.uint8)
@@ -18,11 +18,15 @@
      mask = np.isnan(total)
 +    if span is None:
 +        span = (np.nanmin(total).item(), np.nanmax(total).item())
++    else:
++        masked_clip_2d(total, mask, *span)
 +    offset = np.array(span, dtype=data.dtype)[0]
 +
      if offset == 0:
          mask = mask | (total <= 0)
-         offset = total[total > 0].min()
+-        offset = total[total > 0].min()
++        if not np.all(mask):
++            offset = total[total > 0].min()
      a = _normalize_interpolate_how(how)(total - offset, mask)
 -    a = interp(a, array([np.nanmin(a).item(), np.nanmax(a).item()]),
 +    span = _normalize_interpolate_how(how)([0, span[1] - span[0]], 0)
@@ -30,7 +34,7 @@
                 array([min_alpha, 255]), left=0, right=255).astype(np.uint8)
      r[mask] = g[mask] = b[mask] = 255
      values = np.dstack([r, g, b, a]).view(np.uint32).reshape(a.shape)
-@@ -446,7 +451,7 @@
+@@ -446,7 +454,7 @@
      if agg.ndim == 2:
          return _interpolate(agg, cmap, how, alpha, span, min_alpha, name)
      elif agg.ndim == 3:
