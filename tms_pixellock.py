@@ -21,6 +21,7 @@ import shutil
 import threading
 import copy
 import collections
+from functools import lru_cache
 
 from datetime import datetime, timedelta
 from pprint import pprint, pformat
@@ -882,13 +883,21 @@ def generate_nonaggregated_tile(idx, x, y, z,
         current_app.logger.exception("An exception occured while attempting to generate a tile:")
         raise
 
-def gen_overlay(img, thickness=8):
-    base = Image.open(io.BytesIO(img))
-    overlay = Image.new('RGBA', base.size)
-    width, height = base.size
+@lru_cache(10)
+def gen_overlay_img(width, height, thickness):
+    """
+    Create an overlay hash image, using an lru_cache since the same
+    overlay can be generated once and then reused indefinately
+    """
+    overlay = Image.new('RGBA', (width, height))
     draw = ImageDraw.Draw(overlay)
     for s in range(0, max(height,width), thickness*2):
         draw.line( [(s-width,s+height), (s+width,s-height)], (255,0,0,64), thickness)
+    return overlay
+
+def gen_overlay(img, thickness=8):
+    base = Image.open(io.BytesIO(img))
+    overlay = gen_overlay_img(*base.size, thickness=thickness)
     out = Image.alpha_composite(base, overlay)
     with io.BytesIO() as output:
         out.save(output, format='PNG')
