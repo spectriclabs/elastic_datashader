@@ -640,6 +640,58 @@ def ellipse(ra,rb,ang,x0,y0,Nb=16):
     Y=radm*cos(the)*si+co*radn*sin(the)+ypos
     return X,Y
 
+NAN_LINE = {'x':None, 'y': None, 'c':"None"}
+def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters, metrics=None):
+    if metrics is None:
+        metrics = {}
+    metrics["over_max"] = False
+
+    geopoint_center = geopoint_fields["geopoint_center"]
+    ellipse_major = geopoint_fields["ellipse_major"]
+    ellipse_minor = geopoint_fields["ellipse_minor"]
+    ellipse_tilt = geopoint_fields["ellipse_tilt"]
+    ellipse_units = geopoint_fields["ellipse_units"]
+    category_field = geopoint_fields.get("category_field")
+
+    for i, hit in enumerate(search.scan()):
+        # TODO this actually isn't maximum ellipses per tile, but rather
+        # maximum number of records iterated.  We might want to keep this behavior
+        # because if you ask for ellipses on a index where none of the records have ellipse
+        # point fields you could end up iterating over the entire index
+        if i >= maximum_ellipses_per_tile:
+            metrics["over_max"] = True
+            break
+        #Handle deg->Meters conversion and everything else
+        x0,y0 = ds.utils.lnglat_to_meters(hit[geopoint_center]["lon"], hit[geopoint_center]["lat"])
+        major = hit[ellipse_major]
+        minor = hit[ellipse_minor]
+        angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
+        if ellipse_units == "majmin_nm":
+            major *= 1852 #nm to meters
+            minor *= 1852 #nm to meters
+        elif ellipse_units == "semi_majmin_nm":
+            major *= 2 * 1852 #nm to meters, semi to full
+            minor *= 2 * 1852 #nm to meters, semi to full
+        elif ellipse_units == "semi_majmin_m":
+            major *= 2 #semi to full
+            minor *= 2 #semi to full
+        #NB. assume "majmin_m" if any others
+        
+        #expel above CEP limit
+        #TODO: Figure out how we will handle CEP maximums
+        if major > extend_meters or minor > extend_meters:
+            continue
+
+        X,Y = ellipse(minor,major,angle,x0,y0, Nb=16) #Points per ellipse
+        if category_field:
+            c = hit[category_field]
+        else:
+            c = "None"
+        
+        for p in zip(X,Y,len(X)*[c]):
+            yield {'x':p[0], 'y':p[1], 'c':p[2]}
+        yield NAN_LINE #Break between geos
+
 def generate_nonaggregated_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
                     start_time=None, stop_time=None,
@@ -751,54 +803,29 @@ def generate_nonaggregated_tile(idx, x, y, z,
                 category_field = category_field[:-len(".raw")]
         #TODO: Handle the limiting to only the fields required for processing
 
+        geopoint_fields = {
+            "geopoint_center": geopoint_field,
+            "ellipse_major": ellipse_major,
+            "ellipse_minor": ellipse_minor,
+            "ellipse_tilt": ellipse_tilt,
+            "ellipse_units": ellipse_units,
+            "category_field": category_field
+        }
         #Process the hits (geos) into a list of points
         s1 = time.time()
-        geos = 0
-        over_max = False
-        points = []
-        nan_line = {'x':None, 'y': None, 'c':"None"}
-        for hit in count_s.scan():
-            #Handle deg->Meters conversion and everything else
-            x0,y0 = ds.utils.lnglat_to_meters(hit[geopoint_field]["lon"], hit[geopoint_field]["lat"])
-            major = hit[ellipse_major]
-            minor = hit[ellipse_minor]
-            angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
-            if ellipse_units == "majmin_nm":
-                major *= 1852 #nm to meters
-                minor *= 1852 #nm to meters
-            elif ellipse_units == "semi_majmin_nm":
-                major *= 2 * 1852 #nm to meters, semi to full
-                minor *= 2 * 1852 #nm to meters, semi to full
-            elif ellipse_units == "semi_majmin_m":
-                major *= 2 #semi to full
-                minor *= 2 #semi to full
-            #NB. assume "majmin_m" if any others
-            
-            #expel above CEP limit
-            #TODO: Figure out how we will handle CEP maximums
-            if major > extend_meters or minor > extend_meters:
-                continue
-
-            X,Y = ellipse(minor,major,angle,x0,y0, Nb=16) #Points per ellipse
-            if category_field:
-                c = hit[category_field]
-            else:
-                c = "None"
-            
-            for p in zip(X,Y,len(X)*[c]):
-                points.append({'x':p[0], 'y':p[1], 'c':p[2]})
-            points.append(nan_line) #Break between geos
-            geos += 1
-
-            #Check if we hit the geos per tile bound
-            if geos >= maximum_ellipses_per_tile:
-                over_max = True
-                break
-
-        df = pd.DataFrame.from_dict(points)           
+        metrics = dict(over_max=False)
+        df = pd.DataFrame.from_dict(
+            create_datashader_ellipses_from_search(
+                count_s,
+                geopoint_fields,
+                maximum_ellipses_per_tile,
+                extend_meters,
+                metrics
+            )
+        )           
         s2 = time.time()
         
-        current_app.logger.debug("ES took %s for %s" % ((s2-s1), geos))        
+        current_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))        
         
         #If count is zero then return a null image
         if len(df) == 0:
@@ -840,7 +867,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
                 
                 img = img.to_bytesio().read()
 
-                if over_max:
+                if metrics.get("over_max"):
                     #Put hashing on image to indicate that it is over maximum
                     current_app.logger.info("Generating overlay for tile")
                     img = gen_overlay(img)
