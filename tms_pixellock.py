@@ -995,7 +995,7 @@ def generate_tile(idx, x, y, z,
         #See how far the data spans and how many points are in it
         bounds_s = copy.copy(base_s)
         bounds_s = bounds_s.params(size=0)
-        bounds_agg = bounds_s.aggs.metric(
+        bounds_s.aggs.metric(
             'viewport','geo_bounds',field=geopoint_field
         ).metric(
             'point_count','value_count',field=geopoint_field
@@ -1003,28 +1003,30 @@ def generate_tile(idx, x, y, z,
 
         #If the field is a number, we need to figure out it's min/max globally
         if category_type == "number":
-            bounds_agg.metric(
+            bounds_s.aggs.metric(
                 'field_stats', 'stats', field=category_field
             )
-
-
-        bounds_resp = bounds_s.execute()
-        assert len(bounds_resp.hits) == 0
 
         #west, south, east, north
         doc_bounds = [ -180, -90, 180, 90 ]
         global_doc_cnt = 0
 
-        if hasattr(bounds_resp.aggregations, "viewport"):
-            if hasattr(bounds_resp.aggregations.viewport, "bounds"):
-                doc_bounds = [ 
-                    bounds_resp.aggregations.viewport.bounds.top_left.lon,
-                    bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
-                    bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
-                    bounds_resp.aggregations.viewport.bounds.top_left.lat,
-                ]
-        if hasattr(bounds_resp.aggregations, "point_count"):
-            global_doc_cnt = bounds_resp.aggregations.point_count.value
+        # We only need to do a global query if we are in span 'auto' or
+        # using a numeric category
+        if len(list(bounds_s.aggs)) > 0:
+            bounds_resp = bounds_s.execute()
+            assert len(bounds_resp.hits) == 0
+
+            if hasattr(bounds_resp.aggregations, "viewport"):
+                if hasattr(bounds_resp.aggregations.viewport, "bounds"):
+                    doc_bounds = [ 
+                        bounds_resp.aggregations.viewport.bounds.top_left.lon,
+                        bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
+                        bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
+                        bounds_resp.aggregations.viewport.bounds.top_left.lat,
+                    ]
+            if hasattr(bounds_resp.aggregations, "point_count"):
+                global_doc_cnt = bounds_resp.aggregations.point_count.value
 
         # Now find out how many documents 
         count_s = copy.copy(base_s)
@@ -1223,9 +1225,11 @@ def generate_tile(idx, x, y, z,
             current_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))
 
             #Estimate the number of points per tile assuming uniform density
-            num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
-            estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-            current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
+            estimated_points_per_tile = None
+            if span_range == 'auto':
+                num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
+                estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+                current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
 
             if len(df.index) == 0:
                 img = b""
@@ -1251,6 +1255,7 @@ def generate_tile(idx, x, y, z,
                         span=[0,  math.log(1e9)]
                         min_alpha = 50
                     else:
+                        assert estimated_points_per_tile != None
                         span=[0, math.log(max(estimated_points_per_tile*2, 2))]
                         alpha_span = int(span[1]) * 25
                         min_alpha = 255 - min(alpha_span, 225)
@@ -1285,6 +1290,7 @@ def generate_tile(idx, x, y, z,
                     elif span_range == 'wide':
                         span=[0,  math.log(1e9)]
                     else:
+                        assert estimated_points_per_tile != None
                         span=[0, math.log(max(estimated_points_per_tile*2, 2))]
 
                     current_app.logger.debug("Span %s %s", span, span_range)
