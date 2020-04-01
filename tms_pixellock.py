@@ -1245,7 +1245,10 @@ def generate_tile(idx, x, y, z,
                         y_range=y_range
                     ).points(df, 'x', 'y', agg=sum_cat('T', 'c'))
                     
-                    if span_range == 'narrow':
+                    span = None
+                    if span_range == 'flat':
+                        min_alpha = 255
+                    elif span_range == 'narrow':
                         span=[0, math.log(1e3)]
                         min_alpha = 200
                     elif span_range == 'normal':
@@ -1283,7 +1286,10 @@ def generate_tile(idx, x, y, z,
                     # the span range, so for example, if span is narrow, any
                     # bins that have 1000 or more items will be colored full
                     # scale
-                    if span_range == 'narrow':
+                    span = None
+                    if span_range == 'flat':
+                        span=[0, 0]
+                    elif span_range == 'narrow':
                         span=[0, math.log(1e3)]
                     elif span_range == 'normal':
                         span=[0, math.log(1e6)]
