@@ -691,7 +691,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
         
         for p in zip(X,Y,len(X)*[c]):
             yield {'x':p[0], 'y':p[1], 'c':p[2]}
-        yield NAN_LINE #Break between geos
+        yield NAN_LINE #Break between ellipses
 
 def generate_nonaggregated_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
