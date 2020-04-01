@@ -1440,10 +1440,11 @@ def create_app(args=None):
     # Additional parameters can be found here:
     #    https://www.elastic.co/guide/en/apm/agent/python/current/configuration.html
     try:
-        from elasticapm.contrib.flask import ElasticAPM
-        apm = ElasticAPM(flask_app, logging=logging.ERROR)
+        if os.environ.get("ELASTIC_APM_SERVER_URL"):
+            from elasticapm.contrib.flask import ElasticAPM
+            apm = ElasticAPM(flask_app, logging=logging.ERROR)
     except ImportError:
-        ElasticAPM = None
+        apm = None
 
     scheduler = APScheduler()
     scheduler.init_app(flask_app)
