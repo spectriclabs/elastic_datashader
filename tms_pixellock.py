@@ -287,10 +287,20 @@ def get_tms(idx, x, y, z):
     category_field = request.args.get('category_field', default=category_field)
     category_type = request.args.get('category_type', default=category_type)
     cmap = request.args.get('cmap', default=cmap)
-    try:
-        spread = int(request.args.get('spread'))
-    except (TypeError, ValueError):
+    spread = request.args.get('spread')
+    if spread == "coarse":
+        spread = 10
+    elif spread == "fine":
+        spread = 3
+    elif spread == "finest":
+        spread = 1
+    elif spread == "auto":
         spread = None
+    else:
+        try:
+            spread = int(spread)
+        except (TypeError, ValueError):
+            spread = None
     span_range = request.args.get('span', default="auto")
     geopoint_field = request.args.get('geopoint_field', default=geopoint_field)
     timestamp_field = request.args.get('timestamp_field', default=timestamp_field)
