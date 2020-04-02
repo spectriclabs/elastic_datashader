@@ -955,8 +955,9 @@ def gen_overlay_img(width, height, thickness):
     """
     overlay = Image.new('RGBA', (width, height))
     draw = ImageDraw.Draw(overlay)
+    color = (255,0,0,64)
     for s in range(0, max(height,width), thickness*2):
-        draw.line( [(s-width,s+height), (s+width,s-height)], (255,0,0,64), thickness)
+        draw.line( [(s-width,s+height), (s+width,s-height)], color, thickness)
     return overlay
 
 def gen_overlay(img, thickness=8):
