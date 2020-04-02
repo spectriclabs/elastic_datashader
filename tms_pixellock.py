@@ -396,7 +396,12 @@ def get_tms(idx, x, y, z):
                         justification=justification )
         except:
             logging.exception("Exception Generating Tile for request %s", request)
-            resp = Response("Exception Generating Tile", status=500)
+            # generate an error tile/don't cache cache it
+            img = gen_error(tile_width_px, tile_height_px)
+            resp = Response(img, status=200)
+            resp.headers['Content-Type'] = 'image/png'
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.cache_control.max_age = 60
             return resp
         
         set_cache("/%s/%s/%s/%s/%s.png"%(idx, parameter_hash, z, x, y), img, current_app.config["CACHE_DIRECTORY"])
@@ -966,6 +971,18 @@ def gen_overlay(img, thickness=8):
     out = Image.alpha_composite(base, overlay)
     with io.BytesIO() as output:
         out.save(output, format='PNG')
+        return output.getvalue()
+
+@lru_cache(10)
+def gen_error(width, height, thickness=8):
+    overlay = Image.new('RGBA', (width, height))
+    draw = ImageDraw.Draw(overlay)
+    color = (255,0,0,255)
+    draw.line( [(0,0), (width,height)], color, thickness)
+    draw.line( [(width,0), (0,height)], color, thickness)
+
+    with io.BytesIO() as output:
+        overlay.save(output, format='PNG')
         return output.getvalue()
 
 ####################################################
