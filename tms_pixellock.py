@@ -70,6 +70,10 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("elasticsearch").setLevel(logging.WARN)
 logging.getLogger("urllib3").setLevel(logging.WARN)
 
+# Preconfigured tile size
+tile_height_px = 256
+tile_width_px = 256
+
 class Config(object):
     """
     The default configuration; configuration parameters need
@@ -707,10 +711,6 @@ def generate_nonaggregated_tile(idx, x, y, z,
 
     current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
     try:
-        # Preconfigured tile size
-        tile_height_px = 256
-        tile_width_px = 256
-
         # Get the web mercador bounds for the tile
         xy_bounds = mercantile.xy_bounds(x, y, z)
         # Calculate the x/y range in meters
