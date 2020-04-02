@@ -1199,6 +1199,7 @@ def generate_tile(idx, x, y, z,
                 sub_frame_level
             )
 
+            partial_data = False
             df = pd.DataFrame()
             s1 = time.time()
             for _, subframe in enumerate(subframes):
@@ -1282,6 +1283,9 @@ def generate_tile(idx, x, y, z,
                     raise
 
                 assert len(resp.hits) == 0   
+
+                if hasattr(resp.aggregations, 'categories'):
+                    partial_data = ( resp.aggregations.categories.sum_other_doc_count > 0 )
 
                 df = df.append(pd.DataFrame(convert(resp)), sort=False)
                 
@@ -1381,6 +1385,10 @@ def generate_tile(idx, x, y, z,
                     img = tf.spread(img, spread)
 
                 img = img.to_bytesio().read()
+
+                if partial_data:
+                    current_app.logger.info("Generating overlay for tile due to partial category data")
+                    img = gen_overlay(img)
 
         #Set headers and return data 
         return img
