@@ -244,7 +244,7 @@ def get_tms(idx, x, y, z):
     from_time = None
     to_time = "now"
     dsl_filter = None
-    cmap = None
+    cmap = "bmy"
     geopoint_field = None
     timestamp_field = None
     category_field = None
