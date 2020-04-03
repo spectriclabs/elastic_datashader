@@ -711,7 +711,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
 
         X,Y = ellipse(minor,major,angle,x0,y0, Nb=16) #Points per ellipse
         if category_field:
-            c = hit[category_field]
+            c = str(getattr(hit, category_field, "None"))
         else:
             c = "None"
         
