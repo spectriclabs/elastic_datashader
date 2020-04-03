@@ -207,6 +207,114 @@ def check_cache_age(cache_dir, age_limit):
 
 @api.route('/<idx>/<field_name>/legend.json', methods=['GET'])
 def provide_legend(idx, field_name):
+    from_time = None
+    to_time = None
+    dsl_filter = None
+    lucene_query = None
+    extent = None
+
+    geopoint_field = request.args.get('geopoint_field')
+    timestamp_field = request.args.get('timestamp_field')
+    
+    #Argument Parameter, NB. These overwrite what is in index config
+    params = request.args.get('params')
+    if params and params != '{params}':
+        params = json.loads(request.args.get('params'))
+        if params.get("timeFilters",{}).get("from"):
+            from_time = params.get("timeFilters",{}).get("from")
+        if params.get("timeFilters",{}).get("to"):
+            to_time = params.get("timeFilters",{}).get("to")
+        if params.get("filters") and lucene_query is None:
+            dsl_filter = build_dsl_filter(params.get("filters"))
+        if params.get("query") and lucene_query is None:
+            lucene_query = params.get("query").get("query")
+        if params.get("extent"):
+            extent = params.get("extent")
+    elif params and params == '{params}':
+        #If the parameters haven't been provided yet
+        resp = Response("[]", status=204)
+        return resp
+
+    #Handle time calculations
+    time_range = { timestamp_field: {} }
+    if from_time != None:
+        time_range[timestamp_field]["gte"] = from_time
+    if to_time != None:
+        time_range[timestamp_field]["lte"] = to_time
+
+    # Connect to Elasticsearch (TODO is it faster if this is global?)
+    es = Elasticsearch(
+        current_app.config.get("ELASTIC"),
+        verify_certs=False,
+        timeout=900,
+        headers={} # TODO headers
+    )
+
+    #Create base search 
+    base_s = Search(index=idx).using(es)
+
+    #Add time bounds
+    if time_range[timestamp_field]:
+        base_s = base_s.filter("range", **time_range)
+
+    #Add lucene query
+    if lucene_query:
+        base_s = base_s.filter('query_string', query=lucene_query)
+
+    #Add dsl filtering
+    if dsl_filter:
+        #Need to convert to a dict, merge with filters then convert back to a search object
+        base_dict = base_s.to_dict()
+        if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
+            base_dict["query"]["bool"]["filter"] = []
+        for f in dsl_filter["filter"]:
+            base_dict["query"]["bool"]["filter"].append(f)
+        if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
+            base_dict["query"]["bool"]["must_not"] = []
+        for f in dsl_filter["must_not"]:
+            base_dict["query"]["bool"]["must_not"].append(f)
+        base_s = Search.from_dict(base_dict)
+        base_s = base_s.index(idx).using(es)
+
+    legend_s = copy.copy(base_s)
+    legend_s = legend_s.params(size=0)
+
+    # if an extent was provided use it for the filter
+    if extent:
+        legend_bbox = {
+            "top_left": {
+                "lat": extent["maxLat"],
+                "lon": extent["minLon"],
+            },
+            "bottom_right": {
+                "lat": extent["minLat"],
+                "lon": extent["maxLon"],
+            }
+        }
+
+        legend_s = legend_s.filter("geo_bounding_box",
+            **{
+                geopoint_field: legend_bbox
+            }  )
+    
+    max_legend_categories = 50
+    legend_s.aggs.bucket(
+        'categories',
+        'terms',
+        field=field_name,
+        size=max_legend_categories
+    )
+
+    # Perform the execution
+    response = legend_s.execute()          
+    if not hasattr(response.aggregations, 'categories'):
+        resp = Response("[]", status=200)
+        resp.headers['Content-Type'] = 'application/json'
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.cache_control.max_age = 60
+        return resp
+
+    # Load the color key
     color_key_map = {}
     color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"%s/%s-colormap.json"%(idx, field_name))
     if os.path.exists(color_file):
@@ -215,11 +323,13 @@ def provide_legend(idx, field_name):
     else:
         current_app.logger.warning("No colormap found at: %s", color_file)
     
-    color_key_hash = {}
-    for k in color_key_map.keys():
-        color_key_hash[k] = int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)
+    # Get the colors for each category in view
+    color_key_legend = []
+    for category in response.aggregations.categories:
+        k = str(category.key)
+        color_key_legend.append( dict(key=k, color=color_key_map.get(k, "#000000"), count=category.doc_count) )
     
-    data = json.dumps(color_key_map)
+    data = json.dumps(color_key_legend)
     resp = Response(data, status=200)
     resp.headers['Content-Type'] = 'application/json'
     resp.headers['Access-Control-Allow-Origin'] = '*'
