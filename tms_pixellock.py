@@ -622,10 +622,13 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
     
 
     #Load the file
-    with open(color_file, 'w+') as stream:
-        color_key_map = yaml.safe_load(stream)
+    with open(color_file, 'a+') as stream:
         try:
-            fcntl.flock(stream, fcntl.LOCK_EX)     
+            fcntl.flock(stream, fcntl.LOCK_EX)
+
+            stream.seek(0)
+            color_key_map = yaml.safe_load(stream)
+
             #If file is blank load a blank dictionary
             if color_key_map == None:
                 color_key_map = {}
@@ -642,6 +645,7 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
             if changed:
                 stream.seek(0)
                 yaml.dump(color_key_map, stream)
+                stream.flush()
         finally:
             fcntl.lockf(stream, fcntl.LOCK_UN)
 
