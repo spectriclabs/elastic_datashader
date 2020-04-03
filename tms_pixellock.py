@@ -804,22 +804,22 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
         minor = hit[ellipse_minor]
         angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
         if ellipse_units == "majmin_nm":
-            major *= 1852 #nm to meters
-            minor *= 1852 #nm to meters
+            major = major * 1852 #nm to meters
+            minor = minor * 1852 #nm to meters
         elif ellipse_units == "semi_majmin_nm":
-            major *= 2 * 1852 #nm to meters, semi to full
-            minor *= 2 * 1852 #nm to meters, semi to full
+            major = major * (2 * 1852) #nm to meters, semi to full
+            minor = minor * (2 * 1852) #nm to meters, semi to full
         elif ellipse_units == "semi_majmin_m":
-            major *= 2 #semi to full
-            minor *= 2 #semi to full
+            major = major * 2 #semi to full
+            minor = minor * 2 #semi to full
         #NB. assume "majmin_m" if any others
-        
+
         #expel above CEP limit
         #TODO: Figure out how we will handle CEP maximums
         if major > extend_meters or minor > extend_meters:
             continue
 
-        X,Y = ellipse(minor,major,angle,x0,y0, Nb=16) #Points per ellipse
+        X,Y = ellipse(minor/2.0,major/2.0,angle,x0,y0, Nb=16) #Points per ellipse, NB. this takes semi-maj/min
         if category_field:
             c = str(getattr(hit, category_field, "None"))
         else:
