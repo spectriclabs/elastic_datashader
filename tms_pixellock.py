@@ -937,7 +937,8 @@ def generate_nonaggregated_tile(idx, x, y, z,
             )
 
         #If the field is a number, we need to figure out it's min/max globally
-        if category_type == "number":
+        # TODO this is currently disabled because it isn't necessary
+        if category_type == "number" and False:
             bounds_s.aggs.metric(
                 'field_stats', 'stats', field=category_field
             )
