@@ -244,6 +244,7 @@ def get_tms(idx, x, y, z):
     from_time = None
     to_time = "now"
     dsl_filter = None
+    extent = None
     cmap = "bmy"
     geopoint_field = None
     timestamp_field = None
@@ -266,6 +267,8 @@ def get_tms(idx, x, y, z):
             dsl_filter = build_dsl_filter(params.get("filters"))
         if params.get("query") and lucene_query is None:
             lucene_query = params.get("query").get("query")
+        if params.get("extent"):
+            extent = params.get("extent")
     elif params and params == '{params}':
         #If the parameters haven't been provided yet
         resp = Response("TMS parameters not yet provided", status=204)
