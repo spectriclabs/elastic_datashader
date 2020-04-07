@@ -90,6 +90,7 @@ class Config(object):
     PROXY_PREFIX = os.environ.get("DATASHADER_PROXY_PREFIX", "")
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
     MAX_BINS = os.environ.get("DATASHADER_MAX_BINS", 10000)
+    MAX_BATCH = int(os.environ.get("DATASHADER_MAX_BATCH", 10000))
     PORT = None
     HOSTNAME = socket.getfqdn()
 
@@ -504,6 +505,7 @@ def get_tms(idx, x, y, z):
                         cmap=cmap, spread=spread, span_range=span_range,
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
                         max_bins=current_app.config["MAX_BINS"],
+                        max_batch=int(current_app.config["MAX_BATCH"]),
                         justification=justification,
                         ellipse_major=ellipse_major, ellipse_minor=ellipse_minor, 
                         ellipse_tilt=ellipse_tilt, ellipse_units=ellipse_units,
@@ -836,6 +838,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
                     span_range='auto',
                     lucene_query=None, dsl_filter=None,
                     max_bins=10000,
+                    max_batch=10000,
                     justification=default_justification,
                     ellipse_major="", ellipse_minor="", 
                     ellipse_tilt="", ellipse_units=None,
@@ -895,7 +898,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
         )
 
         #Create base search 
-        base_s = Search(index=idx).using(es).params(size=max_bins)
+        base_s = Search(index=idx).using(es).params(size=max_batch)
 
         #Add time bounds
         if time_range[time_field]:
