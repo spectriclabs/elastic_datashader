@@ -215,7 +215,7 @@ def provide_legend(idx, field_name):
     extent = None
 
     geopoint_field = request.args.get('geopoint_field')
-    timestamp_field = request.args.get('timestamp_field')
+    timestamp_field = request.args.get('timestamp_field', '@timestamp')
     
     #Argument Parameter, NB. These overwrite what is in index config
     params = request.args.get('params')
@@ -237,11 +237,13 @@ def provide_legend(idx, field_name):
         return resp
 
     #Handle time calculations
-    time_range = { timestamp_field: {} }
-    if from_time != None:
-        time_range[timestamp_field]["gte"] = from_time
-    if to_time != None:
-        time_range[timestamp_field]["lte"] = to_time
+    time_range = None
+    if timestamp_field: 
+        time_range = { timestamp_field: {} }
+        if from_time != None:
+            time_range[timestamp_field]["gte"] = from_time
+        if to_time != None:
+            time_range[timestamp_field]["lte"] = to_time
 
     # Connect to Elasticsearch (TODO is it faster if this is global?)
     es = Elasticsearch(
@@ -255,7 +257,7 @@ def provide_legend(idx, field_name):
     base_s = Search(index=idx).using(es)
 
     #Add time bounds
-    if time_range[timestamp_field]:
+    if time_range and time_range[timestamp_field]:
         base_s = base_s.filter("range", **time_range)
 
     #Add lucene query
@@ -358,7 +360,7 @@ def get_tms(idx, x, y, z):
     extent = None
     cmap = "bmy"
     geopoint_field = None
-    timestamp_field = None
+    timestamp_field = "@timestamp"
     category_field = None
     category_type = None
     ellipse_major = ""
@@ -437,7 +439,12 @@ def get_tms(idx, x, y, z):
             stop_time = convertKibanaTime(to_time, now)
         except ValueError:
             current_app.logger.exception("invalid to_time parameter")
-            resp = Response("invalid to_time parameter", status=500)
+            img = gen_error(tile_height_px, tile_width_px)
+            resp = Response(img, status=200)
+            resp.headers['Content-Type'] = 'image/png'
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.headers['Error'] = 'invalid to_time parameter'
+            resp.cache_control.max_age = 60
             return resp
 
     start_time = None
@@ -446,10 +453,24 @@ def get_tms(idx, x, y, z):
             start_time = convertKibanaTime(from_time, now)
         except ValueError:
             current_app.logger.exception("invalid from_time parameter")
-            resp = Response("invalid from_time parameter", status=500)
+            img = gen_error(tile_height_px, tile_width_px)
+            resp = Response(img, status=200)
+            resp.headers['Content-Type'] = 'image/png'
+            resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.headers['Error'] = 'invalid from_time parameter'
+            resp.cache_control.max_age = 60
             return resp
 
     start_time, stop_time = quantizeTimeRange(start_time, stop_time)
+
+    if geopoint_field is None:
+        img = gen_error(tile_height_px, tile_width_px)
+        resp = Response(img, status=200)
+        resp.headers['Content-Type'] = 'image/png'
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Error'] = 'missing geopoint_field'
+        resp.cache_control.max_age = 60
+        return resp
 
     #Calculate a hash value for the specific parameter set
     hashable_params = {
@@ -519,13 +540,14 @@ def get_tms(idx, x, y, z):
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
                         max_bins=current_app.config["MAX_BINS"],
                         justification=justification )
-        except:
+        except Exception as e:
             logging.exception("Exception Generating Tile for request %s", request)
             # generate an error tile/don't cache cache it
             img = gen_error(tile_width_px, tile_height_px)
             resp = Response(img, status=200)
             resp.headers['Content-Type'] = 'image/png'
             resp.headers['Access-Control-Allow-Origin'] = '*'
+            resp.headers['Error'] = str(e)
             resp.cache_control.max_age = 60
             return resp
         
@@ -883,11 +905,13 @@ def generate_nonaggregated_tile(idx, x, y, z,
         area = xwidth * yheight
 
         #Handle time calculations
-        time_range = { time_field: {} }
-        if start_time != None:
-            time_range[time_field]["gte"] = start_time
-        if stop_time != None:
-            time_range[time_field]["lte"] = stop_time
+        time_range = None
+        if time_field:
+            time_range = { time_field: {} }
+            if start_time != None:
+                time_range[time_field]["gte"] = start_time
+            if stop_time != None:
+                time_range[time_field]["lte"] = stop_time
 
         # Connect to Elasticsearch (TODO is it faster if this is global?)
         es = Elasticsearch(
@@ -901,7 +925,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
         base_s = Search(index=idx).using(es).params(size=max_batch)
 
         #Add time bounds
-        if time_range[time_field]:
+        if time_range and time_range[time_field]:
             base_s = base_s.filter("range", **time_range)
 
         #Add lucene query
@@ -1165,11 +1189,13 @@ def generate_tile(idx, x, y, z,
         area = xwidth * yheight
 
         #Handle time calculations
-        time_range = { time_field: {} }
-        if start_time != None:
-            time_range[time_field]["gte"] = start_time
-        if stop_time != None:
-            time_range[time_field]["lte"] = stop_time
+        time_range = None
+        if time_field:
+            time_range = { time_field: {} }
+            if start_time != None:
+                time_range[time_field]["gte"] = start_time
+            if stop_time != None:
+                time_range[time_field]["lte"] = stop_time
 
         # Connect to Elasticsearch (TODO is it faster if this is global?)
         es = Elasticsearch(
@@ -1183,7 +1209,8 @@ def generate_tile(idx, x, y, z,
         base_s = Search(index=idx).using(es)
         #base_s = base_s.params(size=0)
         #Add time bounds
-        if time_range[time_field]:
+        if time_range and time_range[time_field]:
+            current_app.logger.info("TIME RANGE: %s", time_range)
             base_s = base_s.filter("range", **time_range)
 
         #Add lucene query
