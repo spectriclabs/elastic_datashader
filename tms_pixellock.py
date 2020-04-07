@@ -36,6 +36,7 @@ import datashader.reductions as rd
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, A, Q
 from elasticsearch_dsl.aggs import Bucket
+from elasticsearch_dsl.utils import AttrList
 
 import mercantile
 
@@ -806,6 +807,8 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
     if metrics is None:
         metrics = {}
     metrics["over_max"] = False
+    metrics["hits"] = 0
+    metrics["ellipses"] = 0
 
     geopoint_center = geopoint_fields["geopoint_center"]
     ellipse_major = geopoint_fields["ellipse_major"]
@@ -815,6 +818,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
     category_field = geopoint_fields.get("category_field")
 
     for i, hit in enumerate(search.scan()):
+        metrics["hits"] += 1
         # TODO this actually isn't maximum ellipses per tile, but rather
         # maximum number of records iterated.  We might want to keep this behavior
         # because if you ask for ellipses on a index where none of the records have ellipse
@@ -822,36 +826,101 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
         if i >= maximum_ellipses_per_tile:
             metrics["over_max"] = True
             break
-        #Handle deg->Meters conversion and everything else
-        x0,y0 = ds.utils.lnglat_to_meters(hit[geopoint_center]["lon"], hit[geopoint_center]["lat"])
-        major = hit[ellipse_major]
-        minor = hit[ellipse_minor]
-        angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
-        if ellipse_units == "majmin_nm":
-            major = major * 1852 #nm to meters
-            minor = minor * 1852 #nm to meters
-        elif ellipse_units == "semi_majmin_nm":
-            major = major * (2 * 1852) #nm to meters, semi to full
-            minor = minor * (2 * 1852) #nm to meters, semi to full
-        elif ellipse_units == "semi_majmin_m":
-            major = major * 2 #semi to full
-            minor = minor * 2 #semi to full
-        #NB. assume "majmin_m" if any others
 
-        #expel above CEP limit
-        #TODO: Figure out how we will handle CEP maximums
-        if major > extend_meters or minor > extend_meters:
+        #Get all the ellipse fields
+        locs = getattr(hit, geopoint_center, None)
+        majors = getattr(hit, ellipse_major, None)
+        minors = getattr(hit, ellipse_minor, None)
+        angles = getattr(hit, ellipse_tilt, None)
+
+        #Check that we have all the fields
+        if locs is None:
+            current_app.logger.debug("hit field %s has no values", geopoint_center)
+            continue
+        if majors is None:
+            current_app.logger.debug("hit field %s has no values", ellipse_major)
+            continue
+        if minors is None:
+            current_app.logger.debug("hit field %s has no values", ellipse_minor)
+            continue
+        if angles is None:
+            current_app.logger.debug("hit field %s has no values", ellipse_tilt)
             continue
 
-        X,Y = ellipse(minor/2.0,major/2.0,angle,x0,y0, Nb=16) #Points per ellipse, NB. this takes semi-maj/min
-        if category_field:
-            c = str(getattr(hit, category_field, "None"))
+        #If its a list determine if there are multiple geos or just a single geo in list format
+        if isinstance(locs, list) or isinstance(locs, AttrList):
+            if len(locs) == 2 and isinstance(locs[0], float) and isinstance(locs[1], float):
+                locs = [locs]
+                majors = [majors]
+                minor = [minors]
+                angles = [angles]
         else:
-            c = "None"
+            #All other cases are single ellipses
+            locs = [locs]
+            majors = [majors]
+            minor = [minors]
+            angles = [angles]
+
+        #verify same length
+        if not (len(locs) == len(majors) == len(minors) == len(angles)):
+            current_app.logger.warning("ellipse parameters and length are not consistent")
+            continue
         
-        for p in zip(X,Y,len(X)*[c]):
-            yield {'x':p[0], 'y':p[1], 'c':p[2]}
-        yield NAN_LINE #Break between ellipses
+        #process each ellipse
+        for ii in range(len(locs)):
+            loc = locs[ii]
+
+            if isinstance(loc, str):
+                if "," no in loc:
+                    current_app.logger.warning("skipping loc with invalid str format %s", loc)
+                    continue
+                lat, lon = loc.split(",", 1)
+                loc = dict(lat=float(lat), lon=float(lon))
+            elif isinstance(loc, list) or isinstance(loc, AttrList):
+                if len(loc) != 2:
+                    current_app.logger.warning("skipping loc with invalid list format %s", loc)
+                    continue
+                lon, lat = loc
+                loc = dict(lat=float(lat), lon=float(lon))
+            elif not isinstance(loc, dict):
+                current_app.logger.warning("skipping loc with invalid format %s %s %s", loc, isinstance(loc, list), type(loc))
+                continue
+
+            major = majors[ii]
+            minor = minors[ii]
+            angle = angles[ii]
+
+            #Handle deg->Meters conversion and everything else
+            x0,y0 = ds.utils.lnglat_to_meters(hit[geopoint_center]["lon"], hit[geopoint_center]["lat"])
+            major = hit[ellipse_major]
+            minor = hit[ellipse_minor]
+            angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
+            if ellipse_units == "majmin_nm":
+                major = major * 1852 #nm to meters
+                minor = minor * 1852 #nm to meters
+            elif ellipse_units == "semi_majmin_nm":
+                major = major * (2 * 1852) #nm to meters, semi to full
+                minor = minor * (2 * 1852) #nm to meters, semi to full
+            elif ellipse_units == "semi_majmin_m":
+                major = major * 2 #semi to full
+                minor = minor * 2 #semi to full
+            #NB. assume "majmin_m" if any others
+
+            #expel above CEP limit
+            #TODO: Figure out how we will handle CEP maximums
+            if major > extend_meters or minor > extend_meters:
+                continue
+
+            X,Y = ellipse(minor/2.0,major/2.0,angle,x0,y0, Nb=16) #Points per ellipse, NB. this takes semi-maj/min
+            if category_field:
+                c = str(getattr(hit, category_field, "None"))
+            else:
+                c = "None"
+        
+            for p in zip(X,Y,len(X)*[c]):
+                yield {'x':p[0], 'y':p[1], 'c':p[2]}
+            yield NAN_LINE #Break between ellipses
+            metrics["ellipses"] += 1
 
 def generate_nonaggregated_tile(idx, x, y, z, 
                     geopoint_field="location", time_field='@timestamp', 
@@ -1039,12 +1108,14 @@ def generate_nonaggregated_tile(idx, x, y, z,
         )           
         s2 = time.time()
         
-        current_app.logger.debug("ES took %s for %s" % ((s2-s1), len(df)))        
+        current_app.logger.debug("ES took %s for ellipses: %s   hits: %s", (s2-s1), metrics.get("ellipses",0), metrics.get("hits",0) )        
         
         #If count is zero then return a null image
         if len(df) == 0:
             current_app.logger.debug("No points in bounding box")
-            img = b""
+            img = gen_empty(tile_width_px, tile_height_px)
+            if metrics.get("over_max"):
+                img = gen_overlay(img)
         else:
             #Generate the image
             df["C"] = df["c"].astype('category')
@@ -1136,6 +1207,13 @@ def gen_error(width, height, thickness=8):
     draw.line( [(0,0), (width,height)], color, thickness)
     draw.line( [(width,0), (0,height)], color, thickness)
 
+    with io.BytesIO() as output:
+        overlay.save(output, format='PNG')
+        return output.getvalue()
+
+@lru_cache(10)
+def gen_empty(width, height):
+    overlay = Image.new('RGBA', (width, height))
     with io.BytesIO() as output:
         overlay.save(output, format='PNG')
         return output.getvalue()
@@ -1303,7 +1381,7 @@ def generate_tile(idx, x, y, z,
             # In a numeric field, we can fall back to histogram mode if there are too many unique values
             if category_cnt >= 1000 and category_type == "number":
                 current_app.logger.info("attempting histogram")
-                if hasattr(bounds_resp.aggregations, 'field_stats'):
+                if bounds_resp and hasattr(bounds_resp.aggregations, 'field_stats'):
                     current_app.logger.info("field stats %s", bounds_resp.aggregations.field_stats)
                     # to prevent strain on the cluster, if there are over 1million
                     # documents given the current parameters, reduce the number of histogram
