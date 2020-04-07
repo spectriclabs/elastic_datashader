@@ -1094,6 +1094,10 @@ def generate_nonaggregated_tile(idx, x, y, z,
             "ellipse_units": ellipse_units,
             "category_field": category_field
         }
+
+        includes_fields = list( filter( lambda x: x is not None, geopoint_fields.values() ) )
+        count_s = count_s.source(includes=includes_fields)
+
         #Process the hits (geos) into a list of points
         s1 = time.time()
         metrics = dict(over_max=False)
