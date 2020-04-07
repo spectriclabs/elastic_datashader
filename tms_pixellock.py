@@ -871,7 +871,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             loc = locs[ii]
 
             if isinstance(loc, str):
-                if "," no in loc:
+                if "," not in loc:
                     current_app.logger.warning("skipping loc with invalid str format %s", loc)
                     continue
                 lat, lon = loc.split(",", 1)
