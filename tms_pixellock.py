@@ -89,7 +89,7 @@ class Config(object):
     PROXY_HOST = os.environ.get("DATASHADER_PROXY_HOST", None)
     PROXY_PREFIX = os.environ.get("DATASHADER_PROXY_PREFIX", "")
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
-    MAX_BINS = os.environ.get("DATASHADER_MAX_BINS", 10000)
+    MAX_BINS = int(os.environ.get("DATASHADER_MAX_BINS", 10000))
     MAX_BATCH = int(os.environ.get("DATASHADER_MAX_BATCH", 10000))
     PORT = None
     HOSTNAME = socket.getfqdn()
@@ -504,7 +504,7 @@ def get_tms(idx, x, y, z):
                         category_field=category_field, category_type=category_type, map_filename=color_map_filename,
                         cmap=cmap, spread=spread, span_range=span_range,
                         lucene_query=lucene_query, dsl_filter=dsl_filter,
-                        max_bins=current_app.config["MAX_BINS"],
+                        max_bins=int(current_app.config["MAX_BINS"]),
                         max_batch=int(current_app.config["MAX_BATCH"]),
                         justification=justification,
                         ellipse_major=ellipse_major, ellipse_minor=ellipse_minor, 
