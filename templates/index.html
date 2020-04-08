@@ -16,12 +16,14 @@
     <th>Stop</th>
     <th>Category</th>
     <th>Ellipse</th>
-    <th>Other</th>
+    <th>Params</th>
+    <th>Map</th>
 </tr>
 {% for l,hashes in layer_info.items() %}
 <tr>
     <td><a href="./clear_cache?name={{ l }}">Clear</a></td>
     <td>{{ l }}</td>
+    <td></td>
     <td></td>
     <td></td>
     <td></td>
@@ -40,7 +42,8 @@
     <td>{{ params['stop_time'] }}</td>
     <td>{{ params['category_field'] }}</td>
     <td>{{ params['ellipses'] }}</td>
-    <td>{% if params['category_field'] %} <a href="./color_map?name={{l}}&field={{params['category_field']}}">MAP</a>  {% endif %}</td>
+    <td><a href="./parameters?name={{l}}&hash={{h}}">Params</a></td>
+    <td>{% if params['category_field'] %} <a href="./color_map?name={{l}}&field={{params['category_field']}}">Map</a>  {% endif %}</td>
 </tr>
 {% endfor %}
 {% endfor %}

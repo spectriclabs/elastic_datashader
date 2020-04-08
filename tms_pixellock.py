@@ -154,6 +154,25 @@ def display_color_map():
 
     return render_template('color_map.html', name=request.args.get('name'), field=request.args.get('field'), color_key_map=color_key_map)
 
+@api.route('/parameters', methods=['GET'])
+def display_parameters():
+    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"/%s/%s-colormap.json"%(request.args.get('name'), request.args.get('field')))
+    
+    #Build Layer Info
+    layer_info = {}
+    layers = os.listdir(current_app.config["CACHE_DIRECTORY"])
+    for l in layers:
+        if l == request.args.get('name'):
+            if not os.path.isfile(current_app.config["CACHE_DIRECTORY"]+l):
+                hashes = os.listdir(current_app.config["CACHE_DIRECTORY"]+l+"/")
+                for h in hashes:
+                    if h == request.args.get('hash'):
+                        if os.path.exists(current_app.config["CACHE_DIRECTORY"]+l+"/"+h+"/params.json"):
+                            with open(current_app.config["CACHE_DIRECTORY"]+l+'/'+h+"/params.json") as f:
+                                params = json.loads(f.read())
+                                return render_template('parameters.html', title='Elastic Data Shader Server', params=params, name=request.args.get('name'), hash=request.args.get('hash'))
+    return render_template('parameters.html', title='Elastic Data Shader Server', params={}, name=request.args.get('name'), hash=request.args.get('hash'))
+
 class ConfigForm(FlaskForm):
     name = wtforms.StringField('Name', description="Name of map layer", validators=[wtforms.validators.DataRequired()])
     idx = wtforms.StringField('Index', description="Index name", validators=[wtforms.validators.DataRequired()])
