@@ -36,7 +36,7 @@ import datashader.reductions as rd
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, A, Q
 from elasticsearch_dsl.aggs import Bucket
-from elasticsearch_dsl.utils import AttrList
+from elasticsearch_dsl.utils import AttrList, AttrDict
 
 import mercantile
 
@@ -852,16 +852,16 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             if len(locs) == 2 and isinstance(locs[0], float) and isinstance(locs[1], float):
                 locs = [locs]
                 majors = [majors]
-                minor = [minors]
+                minors = [minors]
                 angles = [angles]
         else:
             #All other cases are single ellipses
             locs = [locs]
             majors = [majors]
-            minor = [minors]
+            minors = [minors]
             angles = [angles]
 
-        #verify same length
+        #verify same length        
         if not (len(locs) == len(majors) == len(minors) == len(angles)):
             current_app.logger.warning("ellipse parameters and length are not consistent")
             continue
@@ -882,7 +882,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
                     continue
                 lon, lat = loc
                 loc = dict(lat=float(lat), lon=float(lon))
-            elif not isinstance(loc, dict):
+            elif not (isinstance(loc, dict) or isinstance(loc, AttrDict)):
                 current_app.logger.warning("skipping loc with invalid format %s %s %s", loc, isinstance(loc, list), type(loc))
                 continue
 
