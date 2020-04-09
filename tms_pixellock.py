@@ -228,42 +228,44 @@ def check_cache_age(cache_dir, age_limit):
 
 @api.route('/<idx>/<field_name>/legend.json', methods=['GET'])
 def provide_legend(idx, field_name):
-    from_time = None
-    to_time = None
-    dsl_filter = None
-    lucene_query = None
+    #Extract out special extent parameter that is independent from hash
     extent = None
-
-    geopoint_field = request.args.get('geopoint_field')
-    timestamp_field = request.args.get('timestamp_field', '@timestamp')
-    
-    #Argument Parameter, NB. These overwrite what is in index config
     params = request.args.get('params')
     if params and params != '{params}':
         params = json.loads(request.args.get('params'))
-        if params.get("timeFilters",{}).get("from"):
-            from_time = params.get("timeFilters",{}).get("from")
-        if params.get("timeFilters",{}).get("to"):
-            to_time = params.get("timeFilters",{}).get("to")
-        if params.get("filters") and lucene_query is None:
-            dsl_filter = build_dsl_filter(params.get("filters"))
-        if params.get("query") and lucene_query is None:
-            lucene_query = params.get("query").get("query")
-        if params.get("extent"):
+        if params.get("extent"):#TODO Move this out
             extent = params.get("extent")
-    elif params and params == '{params}':
-        #If the parameters haven't been provided yet
-        resp = Response("[]", status=204)
+
+    #Get hash and parameters
+    try:
+        parameter_hash, params = extract_parameters(request)
+    except Exception as e:
+        current_app.logger.exception("Error while extracting parameters")
+        img = gen_error(tile_height_px, tile_width_px)
+        resp = Response(img, status=200)
+        resp.headers['Content-Type'] = 'image/png'
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.headers['Error'] = str(e)
+        resp.cache_control.max_age = 60
         return resp
+
+    #Assign param value to legacy keyword values
+    timestamp_field = params["timestamp_field"]
+    start_time = params["start_time"]
+    stop_time = params["stop_time"]
+    lucene_query = params["lucene_query"]
+    dsl_filter = params["dsl_filter"]
+    geopoint_field = params["geopoint_field"]
+    cmap = params["cmap"]
 
     #Handle time calculations
     time_range = None
     if timestamp_field: 
         time_range = { timestamp_field: {} }
-        if from_time != None:
-            time_range[timestamp_field]["gte"] = from_time
-        if to_time != None:
-            time_range[timestamp_field]["lte"] = to_time
+        if start_time != None:
+            time_range[timestamp_field]["gte"] = start_time
+        if stop_time != None:
+            time_range[timestamp_field]["lte"] = stop_time
 
     # Connect to Elasticsearch (TODO is it faster if this is global?)
     es = Elasticsearch(
@@ -306,12 +308,12 @@ def provide_legend(idx, field_name):
     if extent:
         legend_bbox = {
             "top_left": {
-                "lat": extent["maxLat"],
-                "lon": extent["minLon"],
+                "lat": min(90.0, extent["maxLat"]),
+                "lon": max(-180.0, extent["minLon"]),
             },
             "bottom_right": {
-                "lat": extent["minLat"],
-                "lon": extent["maxLon"],
+                "lat": max(-90.0, extent["minLat"]),
+                "lon": min(180.0, extent["maxLon"]),
             }
         }
 
@@ -336,22 +338,19 @@ def provide_legend(idx, field_name):
         resp.headers['Access-Control-Allow-Origin'] = '*'
         resp.cache_control.max_age = 60
         return resp
-
-    # Load the color key
-    color_key_map = {}
-    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"%s/%s-colormap.json"%(idx, field_name))
-    if os.path.exists(color_file):
-        with open(color_file, 'r') as c:
-            color_key_map = yaml.safe_load(c)
-    else:
-        current_app.logger.warning("No colormap found at: %s", color_file)
     
     # Get the colors for each category in view
+    cats_to_generate = []
+    color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/colormap.json"%(parameter_hash))
+    for category in response.aggregations.categories:
+        cats_to_generate.append(str(category.key))
+    color_key_map = create_color_key_hash_file(cats_to_generate, color_map_filename, cmap=cmap)
+
     color_key_legend = []
     for category in response.aggregations.categories:
         k = str(category.key)
         color_key_legend.append( dict(key=k, color=color_key_map.get(k, "#000000"), count=category.doc_count) )
-    
+        
     data = json.dumps(color_key_legend)
     resp = Response(data, status=200)
     resp.headers['Content-Type'] = 'application/json'
@@ -370,155 +369,26 @@ def get_tms(idx, x, y, z):
             resp = Response("TMS must be accessed via reverse proxy", status=403)
             return resp
 
-    #Default values
-    ellipses = False
-    justification = default_justification
-    lucene_query = None
-    from_time = None
-    to_time = "now"
-    dsl_filter = None
-    extent = None
-    cmap = "bmy"
-    geopoint_field = None
-    timestamp_field = "@timestamp"
-    category_field = None
-    category_type = None
-    ellipse_major = ""
-    ellipse_minor = ""
-    ellipse_tilt = ""
-    ellipse_units = ""
-
-    #Argument Parameter, NB. These overwrite what is in index config
-    params = request.args.get('params')
-    if params and params != '{params}':
-        params = json.loads(request.args.get('params'))
-        if params.get("timeFilters",{}).get("from"):
-            from_time = params.get("timeFilters",{}).get("from")
-        if params.get("timeFilters",{}).get("to"):
-            to_time = params.get("timeFilters",{}).get("to")
-        if params.get("filters") and lucene_query is None:
-            dsl_filter = build_dsl_filter(params.get("filters"))
-        if params.get("query") and lucene_query is None:
-            lucene_query = params.get("query").get("query")
-        if params.get("extent"):
-            extent = params.get("extent")
-    elif params and params == '{params}':
-        #If the parameters haven't been provided yet
-        resp = Response("TMS parameters not yet provided", status=204)
-        return resp
-
-    # Custom parameters can be provided by the URL
-    ellipses = request.args.get('ellipses', default=ellipses)
-    if ellipses == "false" or ellipses==False:
-        ellipses = False
-    else:
-        #Handle the other fields
-        ellipse_major = request.args.get('ellipse_major', default="")
-        ellipse_minor = request.args.get('ellipse_minor', default="")
-        ellipse_tilt = request.args.get('ellipse_tilt', default="")
-        ellipse_units = request.args.get('ellipse_units', default="")
-        if ellipse_major == "" or ellipse_major == "" or ellipse_major == "":
-            ellipses = False
-    
-    category_field = request.args.get('category_field', default=category_field)
-    category_type = request.args.get('category_type', default=category_type)
-    cmap = request.args.get('cmap', default=cmap)
-    spread = request.args.get('spread')
-    if spread == "coarse":
-        spread = 10
-    elif spread == "fine":
-        spread = 3
-    elif spread == "finest":
-        spread = 1
-    elif spread == "auto":
-        spread = None
-    else:
-        try:
-            spread = int(spread)
-        except (TypeError, ValueError):
-            spread = None
-    span_range = request.args.get('span', default="auto")
-    geopoint_field = request.args.get('geopoint_field', default=geopoint_field)
-    timestamp_field = request.args.get('timestamp_field', default=timestamp_field)
-
-    # TODO handle dumb javascript on the client side
-    if category_field == "null":
-        category_field = None
-    current_app.logger.info("geopoint %s timestamp %s", geopoint_field, timestamp_field)
-
     # TMS tile coordinates
     x = int(x)
     y = int(y)
     z = int(z)
 
-    #Handle time bounding
-    now = datetime.utcnow()   
-    stop_time = now
-    if to_time:
-        try:
-            stop_time = convertKibanaTime(to_time, now)
-        except ValueError:
-            current_app.logger.exception("invalid to_time parameter")
-            img = gen_error(tile_height_px, tile_width_px)
-            resp = Response(img, status=200)
-            resp.headers['Content-Type'] = 'image/png'
-            resp.headers['Access-Control-Allow-Origin'] = '*'
-            resp.headers['Error'] = 'invalid to_time parameter'
-            resp.cache_control.max_age = 60
-            return resp
-
-    start_time = None
-    if from_time:
-        try:
-            start_time = convertKibanaTime(from_time, now)
-        except ValueError:
-            current_app.logger.exception("invalid from_time parameter")
-            img = gen_error(tile_height_px, tile_width_px)
-            resp = Response(img, status=200)
-            resp.headers['Content-Type'] = 'image/png'
-            resp.headers['Access-Control-Allow-Origin'] = '*'
-            resp.headers['Error'] = 'invalid from_time parameter'
-            resp.cache_control.max_age = 60
-            return resp
-
-    start_time, stop_time = quantizeTimeRange(start_time, stop_time)
-
-    if geopoint_field is None:
+    #Get hash and parameters
+    try:
+        parameter_hash, params = extract_parameters(request)
+    except Exception as e:
+        current_app.logger.exception("Error while extracting parameters")
         img = gen_error(tile_height_px, tile_width_px)
         resp = Response(img, status=200)
         resp.headers['Content-Type'] = 'image/png'
         resp.headers['Access-Control-Allow-Origin'] = '*'
-        resp.headers['Error'] = 'missing geopoint_field'
+        resp.headers['Error'] = str(e)
         resp.cache_control.max_age = 60
         return resp
 
-    #Calculate a hash value for the specific parameter set
-    hashable_params = {
-        "start_time":start_time,
-        "stop_time":stop_time,
-        "dsl_filter":dsl_filter,
-        "lucene_query":lucene_query,
-        "cmap":cmap,
-        "spread":spread,
-        "span_range":span_range,
-        "category_field":category_field,
-        "ellipses":ellipses,
-        "ellipse_major":ellipse_major,
-        "ellipse_minor":ellipse_minor,
-        "ellipse_tilt":ellipse_tilt,
-        "ellipse_units":ellipse_units
-    }
-    for k in hashable_params.keys():
-        if isinstance(hashable_params[k], datetime):
-                hashable_params[k] = hashable_params[k].isoformat()
-
-    parameter_hash = hashlib.md5()
-    for key, param in sorted(hashable_params.items()):
-        parameter_hash.update(str(param).encode("utf-8"))
-    parameter_hash = parameter_hash.hexdigest()
-    current_app.logger.debug("Parameters: %s (%s)", hashable_params, parameter_hash)
-    
-    set_cache_params("/%s/%s/params.json"%(idx, parameter_hash), current_app.config["CACHE_DIRECTORY"], hashable_params)
+    #Store them to the cache as json
+    set_cache_params("/%s/%s/params.json"%(idx, parameter_hash), current_app.config["CACHE_DIRECTORY"], params)
 
     #Check if the cached image already exists
     c = get_cache( "/%s/%s/%s/%s/%s.png"%(idx, parameter_hash, z, x, y), current_app.config["CACHE_DIRECTORY"])
@@ -534,32 +404,22 @@ def get_tms(idx, x, y, z):
             current_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
         
         check_cache_dir(idx)
-        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s-colormap.json"%category_field)
+        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/colormap.json"%(parameter_hash))
         
         #Separate call for ellipse
         try:
-            if ellipses:
-                img = generate_nonaggregated_tile(idx, x, y, z, 
-                        geopoint_field=geopoint_field, time_field=timestamp_field, 
-                        start_time=start_time, stop_time=stop_time,
-                        category_field=category_field, category_type=category_type, map_filename=color_map_filename,
-                        cmap=cmap, spread=spread, span_range=span_range,
-                        lucene_query=lucene_query, dsl_filter=dsl_filter,
+            if params["ellipses"]:
+                img = generate_nonaggregated_tile(idx, x, y, z, params, 
+                        map_filename=color_map_filename,
                         max_bins=int(current_app.config["MAX_BINS"]),
                         max_batch=int(current_app.config["MAX_BATCH"]),
-                        justification=justification,
-                        ellipse_major=ellipse_major, ellipse_minor=ellipse_minor, 
-                        ellipse_tilt=ellipse_tilt, ellipse_units=ellipse_units,
-                        maximum_cep = 50, maximum_ellipses_per_tile = 100000 )
+                        maximum_cep = 50, 
+                        maximum_ellipses_per_tile = 100000 )
             else:
-                img = generate_tile(idx, x, y, z, 
-                        geopoint_field=geopoint_field, time_field=timestamp_field, 
-                        start_time=start_time, stop_time=stop_time,
-                        category_field=category_field, category_type=category_type, map_filename=color_map_filename,
-                        cmap=cmap, spread=spread, span_range=span_range,
-                        lucene_query=lucene_query, dsl_filter=dsl_filter,
-                        max_bins=current_app.config["MAX_BINS"],
-                        justification=justification )
+                img = generate_tile(idx, x, y, z, params,
+                        map_filename=color_map_filename,
+                        max_bins=current_app.config["MAX_BINS"] )
+
         except Exception as e:
             logging.exception("Exception Generating Tile for request %s", request)
             # generate an error tile/don't cache cache it
@@ -582,6 +442,131 @@ def get_tms(idx, x, y, z):
 ###########################################################################
 # Utility Functions
 ###########################################################################
+
+def extract_parameters(request):
+    #Get the parameters from a request and return hash and dict of parameters
+
+    #Default values
+    from_time = None
+    to_time = "now"
+    params = {
+        "justification": default_justification,
+        "geopoint_field": None,
+        "timestamp_field": "@timestamp",
+        
+        "lucene_query": None,
+        "dsl_filter": None,
+        
+        "cmap": None,
+        "category_field": None,
+        "category_type": None,
+        
+        "ellipses": False,
+        "ellipse_major": "",
+        "ellipse_minor": "",
+        "ellipse_tilt": "",
+        "ellipse_units": "",
+        
+        "spread": None,
+        "span_range": None
+    }
+
+    #Argument Parameter, NB. These overwrite what is in index config
+    arg_params = request.args.get('params')
+    if arg_params and arg_params != '{params}':
+        arg_params = json.loads(request.args.get('params'))
+        if arg_params.get("timeFilters",{}).get("from"):
+            from_time = arg_params.get("timeFilters",{}).get("from")
+        if arg_params.get("timeFilters",{}).get("to"):
+            to_time = arg_params.get("timeFilters",{}).get("to")
+        if arg_params.get("filters") and params["lucene_query"] is None:
+            params["dsl_filter"] = build_dsl_filter(arg_params.get("filters"))
+        if arg_params.get("query") and params["lucene_query"] is None:
+            params["lucene_query"] = arg_params.get("query").get("query")
+    elif arg_params and arg_params == '{params}':
+        #If the parameters haven't been provided yet
+        resp = Response("TMS parameters not yet provided", status=204)
+        return resp
+
+    # Custom parameters can be provided by the URL
+    params["ellipses"] = request.args.get('ellipses', default=params["ellipses"])
+    if params["ellipses"] == "false" or params["ellipses"]=="False":
+        params["ellipses"] = False
+    else:
+        #Handle the other fields
+        params["ellipse_major"] = request.args.get('ellipse_major', default="")
+        params["ellipse_minor"] = request.args.get('ellipse_minor', default="")
+        params["ellipse_tilt"] = request.args.get('ellipse_tilt', default="")
+        params["ellipse_units"] = request.args.get('ellipse_units', default="")
+        if params["ellipse_major"] == "" or params["ellipse_major"] == "" or params["ellipse_major"] == "":
+            params["ellipses"] = False
+    
+    params["category_field"] = request.args.get('category_field', default=params["category_field"])
+    params["category_type"] = request.args.get('category_type', default=params["category_type"])
+    params["spread"] = request.args.get('spread')
+    if params["spread"] == "coarse":
+        params["spread"] = 10
+    elif params["spread"] == "fine":
+        params["spread"] = 3
+    elif params["spread"] == "finest":
+        params["spread"] = 1
+    elif params["spread"] == "auto":
+        params["spread"] = None
+    else:
+        try:
+            params["spread"] = int(params["spread"])
+        except (TypeError, ValueError):
+            params["spread"] = None
+
+    params["cmap"] = request.args.get('cmap', default=params["cmap"])
+    if params["cmap"] == None:
+        if params["category_field"] == None:
+            params["cmap"] = "bmy"
+        else:
+            params["cmap"] = "glasbey_category10"
+    params["span_range"] = request.args.get('span', default="auto")
+    params["geopoint_field"] = request.args.get('geopoint_field', default=params["geopoint_field"])
+    params["timestamp_field"] = request.args.get('timestamp_field', default=params["timestamp_field"])
+
+    # TODO handle dumb javascript on the client side
+    if params["category_field"] == "null":
+        params["category_field"] = None
+
+    #Handle time bounding
+    now = datetime.utcnow()   
+    params["stop_time"] = now
+    if to_time:
+        try:
+            params["stop_time"] = convertKibanaTime(to_time, now)
+        except ValueError:
+            current_app.logger.exception("invalid to_time parameter")
+            raise Exception('invalid to_time parameter') 
+
+    params["start_time"] = None
+    if from_time:
+        try:
+            params["start_time"] = convertKibanaTime(from_time, now)
+        except ValueError:
+            current_app.logger.exception("invalid from_time parameter")
+            raise Exception('invalid from_time parameter') 
+
+    params["start_time"], params["stop_time"] = quantizeTimeRange(params["start_time"], params["stop_time"])
+
+    if params["geopoint_field"] is None:
+        current_app.logger.error("missing geopoint_field")
+        raise Exception('missing geopoint_field') 
+        
+
+    #Calculate a hash value for the specific parameter set
+    parameter_hash = hashlib.md5()
+    for k, p in sorted(params.items()):
+        if isinstance(p, datetime):
+                p = p.isoformat()
+        parameter_hash.update(str(p).encode("utf-8"))
+    parameter_hash = parameter_hash.hexdigest()
+    
+    current_app.logger.debug("Parameters: %s (%s)", params, parameter_hash)
+    return parameter_hash, params
 
 def get_connection_base():
     # TODO - this incorrectly assumes that proxy always implies HTTP an no-proxy is always HTTP
@@ -720,12 +705,15 @@ class GeotileGrid(Bucket):
     name = 'geotile_grid'
 
 def set_cache_params(paramsfile, cache_dir, params):
-    
     pathlib.Path(os.path.dirname(os.path.join(cache_dir+paramsfile))).mkdir(parents=True, exist_ok=True) 
     if os.path.exists(os.path.join(cache_dir+paramsfile)) == False:
         #Write params dict if it does not exist
+        params_cleaned = copy.copy(params)
+        for k, p in sorted(params_cleaned.items()):
+            if isinstance(p, datetime):
+                    params_cleaned[k] = p.isoformat()
         with open(os.path.join(cache_dir+paramsfile), 'w') as i:
-            i.write(json.dumps(params))
+            i.write(json.dumps(params_cleaned))
     else:
         #Touch the file to update last accessed time
         os.utime(os.path.join(cache_dir+paramsfile))
@@ -822,7 +810,8 @@ def ellipse(ra,rb,ang,x0,y0,Nb=16):
     return X,Y
 
 NAN_LINE = {'x':None, 'y': None, 'c':"None"}
-def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters, metrics=None):
+def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters, 
+                                           metrics=None, histogram_range=None, histogram_interval=None):
     if metrics is None:
         metrics = {}
     metrics["over_max"] = False
@@ -941,20 +930,32 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             yield NAN_LINE #Break between ellipses
             metrics["ellipses"] += 1
 
-def generate_nonaggregated_tile(idx, x, y, z, 
-                    geopoint_field="location", time_field='@timestamp', 
-                    start_time=None, stop_time=None,
-                    category_field=None, category_type=None, map_filename=None, cmap='bmy', spread=None,
-                    span_range='auto',
-                    lucene_query=None, dsl_filter=None,
+def generate_nonaggregated_tile(idx, x, y, z, params,
+                    map_filename=None, 
                     max_bins=10000,
                     max_batch=10000,
-                    justification=default_justification,
-                    ellipse_major="", ellipse_minor="", 
-                    ellipse_tilt="", ellipse_units=None,
-                    maximum_cep = 50, maximum_ellipses_per_tile = 100000):
+                    maximum_cep = 50, 
+                    maximum_ellipses_per_tile = 100000):
 
-    current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
+    #Handle legacy parameters
+    geopoint_field=params["geopoint_field"]
+    timestamp_field=params["timestamp_field"]
+    start_time=params["start_time"]
+    stop_time=params["stop_time"]
+    category_field=params["category_field"]
+    category_type=params["category_type"]
+    cmap=params["cmap"]
+    spread=params["spread"]
+    span_range=params["span_range"]
+    lucene_query=params["lucene_query"]
+    dsl_filter=params["dsl_filter"]
+    justification=params["justification"]
+    ellipse_major=params["ellipse_major"] 
+    ellipse_minor=params["ellipse_minor"]
+    ellipse_tilt=params["ellipse_tilt"]
+    ellipse_units=params["ellipse_units"]
+                    
+    current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, timestamp_field, category_field, start_time, stop_time))
     try:
         # Get the web mercador bounds for the tile
         xy_bounds = mercantile.xy_bounds(x, y, z)
@@ -994,12 +995,12 @@ def generate_nonaggregated_tile(idx, x, y, z,
 
         #Handle time calculations
         time_range = None
-        if time_field:
-            time_range = { time_field: {} }
+        if timestamp_field:
+            time_range = { timestamp_field: {} }
             if start_time != None:
-                time_range[time_field]["gte"] = start_time
+                time_range[timestamp_field]["gte"] = start_time
             if stop_time != None:
-                time_range[time_field]["lte"] = stop_time
+                time_range[timestamp_field]["lte"] = stop_time
 
         # Connect to Elasticsearch (TODO is it faster if this is global?)
         es = Elasticsearch(
@@ -1013,7 +1014,7 @@ def generate_nonaggregated_tile(idx, x, y, z,
         base_s = Search(index=idx).using(es).params(size=max_batch)
 
         #Add time bounds
-        if time_range and time_range[time_field]:
+        if time_range and time_range[timestamp_field]:
             base_s = base_s.filter("range", **time_range)
 
         #Add lucene query
@@ -1051,9 +1052,12 @@ def generate_nonaggregated_tile(idx, x, y, z,
                 'point_count','value_count',field=geopoint_field
             )
 
+
+        histogram_range = None
+        histogram_interval = None
         #If the field is a number, we need to figure out it's min/max globally
         # TODO this is currently disabled because it isn't necessary
-        if category_type == "number" and False:
+        if category_type == "number":
             bounds_s.aggs.metric(
                 'field_stats', 'stats', field=category_field
             )
@@ -1074,6 +1078,27 @@ def generate_nonaggregated_tile(idx, x, y, z,
                     ]
             if hasattr(bounds_resp.aggregations, "point_count"):
                 global_doc_cnt = bounds_resp.aggregations.point_count.value
+            
+            # In a numeric field, we can fall back to histogram mode if there are too many unique values
+            if category_type == "number":
+                current_app.logger.info("attempting histogram")
+                if hasattr(bounds_resp.aggregations, 'field_stats'):
+                    current_app.logger.info("field stats %s", bounds_resp.aggregations.field_stats)
+                    # to prevent strain on the cluster, if there are over 1million
+                    # documents given the current parameters, reduce the number of histogram
+                    # bins.  Note this is kinda a wag...maybe something smarter can be done
+                    if global_doc_cnt > 100000:
+                        category_cnt = 100
+                    else:
+                        category_cnt = 1000
+                    # determine the range of category values
+                    histogram_range = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)
+                    # round to the nearest larger power of 10
+                    histogram_range = math.pow(10, math.ceil(math.log10(histogram_range)))
+                    historgram_center = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)/2
+                    histogram_interval = histogram_range / category_cnt
+                    current_app.logger.info("histogram params %s %s %s", histogram_range, histogram_interval, category_cnt)
+
         else:
             current_app.logger.debug("Skipping global query")
 
@@ -1126,7 +1151,9 @@ def generate_nonaggregated_tile(idx, x, y, z,
                 geopoint_fields,
                 maximum_ellipses_per_tile,
                 extend_meters,
-                metrics
+                metrics,
+                histogram_range,
+                histogram_interval
             )
         )           
         s2 = time.time()
@@ -1177,8 +1204,8 @@ def generate_nonaggregated_tile(idx, x, y, z,
 
                 img = tf.shade(
                             agg, 
-                            cmap=cc.glasbey_category10, 
-                            color_key=create_color_key_hash_file(df["C"], map_filename),
+                            cmap=cc.palette[cmap], 
+                            color_key=create_color_key_hash_file(df["C"], map_filename, cmap=cmap),
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
@@ -1243,16 +1270,24 @@ def gen_empty(width, height):
 
 ####################################################
 
-def generate_tile(idx, x, y, z, 
-                    geopoint_field="location", time_field='@timestamp', 
-                    start_time=None, stop_time=None,
-                    category_field=None, category_type=None, map_filename=None, cmap='bmy', spread=None,
-                    span_range='auto',
-                    lucene_query=None, dsl_filter=None,
-                    max_bins=10000,
-                    justification=default_justification ):
+def generate_tile(idx, x, y, z, params,
+                map_filename=None, max_bins=10000):
+
+    #Handle legacy keywords               
+    geopoint_field=params["geopoint_field"]
+    timestamp_field=params["timestamp_field"]
+    start_time=params["start_time"]
+    stop_time=params["stop_time"]
+    category_field=params["category_field"]
+    category_type=params["category_type"]
+    cmap=params["cmap"] 
+    spread=params["spread"]
+    span_range=params["span_range"]
+    lucene_query=params["lucene_query"]
+    dsl_filter=params["dsl_filter"]
+    justification=params["justification"]
     
-    current_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, time_field, category_field, start_time, stop_time))
+    current_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, timestamp_field, category_field, start_time, stop_time))
     try:
         # Preconfigured tile size
         tile_height_px = 256
@@ -1291,12 +1326,12 @@ def generate_tile(idx, x, y, z,
 
         #Handle time calculations
         time_range = None
-        if time_field:
-            time_range = { time_field: {} }
+        if timestamp_field:
+            time_range = { timestamp_field: {} }
             if start_time != None:
-                time_range[time_field]["gte"] = start_time
+                time_range[timestamp_field]["gte"] = start_time
             if stop_time != None:
-                time_range[time_field]["lte"] = stop_time
+                time_range[timestamp_field]["lte"] = stop_time
 
         # Connect to Elasticsearch (TODO is it faster if this is global?)
         es = Elasticsearch(
@@ -1310,7 +1345,7 @@ def generate_tile(idx, x, y, z,
         base_s = Search(index=idx).using(es)
         #base_s = base_s.params(size=0)
         #Add time bounds
-        if time_range and time_range[time_field]:
+        if time_range and time_range[timestamp_field]:
             current_app.logger.info("TIME RANGE: %s", time_range)
             base_s = base_s.filter("range", **time_range)
 
@@ -1611,8 +1646,8 @@ def generate_tile(idx, x, y, z,
                     current_app.logger.debug("MinAlpha:%s Span:%s", min_alpha, span)
                     img = tf.shade(
                             agg, 
-                            cmap=cc.glasbey_category10, 
-                            color_key=create_color_key_hash_file(df["T"], map_filename), 
+                            cmap=cc.palette[cmap], 
+                            color_key=create_color_key_hash_file(df["T"], map_filename, cmap=cmap), 
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
