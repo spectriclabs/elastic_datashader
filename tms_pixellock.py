@@ -258,6 +258,7 @@ def provide_legend(idx, field_name):
     dsl_filter = params["dsl_filter"]
     geopoint_field = params["geopoint_field"]
     cmap = params["cmap"]
+    category_type = params["category_type"]
 
     #Handle time calculations
     time_range = None
@@ -317,7 +318,7 @@ def provide_legend(idx, field_name):
                 "lon": min(180.0, extent["maxLon"]),
             }
         }
-
+        current_app.logger.info("legend_bbox: %s", legend_bbox)
         legend_s = legend_s.filter("geo_bounding_box",
             **{
                 geopoint_field: legend_bbox
@@ -339,19 +340,56 @@ def provide_legend(idx, field_name):
         resp.headers['Access-Control-Allow-Origin'] = '*'
         resp.cache_control.max_age = 60
         return resp
-    
-    # Get the colors for each category in view
-    cats_to_generate = []
-    color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/colormap.json"%(parameter_hash))
-    for category in response.aggregations.categories:
-        cats_to_generate.append(str(category.key))
-    color_key_map = create_color_key_hash_file(cats_to_generate, color_map_filename, cmap=cmap)
 
-    color_key_legend = []
+    #determine if color map exists 
+    color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/colormap.json"%(parameter_hash))
+    try:
+        histogram_interval = get_histogram_from_color_file(color_map_filename)
+    except Exception as e:
+        current_app.logger.warning("No color map found")
+        resp = Response("[]", status=200)
+        resp.headers['Content-Type'] = 'application/json'
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.cache_control.max_age = 60
+        return resp
+
+
+    # Get the each category in view
+    cats_to_generate = []
     for category in response.aggregations.categories:
-        k = str(category.key)
-        color_key_legend.append( dict(key=k, color=color_key_map.get(k, "#000000"), count=category.doc_count) )
+        if histogram_interval and category_type == "number":
+            #Bin the data
+            raw = float(category.key)
+            quantized = math.floor((raw + 0.5 * histogram_interval)/histogram_interval)*histogram_interval
+            upper = round(quantized - 0.5*histogram_interval)
+            lower = round(quantized + 0.5*histogram_interval)
+            cats_to_generate.append("%s-%s"%(upper,lower))
+        else:
+            cats_to_generate.append(str(category.key))
+
+    #get all the existing color mappings from the json file
+    color_key_map = create_color_key_hash_file(set(cats_to_generate), color_map_filename, cmap=cmap, histogram_interval=histogram_interval)
+
+    #Now go through each value, bin it and total it up
+    totals_dict = {}
+    for category in response.aggregations.categories:
+        if histogram_interval and category_type == "number":
+            #Bin the data
+            raw = float(category.key)
+            quantized = math.floor((raw + 0.5 * histogram_interval)/histogram_interval)*histogram_interval
+            upper = round(quantized - 0.5*histogram_interval)
+            lower = round(quantized + 0.5*histogram_interval)
+            k = "%s-%s"%(upper,lower)
+        else:
+            k = str(category.key)
         
+        totals_dict[k] = totals_dict.get(k, 0) + category.doc_count
+
+    #Generate legend
+    color_key_legend = []    
+    for k,v in reversed(sorted(totals_dict.items(), key=lambda x: x[1])):
+        color_key_legend.append(dict(key=k, color=color_key_map.get(k, "#000000"), count=v))
+
     data = json.dumps(color_key_legend)
     resp = Response(data, status=200)
     resp.headers['Content-Type'] = 'application/json'
@@ -431,7 +469,7 @@ def get_tms(idx, x, y, z):
             resp = Response(img, status=200)
             resp.headers['Content-Type'] = 'image/png'
             resp.headers['Access-Control-Allow-Origin'] = '*'
-            resp.headers['Error'] = str(e)
+            resp.headers['Error'] = str(e.args)
             resp.cache_control.max_age = 60
             return resp
         
@@ -764,40 +802,67 @@ def convert(response):
                 c=bucket.centroid.count
             )
 
-color_key_hash_lock = threading.Lock()
-def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
+def create_color_key_hash_file(categories, color_file, cmap='glasbey_light', histogram_interval=None):
     color_key_map = {}
-    
 
     #Load the file
-    with open(color_file, 'a+') as stream:
-        try:
-            fcntl.flock(stream, fcntl.LOCK_EX)
-
-            stream.seek(0)
-            color_key_map = yaml.safe_load(stream)
-
-            #If file is blank load a blank dictionary
-            if color_key_map == None:
-                color_key_map = {}
-    
-            changed = False
-            color_key = {}
-            for k in set(categories):
-                # Set the global color key for this category
-                color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
-                if k not in color_key_map:
-                    #Add it to the map to return
-                    color_key_map[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
-                    changed = True
-            if changed:
+    with open(color_file+".lock", 'w') as lockfile:
+        fcntl.flock(lockfile, fcntl.LOCK_EX)
+        with open(color_file, 'w+') as stream:
+            try:
                 stream.seek(0)
-                yaml.dump(color_key_map, stream)
-                stream.flush()
-        finally:
-            fcntl.lockf(stream, fcntl.LOCK_UN)
+                color_key_map = yaml.safe_load(stream)
+
+                #If file is blank load a blank dictionary
+                if color_key_map == None:
+                    color_key_map = {}
+                changed = False
+                
+                #Store off the histogram value
+                if not ("histogram_interval" in color_key_map.keys()):
+                    color_key_map["histogram_interval"] = histogram_interval
+                    changed = True
+                elif color_key_map["histogram_interval"] != histogram_interval:
+                    color_key_map["histogram_interval"] = histogram_interval
+                    changed = True
+                
+                color_key = {}
+                for k in set(categories):
+                    # Set the global color key for this category
+                    color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
+                    if k not in color_key_map:
+                        #Add it to the map to return
+                        color_key_map[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
+                        changed = True
+                if changed:
+                    stream.seek(0)
+                    yaml.dump(color_key_map, stream)
+                    stream.flush()
+            finally:
+                fcntl.lockf(lockfile, fcntl.LOCK_UN)
 
     return color_key
+
+    
+def get_histogram_from_color_file(color_file):
+    color_key_map = {}
+
+    #Load the file
+    with open(color_file+".lock", 'w') as lockfile:
+        fcntl.flock(lockfile, fcntl.LOCK_EX)
+        with open(color_file, 'r') as stream:
+            try:
+                
+                stream.seek(0)
+                color_key_map = yaml.safe_load(stream)
+                #If file is blank load a blank dictionary
+                if color_key_map == None:
+                    raise Exception("No Colormap")
+                return color_key_map.get("histogram_interval", None)
+            finally:
+                fcntl.lockf(lockfile, fcntl.LOCK_UN)
+
+
 
 HEADERS = None
 header_lock = threading.Lock()
@@ -844,7 +909,7 @@ def ellipse(ra,rb,ang,x0,y0,Nb=16):
     return X,Y
 
 NAN_LINE = {'x':None, 'y': None, 'c':"None"}
-def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters, 
+def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters,
                                            metrics=None, histogram_range=None, histogram_interval=None):
     if metrics is None:
         metrics = {}
@@ -903,7 +968,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             minors = [minors]
             angles = [angles]
 
-        #verify same length        
+        #verify same length
         if not (len(locs) == len(majors) == len(minors) == len(angles)):
             current_app.logger.warning("ellipse parameters and length are not consistent")
             continue
@@ -933,7 +998,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             angle = angles[ii]
 
             #Handle deg->Meters conversion and everything else
-            x0,y0 = ds.utils.lnglat_to_meters(hit[geopoint_center]["lon"], hit[geopoint_center]["lat"])
+            x0,y0 = ds.utils.lnglat_to_meters(loc["lon"], loc["lat"])
             major = hit[ellipse_major]
             minor = hit[ellipse_minor]
             angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
@@ -955,7 +1020,16 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
 
             X,Y = ellipse(minor/2.0,major/2.0,angle,x0,y0, Nb=16) #Points per ellipse, NB. this takes semi-maj/min
             if category_field:
-                c = str(getattr(hit, category_field, "None"))
+                if histogram_interval:
+                    #Do quantization
+                    raw = getattr(hit, category_field, 0.0)
+                    quantized = math.floor((raw + 0.5 * histogram_interval)/histogram_interval)*histogram_interval
+                    upper = round(quantized - 0.5*histogram_interval)
+                    lower = round(quantized + 0.5*histogram_interval)
+                    c = "%s-%s"%(upper,lower)
+                else:
+                    #Just use the value
+                    c = str(getattr(hit, category_field, "None"))
             else:
                 c = "None"
         
@@ -1237,10 +1311,11 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
                     alpha_span = int(span[1]) * 25
                     min_alpha = 255 - min(alpha_span, 225)
 
+                current_app.logger.info("Storing histogram value: %s"%histogram_interval)
                 img = tf.shade(
                             agg, 
                             cmap=cc.palette[cmap], 
-                            color_key=create_color_key_hash_file(df["C"], map_filename, cmap=cmap),
+                            color_key=create_color_key_hash_file(df["C"], map_filename, cmap=cmap, histogram_interval=histogram_interval),
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
