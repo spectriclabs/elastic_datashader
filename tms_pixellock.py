@@ -92,11 +92,12 @@ class Config(object):
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
     MAX_BINS = int(os.environ.get("DATASHADER_MAX_BINS", 10000))
     MAX_BATCH = int(os.environ.get("DATASHADER_MAX_BATCH", 10000))
+    HEADER_FILE = os.environ.get("DATASHADER_HEADER_FILE", "./headers.yaml")
+    WHITELIST_HEADERS = os.environ.get("DATASHADER_WHITELIST_HEADERS", None)
     PORT = None
     HOSTNAME = socket.getfqdn()
 
 # Globals
-default_justification = "Software Development Testing"
 _color_key_map = []
 #config_lock = threading.Lock()
 
@@ -405,7 +406,10 @@ def get_tms(idx, x, y, z):
         
         check_cache_dir(idx)
         color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/colormap.json"%(parameter_hash))
-        
+
+        headers = get_es_headers(request.headers)
+        current_app.logger.info("Loaded elasticsearch headers %s", headers)
+
         #Separate call for ellipse
         try:
             if params["ellipses"]:
@@ -450,7 +454,6 @@ def extract_parameters(request):
     from_time = None
     to_time = "now"
     params = {
-        "justification": default_justification,
         "geopoint_field": None,
         "timestamp_field": "@timestamp",
         
@@ -796,6 +799,37 @@ def create_color_key_hash_file(categories, color_file, cmap='glasbey_light'):
 
     return color_key
 
+HEADERS = None
+header_lock = threading.Lock()
+def get_es_headers(request_headers=None):
+    global HEADERS, header_lock
+
+    with header_lock:
+        if HEADERS is None:
+            # Load HEADERS from the file if requested
+            header_file = current_app.config.get("HEADER_FILE")
+            if header_file and os.path.exists(header_file):
+                try:
+                    with open(header_file) as ff:
+                        HEADERS = yaml.safe_load(ff)
+                        if not isinstance(HEADERS, dict):
+                            raise ValueError("header YAML file must return a mapping, received %s", HEADERS)
+                except:
+                    current_app.logger.exception("Failed to load headers from %s", header_file)
+                    # in failure, headers are set to empty
+                    HEADERS = {}
+
+    result = copy.deepcopy(HEADERS)
+
+    # Figure out what headers are allowed to pass-through
+    whitelist_headers = current_app.config.get("WHITELIST_HEADERS")
+    if whitelist_headers and request_headers:
+        for hh in whitelist_headers.split(","):
+            if hh in request_headers:
+                result[hh] = request_headers[hh]
+
+    return result
+
 #Accelerated helper function for generating ellipses from point data
 @jit(nopython=True)
 def ellipse(ra,rb,ang,x0,y0,Nb=16):
@@ -935,7 +969,8 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
                     max_bins=10000,
                     max_batch=10000,
                     maximum_cep = 50, 
-                    maximum_ellipses_per_tile = 100000):
+                    maximum_ellipses_per_tile = 100000,
+                    headers = None):
 
     #Handle legacy parameters
     geopoint_field=params["geopoint_field"]
@@ -1007,7 +1042,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
             current_app.config.get("ELASTIC"),
             verify_certs=False,
             timeout=900,
-            headers={"acecard-justification":justification}
+            headers=headers
         )
 
         #Create base search 
@@ -1271,7 +1306,7 @@ def gen_empty(width, height):
 ####################################################
 
 def generate_tile(idx, x, y, z, params,
-                map_filename=None, max_bins=10000):
+                map_filename=None, max_bins=10000, headers=None):
 
     #Handle legacy keywords               
     geopoint_field=params["geopoint_field"]
@@ -1285,7 +1320,6 @@ def generate_tile(idx, x, y, z, params,
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
     dsl_filter=params["dsl_filter"]
-    justification=params["justification"]
     
     current_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, timestamp_field, category_field, start_time, stop_time))
     try:
@@ -1338,7 +1372,7 @@ def generate_tile(idx, x, y, z, params,
             current_app.config.get("ELASTIC"),
             verify_certs=False,
             timeout=900,
-            headers={"acecard-justification":justification}
+            headers=headers
         )
 
         #Create base search 
@@ -1800,6 +1834,8 @@ if __name__ == '__main__':
     parser.add_argument('-H', '--proxy_host', default=Config.PROXY_HOST, help="Proxy host")
     parser.add_argument('-P', '--proxy_prefix', default=Config.PROXY_PREFIX, help="Proxy prefix")
     parser.add_argument('-k', '--tms_key', default=Config.TMS_KEY, help="TMS key required in header")
+    parser.add_argument('--header-file', default=Config.HEADER_FILE, help="configured headers to include in ES requests")
+    parser.add_argument('-W', '--whitelist-headers', default=Config.WHITELIST_HEADERS, help="whitelist headers to pass along")
 
     # Development server arguments
     parser.add_argument('--debug', default=False, action='store_true', help="Enable Flask debug mode")
