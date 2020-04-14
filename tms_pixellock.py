@@ -92,6 +92,7 @@ class Config(object):
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
     MAX_BINS = int(os.environ.get("DATASHADER_MAX_BINS", 10000))
     MAX_BATCH = int(os.environ.get("DATASHADER_MAX_BATCH", 10000))
+    MAX_ELLIPSES_PER_TILE = int(os.environ.get("DATASHADER_MAX_BATCH", 100000))
     HEADER_FILE = os.environ.get("DATASHADER_HEADER_FILE", "./headers.yaml")
     WHITELIST_HEADERS = os.environ.get("DATASHADER_WHITELIST_HEADERS", None)
     PORT = None
@@ -138,22 +139,6 @@ def index():
             if layer_info.get(l):
                 layer_info[l] = collections.OrderedDict(reversed(sorted(layer_info[l].items(), key=lambda x: x[1]['age_timestamp'])))
     return render_template('index.html', title='Elastic Data Shader Server', cache_size=cache_size, layer_info=layer_info)
-
-@api.route('/color_map', methods=['GET'])
-def display_color_map():
-    color_key_map = {}
-    color_file = os.path.join(current_app.config["CACHE_DIRECTORY"]+"/%s/%s-colormap.json"%(request.args.get('name'), request.args.get('field')))
-    if os.path.exists(color_file):
-        with open(color_file, 'r') as c:
-            color_key_map = yaml.safe_load(c)
-    else:
-        current_app.logger.warning("No colormap found at: %s", color_file)
-    
-    color_key_hash = {}
-    for k in color_key_map.keys():
-        color_key_hash[k] = int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)
-
-    return render_template('color_map.html', name=request.args.get('name'), field=request.args.get('field'), color_key_map=color_key_map)
 
 @api.route('/parameters', methods=['GET'])
 def display_parameters():
@@ -234,7 +219,7 @@ def provide_legend(idx, field_name):
     params = request.args.get('params')
     if params and params != '{params}':
         params = json.loads(request.args.get('params'))
-        if params.get("extent"):#TODO Move this out
+        if params.get("extent"):#TODO Move this out from params on the JS side?
             extent = params.get("extent")
 
     #Get hash and parameters
@@ -242,67 +227,33 @@ def provide_legend(idx, field_name):
         parameter_hash, params = extract_parameters(request)
     except Exception as e:
         current_app.logger.exception("Error while extracting parameters")
-        img = gen_error(tile_height_px, tile_width_px)
-        resp = Response(img, status=200)
-        resp.headers['Content-Type'] = 'image/png'
+        resp = Response("[]", status=200)
+        resp.headers['Content-Type'] = 'application/json'
         resp.headers['Access-Control-Allow-Origin'] = '*'
         resp.headers['Error'] = str(e)
         resp.cache_control.max_age = 60
         return resp
+    
+    #If not in category mode, just return nothing
+    if params["category_field"] == None:
+        resp = Response("[]", status=200)
+        resp.headers['Content-Type'] = 'application/json'
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        resp.cache_control.max_age = 60
+        return resp
+
+    #Get or generate extended parameters
+    paramsfile = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/params.json"%(parameter_hash))
+    params = merge_generated_parameters(params, paramsfile, idx)
 
     #Assign param value to legacy keyword values
-    timestamp_field = params["timestamp_field"]
-    start_time = params["start_time"]
-    stop_time = params["stop_time"]
-    lucene_query = params["lucene_query"]
-    dsl_filter = params["dsl_filter"]
     geopoint_field = params["geopoint_field"]
-    cmap = params["cmap"]
     category_type = params["category_type"]
+    cmap = params["cmap"]
+    histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
 
-    #Handle time calculations
-    time_range = None
-    if timestamp_field: 
-        time_range = { timestamp_field: {} }
-        if start_time != None:
-            time_range[timestamp_field]["gte"] = start_time
-        if stop_time != None:
-            time_range[timestamp_field]["lte"] = stop_time
-
-    # Connect to Elasticsearch (TODO is it faster if this is global?)
-    es = Elasticsearch(
-        current_app.config.get("ELASTIC"),
-        verify_certs=False,
-        timeout=900,
-        headers={} # TODO headers
-    )
-
-    #Create base search 
-    base_s = Search(index=idx).using(es)
-
-    #Add time bounds
-    if time_range and time_range[timestamp_field]:
-        base_s = base_s.filter("range", **time_range)
-
-    #Add lucene query
-    if lucene_query:
-        base_s = base_s.filter('query_string', query=lucene_query)
-
-    #Add dsl filtering
-    if dsl_filter:
-        #Need to convert to a dict, merge with filters then convert back to a search object
-        base_dict = base_s.to_dict()
-        if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
-            base_dict["query"]["bool"]["filter"] = []
-        for f in dsl_filter["filter"]:
-            base_dict["query"]["bool"]["filter"].append(f)
-        if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
-            base_dict["query"]["bool"]["must_not"] = []
-        for f in dsl_filter["must_not"]:
-            base_dict["query"]["bool"]["must_not"].append(f)
-        base_s = Search.from_dict(base_dict)
-        base_s = base_s.index(idx).using(es)
-
+    #Get search object
+    base_s = get_search_base(params, idx)
     legend_s = copy.copy(base_s)
     legend_s = legend_s.params(size=0)
 
@@ -323,17 +274,28 @@ def provide_legend(idx, field_name):
             **{
                 geopoint_field: legend_bbox
             }  )
-    
-    max_legend_categories = 50
-    legend_s.aggs.bucket(
-        'categories',
-        'terms',
-        field=field_name,
-        size=max_legend_categories
-    )
 
+    max_legend_categories = 50
+    if histogram_interval != None:
+        #Put in the histogram search
+        legend_s.aggs.bucket(
+                        'categories',
+                        'histogram',
+                        field=field_name,
+                        interval=histogram_interval,
+                        min_doc_count=1
+                    )
+    else:
+        #Non-histogram legend
+        legend_s.aggs.bucket(
+            'categories',
+            'terms',
+            field=field_name,
+            size=max_legend_categories
+        )
     # Perform the execution
-    response = legend_s.execute()          
+    response = legend_s.execute()
+    #If no categories then return blank list
     if not hasattr(response.aggregations, 'categories'):
         resp = Response("[]", status=200)
         resp.headers['Content-Type'] = 'application/json'
@@ -341,61 +303,25 @@ def provide_legend(idx, field_name):
         resp.cache_control.max_age = 60
         return resp
 
-    #determine if color map exists 
-    color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/colormap.json"%(parameter_hash))
-    try:
-        histogram_interval = get_histogram_from_color_file(color_map_filename)
-    except Exception as e:
-        current_app.logger.warning("No color map found")
-        resp = Response("[]", status=200)
-        resp.headers['Content-Type'] = 'application/json'
-        resp.headers['Access-Control-Allow-Origin'] = '*'
-        resp.cache_control.max_age = 60
-        return resp
-
-
-    # Get the each category in view
-    cats_to_generate = []
+    # Generate the legend list
+    color_key_legend = []
     for category in response.aggregations.categories:
         if histogram_interval and category_type == "number":
             #Bin the data
             raw = float(category.key)
-            quantized = math.floor((raw + 0.5 * histogram_interval)/histogram_interval)*histogram_interval
-            upper = round(quantized - 0.5*histogram_interval)
-            lower = round(quantized + 0.5*histogram_interval)
-            cats_to_generate.append("%s-%s"%(upper,lower))
-        else:
-            cats_to_generate.append(str(category.key))
-
-    #get all the existing color mappings from the json file
-    color_key_map = create_color_key_hash_file(set(cats_to_generate), color_map_filename, cmap=cmap, histogram_interval=histogram_interval)
-
-    #Now go through each value, bin it and total it up
-    totals_dict = {}
-    for category in response.aggregations.categories:
-        if histogram_interval and category_type == "number":
-            #Bin the data
-            raw = float(category.key)
-            quantized = math.floor((raw + 0.5 * histogram_interval)/histogram_interval)*histogram_interval
-            upper = round(quantized - 0.5*histogram_interval)
-            lower = round(quantized + 0.5*histogram_interval)
-            k = "%s-%s"%(upper,lower)
+            lower = round(raw)
+            upper = round(raw + histogram_interval)
+            k = "%s-%s"%(lower, upper)
         else:
             k = str(category.key)
-        
-        totals_dict[k] = totals_dict.get(k, 0) + category.doc_count
-
-    #Generate legend
-    color_key_legend = []    
-    for k,v in reversed(sorted(totals_dict.items(), key=lambda x: x[1])):
-        color_key_legend.append(dict(key=k, color=color_key_map.get(k, "#000000"), count=v))
+        c = create_color_key([str(category.key)], cmap=cmap).get(str(category.key), "#000000")
+        color_key_legend.append(dict(key=k, color=c, count=category.doc_count))
 
     data = json.dumps(color_key_legend)
     resp = Response(data, status=200)
     resp.headers['Content-Type'] = 'application/json'
     resp.headers['Access-Control-Allow-Origin'] = '*'
     resp.cache_control.max_age = 60
-
     return resp
 
 @api.route('/tms/<idx>/<int:z>/<int:x>/<int:y>.png', methods=['GET'])
@@ -426,9 +352,6 @@ def get_tms(idx, x, y, z):
         resp.cache_control.max_age = 60
         return resp
 
-    #Store them to the cache as json
-    set_cache_params("/%s/%s/params.json"%(idx, parameter_hash), current_app.config["CACHE_DIRECTORY"], params)
-
     #Check if the cached image already exists
     c = get_cache( "/%s/%s/%s/%s/%s.png"%(idx, parameter_hash, z, x, y), current_app.config["CACHE_DIRECTORY"])
     if c is not None and request.args.get('force') is None:
@@ -443,25 +366,19 @@ def get_tms(idx, x, y, z):
             current_app.logger.info("No cache (%s), generating a new tile %s/%s/%s"%(parameter_hash,z,x,y))
         
         check_cache_dir(idx)
-        color_map_filename = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/colormap.json"%(parameter_hash))
 
         headers = get_es_headers(request.headers)
         current_app.logger.info("Loaded elasticsearch headers %s", headers)
 
+        #Get or generate extended parameters
+        paramsfile = os.path.join(current_app.config["CACHE_DIRECTORY"], idx, "%s/params.json"%(parameter_hash))
+        params = merge_generated_parameters(params, paramsfile, idx)
         #Separate call for ellipse
         try:
             if params["ellipses"]:
-                img = generate_nonaggregated_tile(idx, x, y, z, params, 
-                        map_filename=color_map_filename,
-                        max_bins=int(current_app.config["MAX_BINS"]),
-                        max_batch=int(current_app.config["MAX_BATCH"]),
-                        maximum_cep = 50, 
-                        maximum_ellipses_per_tile = 100000 )
+                img = generate_nonaggregated_tile(idx, x, y, z, params)
             else:
-                img = generate_tile(idx, x, y, z, params,
-                        map_filename=color_map_filename,
-                        max_bins=current_app.config["MAX_BINS"] )
-
+                img = generate_tile(idx, x, y, z, params)
         except Exception as e:
             logging.exception("Exception Generating Tile for request %s", request)
             # generate an error tile/don't cache cache it
@@ -473,6 +390,7 @@ def get_tms(idx, x, y, z):
             resp.cache_control.max_age = 60
             return resp
         
+        #Store image as well
         set_cache("/%s/%s/%s/%s/%s.png"%(idx, parameter_hash, z, x, y), img, current_app.config["CACHE_DIRECTORY"])
 
     resp = Response(img, status=200)
@@ -507,9 +425,15 @@ def extract_parameters(request):
         "ellipse_minor": "",
         "ellipse_tilt": "",
         "ellipse_units": "",
+        "ellipse_max_cep": 50,
         
         "spread": None,
-        "span_range": None
+        "span_range": None,
+
+        #Config items that we pass for ease
+        "max_bins":  int(current_app.config["MAX_BINS"]),
+        "max_batch": int(current_app.config["MAX_BATCH"]),
+        "max_ellipses_per_tile":  int(current_app.config["MAX_ELLIPSES_PER_TILE"])
     }
 
     #Argument Parameter, NB. These overwrite what is in index config
@@ -541,7 +465,13 @@ def extract_parameters(request):
         params["ellipse_units"] = request.args.get('ellipse_units', default="")
         if params["ellipse_major"] == "" or params["ellipse_major"] == "" or params["ellipse_major"] == "":
             params["ellipses"] = False
-    
+    if request.args.get('ellipse_search', default="") == "narrow":
+        params["ellipse_max_cep"] = 1.0
+    elif request.args.get('ellipse_search', default="") == "normal":
+        params["ellipse_max_cep"] = 10.0
+    elif request.args.get('ellipse_search', default="") == "wide":
+        params["ellipse_max_cep"] = 50.0
+
     params["category_field"] = request.args.get('category_field', default=params["category_field"])
     params["category_type"] = request.args.get('category_type', default=params["category_type"])
     params["spread"] = request.args.get('spread')
@@ -559,17 +489,18 @@ def extract_parameters(request):
         except (TypeError, ValueError):
             params["spread"] = None
 
-    params["cmap"] = request.args.get('cmap', default=params["cmap"])
+    params["cmap"] = request.args.get('ckey', default=params["cmap"])
     if params["cmap"] == None:
         if params["category_field"] == None:
             params["cmap"] = "bmy"
         else:
             params["cmap"] = "glasbey_category10"
+
     params["span_range"] = request.args.get('span', default="auto")
     params["geopoint_field"] = request.args.get('geopoint_field', default=params["geopoint_field"])
     params["timestamp_field"] = request.args.get('timestamp_field', default=params["timestamp_field"])
 
-    # TODO handle dumb javascript on the client side
+    # Handle dumb javascript on the client side
     if params["category_field"] == "null":
         params["category_field"] = None
 
@@ -609,6 +540,135 @@ def extract_parameters(request):
     current_app.logger.debug("Parameters: %s (%s)", params, parameter_hash)
     return parameter_hash, params
 
+
+def generate_global_params(params, idx):  
+    geopoint_field=params["geopoint_field"]
+    timestamp_field=params["timestamp_field"]
+    start_time=params["start_time"]
+    stop_time=params["stop_time"]
+    category_field=params["category_field"]
+    category_type=params["category_type"]
+    spread=params["spread"]
+    span_range=params["span_range"]
+    lucene_query=params["lucene_query"]
+    dsl_filter=params["dsl_filter"]
+
+    histogram_interval = None
+    estimated_points_per_tile = None
+    
+    #Create base search 
+    base_s = get_search_base(params, idx)
+
+    #west, south, east, north
+    doc_bounds = [ -180, -90, 180, 90 ]
+    global_doc_cnt = 0
+
+    bounds_s = copy.copy(base_s)
+    bounds_s = bounds_s.params(size=0)
+
+    # if span_range is auto we need to estimate the density
+    if span_range == "auto":
+        #See how far the data spans and how many points are in it
+        bounds_s.aggs.metric(
+            'viewport','geo_bounds',field=geopoint_field
+        ).metric(
+            'point_count','value_count',field=geopoint_field
+        )
+
+    #If the field is a number, we need to figure out it's min/max globally
+    if category_type == "number":
+        bounds_s.aggs.metric(
+            'field_stats', 'stats', field=category_field
+        )
+
+    # We only need to do a global query if we are in span 'auto' or
+    # using a numeric category    
+    if len(list(bounds_s.aggs)) > 0:
+        bounds_resp = bounds_s.execute()
+        assert len(bounds_resp.hits) == 0
+
+        if hasattr(bounds_resp.aggregations, "viewport"):
+            if hasattr(bounds_resp.aggregations.viewport, "bounds"):
+                doc_bounds = [ 
+                    bounds_resp.aggregations.viewport.bounds.top_left.lon,
+                    bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
+                    bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
+                    bounds_resp.aggregations.viewport.bounds.top_left.lat,
+                ]
+        if hasattr(bounds_resp.aggregations, "point_count"):
+            global_doc_cnt = bounds_resp.aggregations.point_count.value
+        
+        # In a numeric field, we can fall back to histogram mode if there are too many unique values
+        if category_type == "number":
+            current_app.logger.info("Generating histogram parameters")
+            if hasattr(bounds_resp.aggregations, 'field_stats'):
+                current_app.logger.info("field stats %s", bounds_resp.aggregations.field_stats)
+                # to prevent strain on the cluster, if there are over 1million
+                # documents given the current parameters, reduce the number of histogram
+                # bins.  Note this is kinda a wag...maybe something smarter can be done
+                if global_doc_cnt > 100000:
+                    category_cnt = 200
+                else:
+                    category_cnt = 500
+                # determine the range of category values
+                histogram_range = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)
+                # round to the nearest larger power of 10
+                histogram_range = math.pow(10, math.ceil(math.log10(histogram_range)))
+                histogram_interval = histogram_range / category_cnt
+                current_app.logger.info("histogram interval %s, category_cnt: %s ", histogram_interval, category_cnt)
+
+    else:
+        current_app.logger.debug("Skipping global query")
+
+    estimated_points_per_tile = None
+    # Estimate the number of points per tile assuming uniform density
+    if span_range == "auto":
+        num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
+        estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+        current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
+
+    #Return generated params dict
+    generated_params = {}
+    generated_params["histogram_interval"] = histogram_interval
+    generated_params["estimated_points_per_tile"] = estimated_points_per_tile
+
+    return generated_params
+
+def merge_generated_parameters(params, paramsfile, idx):
+    #Lock and open file
+    pathlib.Path(os.path.dirname(os.path.join(paramsfile))).mkdir(parents=True, exist_ok=True) 
+    generated_params = None
+    with open(paramsfile+".lock", 'w') as lockfile:
+        fcntl.flock(lockfile, fcntl.LOCK_EX)
+        try:
+            if os.path.exists(os.path.join(paramsfile)) == True:
+                current_app.logger.warn("Found parameters file, using generated params from that")
+                #Params file exists so read it in
+                with open(paramsfile, 'r') as stream:
+                    full_params = yaml.safe_load(stream)
+                #update timestamp for cache cleanup purposes
+                os.utime(os.path.join(paramsfile))
+                generated_params = full_params.get("generated_params", None)
+            
+            if generated_params == None:
+                current_app.logger.warn("Discovering generated params")
+                #Params file either does not exists or does not have generated parameters in it
+                generated_params = generate_global_params(params, idx)
+                #Write extended params to file
+                params_cleaned = copy.copy(params)
+                params_cleaned["generated_params"] = generated_params
+                #Change all datetimes to string format
+                for k, p in sorted(params_cleaned.items()):
+                    if isinstance(p, datetime):
+                            params_cleaned[k] = p.isoformat()
+                with open(os.path.join(paramsfile), 'w') as i:
+                    i.write(json.dumps(params_cleaned))
+        finally:
+            fcntl.lockf(lockfile, fcntl.LOCK_UN)
+
+    params["generated_params"] = generated_params
+    return params
+
 def get_connection_base():
     # TODO - this incorrectly assumes that proxy always implies HTTP an no-proxy is always HTTP
     if current_app.config.get("PROXY_HOST"):
@@ -617,6 +677,56 @@ def get_connection_base():
         connection_base = "http://" + current_app.config.get("HOSTNAME") + ":%s/tms/"%current_app.config.get('PORT')
 
     return connection_base
+
+def get_search_base(params, idx):
+    timestamp_field=params["timestamp_field"]
+    start_time=params["start_time"]
+    stop_time=params["stop_time"]
+    lucene_query=params["lucene_query"]
+    dsl_filter=params["dsl_filter"]
+    
+    # Connect to Elasticsearch
+    es = Elasticsearch(
+        current_app.config.get("ELASTIC"),
+        verify_certs=False,
+        timeout=900,
+        headers=get_es_headers(request)
+    )
+    #Create base search 
+    base_s = Search(index=idx).using(es)
+    #Add time bounds
+    #Handle time calculations
+    time_range = None
+    if timestamp_field:
+        time_range = { timestamp_field: {} }
+        if start_time != None:
+            time_range[timestamp_field]["gte"] = start_time
+        if stop_time != None:
+            time_range[timestamp_field]["lte"] = stop_time
+    if time_range and time_range[timestamp_field]:
+        current_app.logger.info("TIME RANGE: %s", time_range)
+        base_s = base_s.filter("range", **time_range)
+
+    #Add lucene query
+    if lucene_query:
+        base_s = base_s.filter('query_string', query=lucene_query)
+
+    #Add dsl filtering
+    if dsl_filter:
+        #Need to convert to a dict, merge with filters then convert back to a search object
+        base_dict = base_s.to_dict()
+        if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
+            base_dict["query"]["bool"]["filter"] = []
+        for f in dsl_filter["filter"]:
+            base_dict["query"]["bool"]["filter"].append(f)
+        if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
+            base_dict["query"]["bool"]["must_not"] = []
+        for f in dsl_filter["must_not"]:
+            base_dict["query"]["bool"]["must_not"].append(f)            
+        base_s = Search.from_dict(base_dict)          
+        base_s = base_s.index(idx).using(es)
+    
+    return base_s
 
 def build_dsl_filter(filter_inputs):
     if len(filter_inputs) == 0:
@@ -725,7 +835,6 @@ def convertKibanaTime(time_string, current_time):
     
     raise ValueError("unknown time string %s" % time_string)
 
-
 def pretty_time_delta(seconds):
     sign_string = '-' if seconds < 0 else ''
     seconds = abs(int(seconds))
@@ -744,21 +853,6 @@ def pretty_time_delta(seconds):
 
 class GeotileGrid(Bucket):
     name = 'geotile_grid'
-
-def set_cache_params(paramsfile, cache_dir, params):
-    pathlib.Path(os.path.dirname(os.path.join(cache_dir+paramsfile))).mkdir(parents=True, exist_ok=True) 
-    if os.path.exists(os.path.join(cache_dir+paramsfile)) == False:
-        #Write params dict if it does not exist
-        params_cleaned = copy.copy(params)
-        for k, p in sorted(params_cleaned.items()):
-            if isinstance(p, datetime):
-                    params_cleaned[k] = p.isoformat()
-        with open(os.path.join(cache_dir+paramsfile), 'w') as i:
-            i.write(json.dumps(params_cleaned))
-    else:
-        #Touch the file to update last accessed time
-        os.utime(os.path.join(cache_dir+paramsfile))
-    return None
 
 def get_cache(tile, cache_dir, lifespan=60*60):
     #See if tile exists
@@ -802,67 +896,12 @@ def convert(response):
                 c=bucket.centroid.count
             )
 
-def create_color_key_hash_file(categories, color_file, cmap='glasbey_light', histogram_interval=None):
-    color_key_map = {}
 
-    #Load the file
-    with open(color_file+".lock", 'w') as lockfile:
-        fcntl.flock(lockfile, fcntl.LOCK_EX)
-        with open(color_file, 'w+') as stream:
-            try:
-                stream.seek(0)
-                color_key_map = yaml.safe_load(stream)
-
-                #If file is blank load a blank dictionary
-                if color_key_map == None:
-                    color_key_map = {}
-                changed = False
-                
-                #Store off the histogram value
-                if not ("histogram_interval" in color_key_map.keys()):
-                    color_key_map["histogram_interval"] = histogram_interval
-                    changed = True
-                elif color_key_map["histogram_interval"] != histogram_interval:
-                    color_key_map["histogram_interval"] = histogram_interval
-                    changed = True
-                
-                color_key = {}
-                for k in set(categories):
-                    # Set the global color key for this category
-                    color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
-                    if k not in color_key_map:
-                        #Add it to the map to return
-                        color_key_map[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
-                        changed = True
-                if changed:
-                    stream.seek(0)
-                    yaml.dump(color_key_map, stream)
-                    stream.flush()
-            finally:
-                fcntl.lockf(lockfile, fcntl.LOCK_UN)
-
+def create_color_key(categories, cmap='glasbey_category10'):
+    color_key = {}
+    for k in set(categories):
+        color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
     return color_key
-
-    
-def get_histogram_from_color_file(color_file):
-    color_key_map = {}
-
-    #Load the file
-    with open(color_file+".lock", 'w') as lockfile:
-        fcntl.flock(lockfile, fcntl.LOCK_EX)
-        with open(color_file, 'r') as stream:
-            try:
-                
-                stream.seek(0)
-                color_key_map = yaml.safe_load(stream)
-                #If file is blank load a blank dictionary
-                if color_key_map == None:
-                    raise Exception("No Colormap")
-                return color_key_map.get("histogram_interval", None)
-            finally:
-                fcntl.lockf(lockfile, fcntl.LOCK_UN)
-
-
 
 HEADERS = None
 header_lock = threading.Lock()
@@ -895,6 +934,46 @@ def get_es_headers(request_headers=None):
 
     return result
 
+@lru_cache(10)
+def gen_overlay_img(width, height, thickness):
+    """
+    Create an overlay hash image, using an lru_cache since the same
+    overlay can be generated once and then reused indefinately
+    """
+    overlay = Image.new('RGBA', (width, height))
+    draw = ImageDraw.Draw(overlay)
+    color = (255,0,0,64)
+    for s in range(0, max(height,width), thickness*2):
+        draw.line( [(s-width,s+height), (s+width,s-height)], color, thickness)
+    return overlay
+
+def gen_overlay(img, thickness=8):
+    base = Image.open(io.BytesIO(img))
+    overlay = gen_overlay_img(*base.size, thickness=thickness)
+    out = Image.alpha_composite(base, overlay)
+    with io.BytesIO() as output:
+        out.save(output, format='PNG')
+        return output.getvalue()
+
+@lru_cache(10)
+def gen_error(width, height, thickness=8):
+    overlay = Image.new('RGBA', (width, height))
+    draw = ImageDraw.Draw(overlay)
+    color = (255,0,0,255)
+    draw.line( [(0,0), (width,height)], color, thickness)
+    draw.line( [(width,0), (0,height)], color, thickness)
+
+    with io.BytesIO() as output:
+        overlay.save(output, format='PNG')
+        return output.getvalue()
+
+@lru_cache(10)
+def gen_empty(width, height):
+    overlay = Image.new('RGBA', (width, height))
+    with io.BytesIO() as output:
+        overlay.save(output, format='PNG')
+        return output.getvalue()
+
 #Accelerated helper function for generating ellipses from point data
 @jit(nopython=True)
 def ellipse(ra,rb,ang,x0,y0,Nb=16):
@@ -910,7 +989,7 @@ def ellipse(ra,rb,ang,x0,y0,Nb=16):
 
 NAN_LINE = {'x':None, 'y': None, 'c':"None"}
 def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters,
-                                           metrics=None, histogram_range=None, histogram_interval=None):
+                                           metrics=None, histogram_interval=None):
     if metrics is None:
         metrics = {}
     metrics["over_max"] = False
@@ -1023,10 +1102,8 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
                 if histogram_interval:
                     #Do quantization
                     raw = getattr(hit, category_field, 0.0)
-                    quantized = math.floor((raw + 0.5 * histogram_interval)/histogram_interval)*histogram_interval
-                    upper = round(quantized - 0.5*histogram_interval)
-                    lower = round(quantized + 0.5*histogram_interval)
-                    c = "%s-%s"%(upper,lower)
+                    quantized = math.floor(raw/histogram_interval)*histogram_interval
+                    c = str(round(quantized,1))
                 else:
                     #Just use the value
                     c = str(getattr(hit, category_field, "None"))
@@ -1038,14 +1115,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             yield NAN_LINE #Break between ellipses
             metrics["ellipses"] += 1
 
-def generate_nonaggregated_tile(idx, x, y, z, params,
-                    map_filename=None, 
-                    max_bins=10000,
-                    max_batch=10000,
-                    maximum_cep = 50, 
-                    maximum_ellipses_per_tile = 100000,
-                    headers = None):
-
+def generate_nonaggregated_tile(idx, x, y, z, params):
     #Handle legacy parameters
     geopoint_field=params["geopoint_field"]
     timestamp_field=params["timestamp_field"]
@@ -1058,11 +1128,15 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
     dsl_filter=params["dsl_filter"]
-    justification=params["justification"]
     ellipse_major=params["ellipse_major"] 
     ellipse_minor=params["ellipse_minor"]
     ellipse_tilt=params["ellipse_tilt"]
     ellipse_units=params["ellipse_units"]
+    ellipse_max_cep=params["ellipse_max_cep"]
+    max_batch=params["max_batch"]
+    max_bins=params["max_bins"]
+    max_ellipses_per_tile=params["max_ellipses_per_tile"]
+    histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
                     
     current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, timestamp_field, category_field, start_time, stop_time))
     try:
@@ -1078,7 +1152,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
             y_range = y_range[1], y_range[0]
         
         #Expand this by maximum CEP value to get adjacent geos that overlap into our tile
-        extend_meters = maximum_cep * 1852
+        extend_meters = ellipse_max_cep * 1852
 
 
         # Get the top_left/bot_rght for the tile
@@ -1095,129 +1169,14 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
                 "lon": min(180, max(-180, bot_rght[0]))
             } }
 
-
         # Figure out how big the tile is in meters
         xwidth = (x_range[1] - x_range[0])
         yheight = (y_range[1] - y_range[0])
         # And now the area of the tile
         area = xwidth * yheight
 
-        #Handle time calculations
-        time_range = None
-        if timestamp_field:
-            time_range = { timestamp_field: {} }
-            if start_time != None:
-                time_range[timestamp_field]["gte"] = start_time
-            if stop_time != None:
-                time_range[timestamp_field]["lte"] = stop_time
-
-        # Connect to Elasticsearch (TODO is it faster if this is global?)
-        es = Elasticsearch(
-            current_app.config.get("ELASTIC"),
-            verify_certs=False,
-            timeout=900,
-            headers=headers
-        )
-
         #Create base search 
-        base_s = Search(index=idx).using(es).params(size=max_batch)
-
-        #Add time bounds
-        if time_range and time_range[timestamp_field]:
-            base_s = base_s.filter("range", **time_range)
-
-        #Add lucene query
-        if lucene_query:
-            base_s = base_s.filter('query_string', query=lucene_query)
-
-        #Add dsl filtering
-        if dsl_filter:
-            #Need to convert to a dict, merge with filters then convert back to a search object
-            base_dict = base_s.to_dict()
-            if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
-                base_dict["query"]["bool"]["filter"] = []
-            for f in dsl_filter["filter"]:
-                base_dict["query"]["bool"]["filter"].append(f)
-            if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
-                base_dict["query"]["bool"]["must_not"] = []
-            for f in dsl_filter["must_not"]:
-                base_dict["query"]["bool"]["must_not"].append(f)
-            base_s = Search.from_dict(base_dict)
-            base_s = base_s.index(idx).using(es)
-
-        #west, south, east, north
-        doc_bounds = [ -180, -90, 180, 90 ]
-        global_doc_cnt = 0
-
-        # if span_range is auto we need to estimate the density
-        bounds_s = copy.copy(base_s)
-        bounds_s = bounds_s.params(size=0)
-
-        if span_range == "auto":
-            #See how far the data spans and how many points are in it
-            bounds_s.aggs.metric(
-                'viewport','geo_bounds',field=geopoint_field
-            ).metric(
-                'point_count','value_count',field=geopoint_field
-            )
-
-
-        histogram_range = None
-        histogram_interval = None
-        #If the field is a number, we need to figure out it's min/max globally
-        # TODO this is currently disabled because it isn't necessary
-        if category_type == "number":
-            bounds_s.aggs.metric(
-                'field_stats', 'stats', field=category_field
-            )
-
-        # We only need to do a global query if we are in span 'auto' or
-        # using a numeric category    
-        if len(list(bounds_s.aggs)) > 0:
-            bounds_resp = bounds_s.execute()
-            assert len(bounds_resp.hits) == 0
-
-            if hasattr(bounds_resp.aggregations, "viewport"):
-                if hasattr(bounds_resp.aggregations.viewport, "bounds"):
-                    doc_bounds = [ 
-                        bounds_resp.aggregations.viewport.bounds.top_left.lon,
-                        bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
-                        bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
-                        bounds_resp.aggregations.viewport.bounds.top_left.lat,
-                    ]
-            if hasattr(bounds_resp.aggregations, "point_count"):
-                global_doc_cnt = bounds_resp.aggregations.point_count.value
-            
-            # In a numeric field, we can fall back to histogram mode if there are too many unique values
-            if category_type == "number":
-                current_app.logger.info("attempting histogram")
-                if hasattr(bounds_resp.aggregations, 'field_stats'):
-                    current_app.logger.info("field stats %s", bounds_resp.aggregations.field_stats)
-                    # to prevent strain on the cluster, if there are over 1million
-                    # documents given the current parameters, reduce the number of histogram
-                    # bins.  Note this is kinda a wag...maybe something smarter can be done
-                    if global_doc_cnt > 100000:
-                        category_cnt = 100
-                    else:
-                        category_cnt = 1000
-                    # determine the range of category values
-                    histogram_range = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)
-                    # round to the nearest larger power of 10
-                    histogram_range = math.pow(10, math.ceil(math.log10(histogram_range)))
-                    historgram_center = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)/2
-                    histogram_interval = histogram_range / category_cnt
-                    current_app.logger.info("histogram params %s %s %s", histogram_range, histogram_interval, category_cnt)
-
-        else:
-            current_app.logger.debug("Skipping global query")
-
-        estimated_points_per_tile = None
-        # Estimate the number of points per tile assuming uniform density
-        if span_range == "auto":
-            num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
-            estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-            current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
-
+        base_s = get_search_base(params, idx).params(size=max_batch)
 
         # Add expanded bounding box
         count_s = copy.copy(base_s)
@@ -1228,7 +1187,6 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
         )
 
         # Per ES documentation, sorting by _doc improves scroll speed
-        # TODO allow users to specify other sort field
         count_s.sort("_doc")
 
         #trim category field postfixes
@@ -1237,8 +1195,8 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
                 category_field = category_field[:-len(".keyword")]
             elif category_field.endswith(".raw"):
                 category_field = category_field[:-len(".raw")]
-        #TODO: Handle the limiting to only the fields required for processing
-
+        
+        #Handle the limiting to only the fields required for processing
         geopoint_fields = {
             "geopoint_center": geopoint_field,
             "ellipse_major": ellipse_major,
@@ -1247,7 +1205,6 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
             "ellipse_units": ellipse_units,
             "category_field": category_field
         }
-
         includes_fields = list( filter( lambda x: x is not None, geopoint_fields.values() ) )
         count_s = count_s.source(includes=includes_fields)
 
@@ -1258,10 +1215,9 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
             create_datashader_ellipses_from_search(
                 count_s,
                 geopoint_fields,
-                maximum_ellipses_per_tile,
+                max_ellipses_per_tile,
                 extend_meters,
                 metrics,
-                histogram_range,
                 histogram_interval
             )
         )           
@@ -1292,7 +1248,6 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
                     y_range=y_range
                 ).line(df, 'x', 'y', agg=rd.count_cat('C'))
         
-
                 span = None
                 if span_range == 'flat':
                     min_alpha = 255
@@ -1311,22 +1266,19 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
                     alpha_span = int(span[1]) * 25
                     min_alpha = 255 - min(alpha_span, 225)
 
-                current_app.logger.info("Storing histogram value: %s"%histogram_interval)
                 img = tf.shade(
                             agg, 
                             cmap=cc.palette[cmap], 
-                            color_key=create_color_key_hash_file(df["C"], map_filename, cmap=cmap, histogram_interval=histogram_interval),
+                            color_key=create_color_key(df["C"], cmap=cmap),
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
                 
-                #TODO: Handle spread?
+                #TODO: Handle spread using generated_params
                 #spread = 1
                 #img = tf.spread(img, spread)
                 
-                
                 img = img.to_bytesio().read()
-
                 if metrics.get("over_max"):
                     #Put hashing on image to indicate that it is over maximum
                     current_app.logger.info("Generating overlay for tile")
@@ -1338,50 +1290,9 @@ def generate_nonaggregated_tile(idx, x, y, z, params,
         current_app.logger.exception("An exception occured while attempting to generate a tile:")
         raise
 
-@lru_cache(10)
-def gen_overlay_img(width, height, thickness):
-    """
-    Create an overlay hash image, using an lru_cache since the same
-    overlay can be generated once and then reused indefinately
-    """
-    overlay = Image.new('RGBA', (width, height))
-    draw = ImageDraw.Draw(overlay)
-    color = (255,0,0,64)
-    for s in range(0, max(height,width), thickness*2):
-        draw.line( [(s-width,s+height), (s+width,s-height)], color, thickness)
-    return overlay
-
-def gen_overlay(img, thickness=8):
-    base = Image.open(io.BytesIO(img))
-    overlay = gen_overlay_img(*base.size, thickness=thickness)
-    out = Image.alpha_composite(base, overlay)
-    with io.BytesIO() as output:
-        out.save(output, format='PNG')
-        return output.getvalue()
-
-@lru_cache(10)
-def gen_error(width, height, thickness=8):
-    overlay = Image.new('RGBA', (width, height))
-    draw = ImageDraw.Draw(overlay)
-    color = (255,0,0,255)
-    draw.line( [(0,0), (width,height)], color, thickness)
-    draw.line( [(width,0), (0,height)], color, thickness)
-
-    with io.BytesIO() as output:
-        overlay.save(output, format='PNG')
-        return output.getvalue()
-
-@lru_cache(10)
-def gen_empty(width, height):
-    overlay = Image.new('RGBA', (width, height))
-    with io.BytesIO() as output:
-        overlay.save(output, format='PNG')
-        return output.getvalue()
-
 ####################################################
 
-def generate_tile(idx, x, y, z, params,
-                map_filename=None, max_bins=10000, headers=None):
+def generate_tile(idx, x, y, z, params):
 
     #Handle legacy keywords               
     geopoint_field=params["geopoint_field"]
@@ -1395,7 +1306,9 @@ def generate_tile(idx, x, y, z, params,
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
     dsl_filter=params["dsl_filter"]
-    
+    max_bins=params["max_bins"]
+    histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
+
     current_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, timestamp_field, category_field, start_time, stop_time))
     try:
         # Preconfigured tile size
@@ -1433,85 +1346,8 @@ def generate_tile(idx, x, y, z, params,
         # And now the area of the tile
         area = xwidth * yheight
 
-        #Handle time calculations
-        time_range = None
-        if timestamp_field:
-            time_range = { timestamp_field: {} }
-            if start_time != None:
-                time_range[timestamp_field]["gte"] = start_time
-            if stop_time != None:
-                time_range[timestamp_field]["lte"] = stop_time
-
-        # Connect to Elasticsearch (TODO is it faster if this is global?)
-        es = Elasticsearch(
-            current_app.config.get("ELASTIC"),
-            verify_certs=False,
-            timeout=900,
-            headers=headers
-        )
-
         #Create base search 
-        base_s = Search(index=idx).using(es)
-        #base_s = base_s.params(size=0)
-        #Add time bounds
-        if time_range and time_range[timestamp_field]:
-            current_app.logger.info("TIME RANGE: %s", time_range)
-            base_s = base_s.filter("range", **time_range)
-
-        #Add lucene query
-        if lucene_query:
-            base_s = base_s.filter('query_string', query=lucene_query)
-
-        #Add dsl filtering
-        if dsl_filter:
-            #Need to convert to a dict, merge with filters then convert back to a search object
-            base_dict = base_s.to_dict()
-            if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
-                base_dict["query"]["bool"]["filter"] = []
-            for f in dsl_filter["filter"]:
-                base_dict["query"]["bool"]["filter"].append(f)
-            if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
-                base_dict["query"]["bool"]["must_not"] = []
-            for f in dsl_filter["must_not"]:
-                base_dict["query"]["bool"]["must_not"].append(f)            
-            base_s = Search.from_dict(base_dict)          
-            base_s = base_s.index(idx).using(es)
-
-        #See how far the data spans and how many points are in it
-        bounds_s = copy.copy(base_s)
-        bounds_s = bounds_s.params(size=0)
-        bounds_s.aggs.metric(
-            'viewport','geo_bounds',field=geopoint_field
-        ).metric(
-            'point_count','value_count',field=geopoint_field
-        )
-
-        #If the field is a number, we need to figure out it's min/max globally
-        if category_type == "number":
-            bounds_s.aggs.metric(
-                'field_stats', 'stats', field=category_field
-            )
-
-        #west, south, east, north
-        doc_bounds = [ -180, -90, 180, 90 ]
-        global_doc_cnt = 0
-
-        # We only need to do a global query if we are in span 'auto' or
-        # using a numeric category
-        if len(list(bounds_s.aggs)) > 0:
-            bounds_resp = bounds_s.execute()
-            assert len(bounds_resp.hits) == 0
-
-            if hasattr(bounds_resp.aggregations, "viewport"):
-                if hasattr(bounds_resp.aggregations.viewport, "bounds"):
-                    doc_bounds = [ 
-                        bounds_resp.aggregations.viewport.bounds.top_left.lon,
-                        bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
-                        bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
-                        bounds_resp.aggregations.viewport.bounds.top_left.lat,
-                    ]
-            if hasattr(bounds_resp.aggregations, "point_count"):
-                global_doc_cnt = bounds_resp.aggregations.point_count.value
+        base_s = get_search_base(params, idx)
 
         # Now find out how many documents 
         count_s = copy.copy(base_s)
@@ -1522,7 +1358,6 @@ def generate_tile(idx, x, y, z, params,
         )
 
         category_cnt = 0
-        histogram_interval = None
         if category_field:
             #Also need to calculate the number of categories
             count_s = count_s.params(size=0)
@@ -1541,28 +1376,9 @@ def generate_tile(idx, x, y, z, params,
                 doc_cnt = resp.aggregations.point_count.value
 
             # circuit breaker, if someone wants to color by category and there are
-            # more than 10000, they will only get the first 1000 cateogries
+            # more than 1000, they will only get the first 1000 cateogries
             category_cnt = min(category_cnt, 1000)
             current_app.logger.info("Document Count: %s, Category Count: %s", doc_cnt, category_cnt)
-
-            # In a numeric field, we can fall back to histogram mode if there are too many unique values
-            if category_cnt >= 1000 and category_type == "number":
-                current_app.logger.info("attempting histogram")
-                if bounds_resp and hasattr(bounds_resp.aggregations, 'field_stats'):
-                    current_app.logger.info("field stats %s", bounds_resp.aggregations.field_stats)
-                    # to prevent strain on the cluster, if there are over 1million
-                    # documents given the current parameters, reduce the number of histogram
-                    # bins.  Note this is kinda a wag...maybe something smarter can be done
-                    if global_doc_cnt > 1000000:
-                        category_cnt = 100
-                    else:
-                        category_cnt = 1000
-                    # determine the range of category values
-                    histogram_range = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)
-                    # round to the nearest larger power of 10
-                    histogram_range = math.pow(10, math.ceil(math.log10(histogram_range)))
-                    histogram_interval = histogram_range / category_cnt
-                    current_app.logger.info("histogram params %s %s %s", histogram_range, histogram_interval, category_cnt)
         else:
             category_cnt = 1  #Heat mode effectively has one category
             doc_cnt = count_s.count()
@@ -1705,7 +1521,7 @@ def generate_tile(idx, x, y, z, params,
 
                 assert len(resp.hits) == 0   
 
-                if hasattr(resp.aggregations, 'categories'):
+                if hasattr(resp.aggregations, 'categories') and hasattr(resp.aggregations.categories, 'sum_other_doc_count'):
                     partial_data = ( resp.aggregations.categories.sum_other_doc_count > 0 )
 
                 df = df.append(pd.DataFrame(convert(resp)), sort=False)
@@ -1756,7 +1572,7 @@ def generate_tile(idx, x, y, z, params,
                     img = tf.shade(
                             agg, 
                             cmap=cc.palette[cmap], 
-                            color_key=create_color_key_hash_file(df["T"], map_filename, cmap=cmap), 
+                            color_key=create_color_key(df["T"], cmap=cmap), 
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
