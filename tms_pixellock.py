@@ -3,8 +3,7 @@
 from flask import Flask, Response, current_app
 from flask import request, render_template, redirect
 from flask import Blueprint
-from flask_wtf import FlaskForm
-import wtforms
+from flask_apscheduler import APScheduler
 
 import time
 import math
@@ -21,50 +20,44 @@ import shutil
 import threading
 import copy
 import collections
+import png
+import socket
+import urllib3
+import json
+import fcntl
 from functools import lru_cache
-
+import ssl
 from datetime import datetime, timedelta
 from pprint import pprint, pformat
 import traceback
+
+from numba import jit
+from numpy import linspace, pi, sin, cos 
+from PIL import Image, ImageDraw
+import mercantile
 
 import datashader as ds
 import pandas as pd
 import colorcet as cc
 import datashader.transfer_functions as tf
 import datashader.reductions as rd
+from datashader_helpers import sum_cat
 
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, A, Q
 from elasticsearch_dsl.aggs import Bucket
 from elasticsearch_dsl.utils import AttrList, AttrDict
 
-import mercantile
 
-import png
-import tempfile
-import socket
-import urllib3
-import json
-import fcntl
 
-from flask_apscheduler import APScheduler
 
+
+
+#Disable warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
 urllib3.disable_warnings(urllib3.exceptions.SNIMissingWarning)
 urllib3.disable_warnings(UserWarning)
-
-from numba import jit
-from numpy import linspace, pi, sin, cos 
-
-from PIL import Image, ImageDraw
-
-
-#from OpenSSL import SSL
-import ssl
-
-#Import helpers to assist with datashader
-from datashader_helpers import sum_cat
 
 #Logging for non-Flask items
 logging.basicConfig(level=logging.INFO)
@@ -74,6 +67,9 @@ logging.getLogger("urllib3").setLevel(logging.WARN)
 # Preconfigured tile size
 tile_height_px = 256
 tile_width_px = 256
+
+class GeotileGrid(Bucket):
+    name = 'geotile_grid'
 
 class Config(object):
     """
@@ -159,15 +155,6 @@ def display_parameters():
                                 return render_template('parameters.html', title='Elastic Data Shader Server', params=params, name=request.args.get('name'), hash=request.args.get('hash'))
     return render_template('parameters.html', title='Elastic Data Shader Server', params={}, name=request.args.get('name'), hash=request.args.get('hash'))
 
-class ConfigForm(FlaskForm):
-    name = wtforms.StringField('Name', description="Name of map layer", validators=[wtforms.validators.DataRequired()])
-    idx = wtforms.StringField('Index', description="Index name", validators=[wtforms.validators.DataRequired()])
-    mode = wtforms.SelectField('Mode', choices=[('heat', 'Heat Map'), ('category', 'Category Map')] )
-    geopoint_field = wtforms.StringField('Geopoint Field', description="Required", validators=[wtforms.validators.DataRequired()])
-    timestamp_field = wtforms.StringField('Timestamp Field', description="Optional, needed if Date Range is not All")
-    category_field = wtforms.StringField('Category Field', description="Optional, needed if mode is category")
-    submit = wtforms.SubmitField('Add Config')
-
 @api.route('/clear_cache', methods=['GET'])
 def clear_cache():
     if request.args.get('name') is not None:
@@ -198,20 +185,6 @@ def age_cache():
         return redirect(request.referrer)   
     return Response("Unknown request: %s / %s"%(request.args.get('name'), request.args.get('hash')), status=500)
 
-def check_cache_age(cache_dir, age_limit):
-    layers = os.listdir(cache_dir)
-    for l in layers:
-        if not os.path.isfile(cache_dir+l):
-            hashes = os.listdir(cache_dir+l+"/")
-            for h in hashes:
-                if os.path.exists(cache_dir+l+"/"+h+"/params.json"):
-                    #Check age of hash
-                    age_timestamp = time.time() - os.path.getmtime(cache_dir+l+'/'+h+"/params.json")
-                    if age_timestamp > age_limit:
-                        shutil.rmtree(cache_dir+l+"/"+h)
-                        logging.info("Removing hash due to age: %s (%s>%s)"%(cache_dir+l+"/"+h, age_timestamp, age_limit))
-
-
 @api.route('/<idx>/<field_name>/legend.json', methods=['GET'])
 def provide_legend(idx, field_name):
     #Extract out special extent parameter that is independent from hash
@@ -219,7 +192,7 @@ def provide_legend(idx, field_name):
     params = request.args.get('params')
     if params and params != '{params}':
         params = json.loads(request.args.get('params'))
-        if params.get("extent"):#TODO Move this out from params on the JS side?
+        if params.get("extent"):
             extent = params.get("extent")
 
     #Get hash and parameters
@@ -669,15 +642,6 @@ def merge_generated_parameters(params, paramsfile, idx):
     params["generated_params"] = generated_params
     return params
 
-def get_connection_base():
-    # TODO - this incorrectly assumes that proxy always implies HTTP an no-proxy is always HTTP
-    if current_app.config.get("PROXY_HOST"):
-        connection_base = "https://" + current_app.config.get('PROXY_HOST') + "/" + current_app.config.get("PROXY_PREFIX") + "/tms/"
-    else:
-        connection_base = "http://" + current_app.config.get("HOSTNAME") + ":%s/tms/"%current_app.config.get('PORT')
-
-    return connection_base
-
 def get_search_base(params, idx):
     timestamp_field=params["timestamp_field"]
     start_time=params["start_time"]
@@ -850,10 +814,6 @@ def pretty_time_delta(seconds):
     else:
         return '%s%ds' % (sign_string, seconds)
 
-
-class GeotileGrid(Bucket):
-    name = 'geotile_grid'
-
 def get_cache(tile, cache_dir, lifespan=60*60):
     #See if tile exists
     if os.path.exists(os.path.join(cache_dir+tile)):
@@ -870,6 +830,19 @@ def check_cache_dir(layer_name):
     tile_cache_path = os.path.join(current_app.config.get("CACHE_DIRECTORY"), layer_name)
     if not os.path.exists(tile_cache_path):
         pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
+
+def check_cache_age(cache_dir, age_limit):
+    layers = os.listdir(cache_dir)
+    for l in layers:
+        if not os.path.isfile(cache_dir+l):
+            hashes = os.listdir(cache_dir+l+"/")
+            for h in hashes:
+                if os.path.exists(cache_dir+l+"/"+h+"/params.json"):
+                    #Check age of hash
+                    age_timestamp = time.time() - os.path.getmtime(cache_dir+l+'/'+h+"/params.json")
+                    if age_timestamp > age_limit:
+                        shutil.rmtree(cache_dir+l+"/"+h)
+                        logging.info("Removing hash due to age: %s (%s>%s)"%(cache_dir+l+"/"+h, age_timestamp, age_limit))
 
 def convert(response):
     if hasattr(response.aggregations, 'categories'):
@@ -1005,7 +978,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
 
     for i, hit in enumerate(search.scan()):
         metrics["hits"] += 1
-        # TODO this actually isn't maximum ellipses per tile, but rather
+        # NB. this actually isn't maximum ellipses per tile, but rather
         # maximum number of records iterated.  We might want to keep this behavior
         # because if you ask for ellipses on a index where none of the records have ellipse
         # point fields you could end up iterating over the entire index
@@ -1093,7 +1066,6 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             #NB. assume "majmin_m" if any others
 
             #expel above CEP limit
-            #TODO: Figure out how we will handle CEP maximums
             if major > extend_meters or minor > extend_meters:
                 continue
 
@@ -1273,10 +1245,8 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
-                
-                #TODO: Handle spread using generated_params
-                #spread = 1
-                #img = tf.spread(img, spread)
+
+                #NB. No spread on ellipses, could be added here if visibility is an issue
                 
                 img = img.to_bytesio().read()
                 if metrics.get("over_max"):

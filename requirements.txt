@@ -1,5 +1,4 @@
 Flask
-flask-wtf
 elasticsearch
 elasticsearch_dsl
 pyOpenSSL
