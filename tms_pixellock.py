@@ -153,7 +153,8 @@ def display_parameters():
                         if os.path.exists(current_app.config["CACHE_DIRECTORY"]+l+"/"+h+"/params.json"):
                             with open(current_app.config["CACHE_DIRECTORY"]+l+'/'+h+"/params.json") as f:
                                 params = json.loads(f.read())
-                                return render_template('parameters.html', title='Elastic Data Shader Server', params=params, name=request.args.get('name'), hash=request.args.get('hash'))
+                                generated_params = pformat(params.get("generated_params", {}))
+                                return render_template('parameters.html', title='Elastic Data Shader Server', params=params, generated_params=generated_params, name=request.args.get('name'), hash=request.args.get('hash'))
     return render_template('parameters.html', title='Elastic Data Shader Server', params={}, name=request.args.get('name'), hash=request.args.get('hash'))
 
 @api.route('/clear_cache', methods=['GET'])
@@ -471,7 +472,7 @@ def extract_parameters(request):
             params["spread"] = None
     params["resolution"] = request.args.get('resolution')
 
-    params["cmap"] = request.args.get('ckey', default=params["cmap"])
+    params["cmap"] = request.args.get('cmap', default=params["cmap"])
     if params["cmap"] == None:
         if params["category_field"] == None:
             params["cmap"] = "bmy"
@@ -536,42 +537,44 @@ def generate_global_params(params, idx):
     dsl_filter=params["dsl_filter"]
 
     histogram_interval = None
-    estimated_points_per_tile = None
+    global_doc_cnt = None
+    global_bounds = None
     
     #Create base search 
     base_s = get_search_base(params, idx)
 
     #west, south, east, north
-    doc_bounds = [ -180, -90, 180, 90 ]
+    global_bounds = [ -180, -90, 180, 90 ]
     global_doc_cnt = 0
 
     bounds_s = copy.copy(base_s)
     bounds_s = bounds_s.params(size=0)
 
+    # We only need to do a global query if we are in span 'auto' or
+    # using a numeric category    
+
     # if span_range is auto we need to estimate the density
-    if span_range == "auto":
+    if span_range == None or span_range == "auto":
         #See how far the data spans and how many points are in it
         bounds_s.aggs.metric(
             'viewport','geo_bounds',field=geopoint_field
         ).metric(
             'point_count','value_count',field=geopoint_field
         )
-
     #If the field is a number, we need to figure out it's min/max globally
     if category_type == "number":
         bounds_s.aggs.metric(
             'field_stats', 'stats', field=category_field
         )
 
-    # We only need to do a global query if we are in span 'auto' or
-    # using a numeric category    
+    #Execute and process search
     if len(list(bounds_s.aggs)) > 0:
         bounds_resp = bounds_s.execute()
         assert len(bounds_resp.hits) == 0
 
         if hasattr(bounds_resp.aggregations, "viewport"):
             if hasattr(bounds_resp.aggregations.viewport, "bounds"):
-                doc_bounds = [ 
+                global_bounds = [ 
                     bounds_resp.aggregations.viewport.bounds.top_left.lon,
                     bounds_resp.aggregations.viewport.bounds.bottom_right.lat,
                     bounds_resp.aggregations.viewport.bounds.bottom_right.lon,
@@ -602,17 +605,11 @@ def generate_global_params(params, idx):
     else:
         current_app.logger.debug("Skipping global query")
 
-    estimated_points_per_tile = None
-    # Estimate the number of points per tile assuming uniform density
-    if span_range == "auto":
-        num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
-        estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-        current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
-
     #Return generated params dict
     generated_params = {}
     generated_params["histogram_interval"] = histogram_interval
-    generated_params["estimated_points_per_tile"] = estimated_points_per_tile
+    generated_params["global_doc_cnt"] = global_doc_cnt
+    generated_params["global_bounds"] = global_bounds
 
     return generated_params
 
@@ -1139,6 +1136,8 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
     max_bins=params["max_bins"]
     max_ellipses_per_tile=params["max_ellipses_per_tile"]
     histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
+    global_doc_cnt=params.get("generated_params", {}).get("global_doc_cnt", None)
+    global_bounds=params.get("generated_params", {}).get("global_bounds", None)
                     
     current_app.logger.info("Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, timestamp_field, category_field, start_time, stop_time))
     try:
@@ -1226,6 +1225,13 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
         
         current_app.logger.debug("ES took %s for ellipses: %s   hits: %s", (s2-s1), metrics.get("ellipses",0), metrics.get("hits",0) )        
         
+        #Estimate the number of points per tile assuming uniform density
+        estimated_points_per_tile = None
+        if span_range == 'auto' or span_range == None:
+            num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*global_bounds, zooms=z, truncate=False) )
+            estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+            current_app.logger.debug("Doc Bounds %s %s %s %s", global_bounds, z, num_tiles_at_level, estimated_points_per_tile)
+
         #If count is zero then return a null image
         if len(df) == 0:
             current_app.logger.debug("No points in bounding box")
@@ -1310,6 +1316,8 @@ def generate_tile(idx, x, y, z, params):
     dsl_filter=params["dsl_filter"]
     max_bins=params["max_bins"]
     histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
+    global_doc_cnt=params.get("generated_params", {}).get("global_doc_cnt", None)
+    global_bounds=params.get("generated_params", {}).get("global_bounds", None)
 
     current_app.logger.debug("Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"%(idx, z, x, y, geopoint_field, timestamp_field, category_field, start_time, stop_time))
     try:
@@ -1550,10 +1558,10 @@ def generate_tile(idx, x, y, z, params):
 
             #Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
-            if span_range == 'auto':
-                num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*doc_bounds, zooms=z, truncate=False) )
+            if span_range == 'auto' or span_range == None:
+                num_tiles_at_level = sum( 1 for _ in mercantile.tiles(*global_bounds, zooms=z, truncate=False) )
                 estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-                current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
+                current_app.logger.debug("Doc Bounds %s %s %s %s", global_bounds, z, num_tiles_at_level, estimated_points_per_tile)
 
             if len(df.index) == 0:
                 img = gen_empty(tile_width_px, tile_height_px)
@@ -1624,7 +1632,7 @@ def generate_tile(idx, x, y, z, params):
                         span=[0, math.log(max(estimated_points_per_tile*2, 2))]
 
                     current_app.logger.debug("Span %s %s", span, span_range)
-                    img = tf.shade(agg, cmap=getattr(cc, cmap, cc.bmy), how="log", span=span)
+                    img = tf.shade(agg, cmap=cc.palette[cmap], how="log", span=span)
 
                 ###############################################################
                 # Common
