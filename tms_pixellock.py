@@ -1437,7 +1437,7 @@ def generate_tile(idx, x, y, z, params):
                 max_sub_frame_backout = 0
 
             sub_frame_backout = min(sub_frame_backout, max_sub_frame_backout)
-            sub_frame_level = geotile_precision - sub_frame_backout
+            sub_frame_level = max(current_zoom, geotile_precision - sub_frame_backout)
 
             geo_bins_per_subframe = 4 ** sub_frame_backout
 
