@@ -91,6 +91,7 @@ class Config(object):
     MAX_ELLIPSES_PER_TILE = int(os.environ.get("DATASHADER_MAX_BATCH", 100000))
     HEADER_FILE = os.environ.get("DATASHADER_HEADER_FILE", "./headers.yaml")
     WHITELIST_HEADERS = os.environ.get("DATASHADER_WHITELIST_HEADERS", None)
+    DEBUG_TILES = os.environ.get("DATASHADER_DEBUG_TILES", False)
     PORT = None
     HOSTNAME = socket.getfqdn()
 
@@ -928,9 +929,30 @@ def gen_overlay_img(width, height, thickness):
         draw.line( [(s-width,s+height), (s+width,s-height)], color, thickness)
     return overlay
 
+@lru_cache(10)
+def gen_debug_img(width, height, text, thickness=2):
+    """
+    Create an overlay hash image, using an lru_cache since the same
+    overlay can be generated once and then reused indefinately
+    """
+    overlay = Image.new('RGBA', (width, height))
+    draw = ImageDraw.Draw(overlay)
+    color = (0,0,0,127)
+    draw.rectangle( [0, 0, width, height], outline=color, width=thickness)
+    draw.text( [10, 10], text, fill=color)
+    return overlay
+
 def gen_overlay(img, thickness=8):
     base = Image.open(io.BytesIO(img))
     overlay = gen_overlay_img(*base.size, thickness=thickness)
+    out = Image.alpha_composite(base, overlay)
+    with io.BytesIO() as output:
+        out.save(output, format='PNG')
+        return output.getvalue()
+
+def gen_debug_overlay(img, text):
+    base = Image.open(io.BytesIO(img))
+    overlay = gen_debug_img(*base.size, text)
     out = Image.alpha_composite(base, overlay)
     with io.BytesIO() as output:
         out.save(output, format='PNG')
@@ -1218,7 +1240,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
             pixels = tile_height_px * tile_width_px            
 
             if len(df.index) == 0:
-                img = b""
+                img = gen_empty(tile_width_px, tile_height_px)
             else:
                 agg = ds.Canvas(
                     plot_width=tile_width_px,
@@ -1261,6 +1283,8 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
                     current_app.logger.info("Generating overlay for tile")
                     img = gen_overlay(img)
 
+        if current_app.config.get("DEBUG_TILES"):
+            img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         #Set headers and return data 
         return img
     except Exception:
@@ -1365,7 +1389,7 @@ def generate_tile(idx, x, y, z, params):
         #If count is zero then return a null image
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
-            img = b""
+            img = gen_empty(tile_width_px, tile_height_px)
         else:
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
@@ -1532,7 +1556,7 @@ def generate_tile(idx, x, y, z, params):
                 current_app.logger.debug("Doc Bounds %s %s %s %s", doc_bounds, z, num_tiles_at_level, estimated_points_per_tile)
 
             if len(df.index) == 0:
-                img = b""
+                img = gen_empty(tile_width_px, tile_height_px)
             else:
                 ###############################################################
                 # Category Mode
@@ -1625,6 +1649,9 @@ def generate_tile(idx, x, y, z, params):
                 if partial_data:
                     current_app.logger.info("Generating overlay for tile due to partial category data")
                     img = gen_overlay(img)
+
+        if current_app.config.get("DEBUG_TILES"):
+            img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
 
         #Set headers and return data 
         return img
@@ -1726,6 +1753,7 @@ if __name__ == '__main__':
     parser.add_argument('-k', '--tms_key', default=Config.TMS_KEY, help="TMS key required in header")
     parser.add_argument('--header-file', default=Config.HEADER_FILE, help="configured headers to include in ES requests")
     parser.add_argument('-W', '--whitelist-headers', default=Config.WHITELIST_HEADERS, help="whitelist headers to pass along")
+    parser.add_argument('--debug-tiles', default=Config.DEBUG_TILES, action="store_true", help="render tiles with debug overlay")
 
     # Development server arguments
     parser.add_argument('--debug', default=False, action='store_true', help="Enable Flask debug mode")
