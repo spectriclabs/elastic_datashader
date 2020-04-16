@@ -29,7 +29,7 @@ from functools import lru_cache
 import ssl
 from datetime import datetime, timedelta
 from pprint import pprint, pformat
-import traceback
+import pynumeral
 
 from numba import jit
 from numpy import linspace, pi, sin, cos 
@@ -222,6 +222,7 @@ def provide_legend(idx, field_name):
     #Assign param value to legacy keyword values
     geopoint_field = params["geopoint_field"]
     category_type = params["category_type"]
+    category_format = params["category_format"]
     cmap = params["cmap"]
     histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
 
@@ -282,9 +283,11 @@ def provide_legend(idx, field_name):
         if histogram_interval and category_type == "number":
             #Bin the data
             raw = float(category.key)
-            lower = round(raw)
-            upper = round(raw + histogram_interval)
-            k = "%s-%s"%(lower, upper)
+            #Format with pynumeral if provided
+            if category_format:
+                k = "%s-%s"%(pynumeral.format(raw, category_format), pynumeral.format(raw+histogram_interval, category_format))
+            else:
+                k = "%s-%s"%(raw, raw+histogram_interval)
         else:
             k = str(category.key)
         c = create_color_key([str(category.key)], cmap=cmap).get(str(category.key), "#000000")
@@ -392,6 +395,7 @@ def extract_parameters(request):
         "cmap": None,
         "category_field": None,
         "category_type": None,
+        "category_format": None,
         
         "ellipses": False,
         "ellipse_major": "",
@@ -446,6 +450,7 @@ def extract_parameters(request):
         params["ellipse_max_cep"] = 50.0
 
     params["category_field"] = request.args.get('category_field', default=params["category_field"])
+    params["category_format"] = request.args.get('category_pattern', default=params["category_format"])
     params["category_type"] = request.args.get('category_type', default=params["category_type"])
     params["spread"] = request.args.get('spread')
     if params["spread"] == "coarse":
@@ -1075,7 +1080,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
                     #Do quantization
                     raw = getattr(hit, category_field, 0.0)
                     quantized = math.floor(raw/histogram_interval)*histogram_interval
-                    c = str(round(quantized,1))
+                    c = str(quantized)
                 else:
                     #Just use the value
                     c = str(getattr(hit, category_field, "None"))
@@ -1190,8 +1195,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
                 max_ellipses_per_tile,
                 extend_meters,
                 metrics,
-                histogram_interval
-            )
+                histogram_interval            )
         )           
         s2 = time.time()
         
@@ -1373,7 +1377,7 @@ def generate_tile(idx, x, y, z, params):
             # In category-mode, zoom out if max_bins has not been increased
             if category_field and max_bins < 65536:
                 agg_zooms -= 1
-            geotile_precision = current_zoom + agg_zooms
+            geotile_precision = current_zoom + agg_zooms 
 
             # calculate how many sub_frames are required to avoid more than max_bins per
             # sub frame.  The number of bins in a sub-frame is 4**Z_delta so we need
