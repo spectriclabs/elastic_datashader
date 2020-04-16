@@ -406,6 +406,7 @@ def extract_parameters(request):
         
         "spread": None,
         "span_range": None,
+        "resolution": None,
 
         #Config items that we pass for ease
         "max_bins":  int(current_app.config["MAX_BINS"]),
@@ -453,11 +454,12 @@ def extract_parameters(request):
     params["category_format"] = request.args.get('category_pattern', default=params["category_format"])
     params["category_type"] = request.args.get('category_type', default=params["category_type"])
     params["spread"] = request.args.get('spread')
-    if params["spread"] == "coarse":
+    # Handle text-value spread in both legacy and new format
+    if params["spread"] in ("coarse", "large"):
         params["spread"] = 10
-    elif params["spread"] == "fine":
+    elif params["spread"] in ("fine", "medium"):
         params["spread"] = 3
-    elif params["spread"] == "finest":
+    elif params["spread"] in ("finest", "small"):
         params["spread"] = 1
     elif params["spread"] == "auto":
         params["spread"] = None
@@ -466,6 +468,7 @@ def extract_parameters(request):
             params["spread"] = int(params["spread"])
         except (TypeError, ValueError):
             params["spread"] = None
+    params["resolution"] = request.args.get('resolution')
 
     params["cmap"] = request.args.get('ckey', default=params["cmap"])
     if params["cmap"] == None:
@@ -1277,6 +1280,7 @@ def generate_tile(idx, x, y, z, params):
     category_type=params["category_type"]
     cmap=params["cmap"] 
     spread=params["spread"]
+    resolution=params["resolution"]
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
     dsl_filter=params["dsl_filter"]
@@ -1375,9 +1379,26 @@ def generate_tile(idx, x, y, z, params):
 
             # TODO consider adding 'grid resolution' coarse, fine, finest (pixel-lock)
             # In category-mode, zoom out if max_bins has not been increased
+            min_auto_spread = 0 # by default we don't need to spread
             if category_field and max_bins < 65536:
                 agg_zooms -= 1
-            geotile_precision = current_zoom + agg_zooms 
+                # if we back out agg_zooms we need to spread a little to make things
+                # look correct
+                min_auto_spread += 2
+
+            if resolution == "coarse":
+                agg_zooms -= 2
+                min_auto_spread += 4
+            elif resolution == "fine":
+                agg_zooms -= 1
+                min_auto_spread += 2
+            elif resolution == "finest":
+                pass # finest needs to do nothing
+            else:
+                raise ValueError("invalid resolution value")
+
+            # don't allow geotile precision to be anyworse than current zoom
+            geotile_precision = max(current_zoom, current_zoom + agg_zooms)
 
             # calculate how many sub_frames are required to avoid more than max_bins per
             # sub frame.  The number of bins in a sub-frame is 4**Z_delta so we need
@@ -1586,13 +1607,17 @@ def generate_tile(idx, x, y, z, params):
 
                 #Below zoom threshold spread to make individual dots large enough
                 if spread is None or spread < 0:
-                    # Automatic spread
                     spread_threshold = 11
+                    # Always spread at least min_auto_spread
+                    spread = min_auto_spread
                     if z >= spread_threshold:
-                        spread_factor = math.floor(2 +(z-(spread_threshold-1))*.25)
-                        img = tf.spread(img, spread_factor)
+                        # Increase spread at high zoom levels, with a min spread of 2
+                        spread = math.floor(min_auto_spread +(z-(spread_threshold-1))*.25)
+                    current_app.logger.info("Calculated auto-spread %s (min %s)", spread, min_auto_spread)
                 else:
                     current_app.logger.info("Spreading by fixed %s", spread)
+
+                if spread > 0:
                     img = tf.spread(img, spread)
 
                 img = img.to_bytesio().read()
