@@ -408,7 +408,7 @@ def extract_parameters(request):
         
         "spread": None,
         "span_range": None,
-        "resolution": None,
+        "resolution": "finest",
 
         #Config items that we pass for ease
         "max_bins":  int(current_app.config["MAX_BINS"]),
@@ -470,7 +470,7 @@ def extract_parameters(request):
             params["spread"] = int(params["spread"])
         except (TypeError, ValueError):
             params["spread"] = None
-    params["resolution"] = request.args.get('resolution')
+    params["resolution"] = request.args.get('resolution', default=params['resolution'])
 
     params["cmap"] = request.args.get('cmap', default=params["cmap"])
     if params["cmap"] == None:
