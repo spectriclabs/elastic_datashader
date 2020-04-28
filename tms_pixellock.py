@@ -711,37 +711,42 @@ def build_dsl_filter(filter_inputs):
     filter = {"filter":[{"match_all":{}}], "must_not":[]}
     
     for f in filter_inputs:
+        current_app.logger.info("Filter %s\n %s", f.get("meta").get("type"), f)
+        # Skip disabled filters
+        if f.get("meta").get("disabled") in ("true", True):
+            continue
+
         #Handle spatial filters
         if f.get("meta").get("type") == "spatial_filter":
             if f.get("geo_polygon"):
                 if f.get("meta").get("negate"):
-                    filter["must_not"].append( {"geo_polygon":f.get("geo_polygon")})
+                    filter["must_not"].append(dict(geo_polygon=f.get("geo_polygon")))
                 else:
-                    filter["filter"].append( {"geo_polygon":f.get("geo_polygon")})
+                    filter["filter"].append(dict(geo_polygon=f.get("geo_polygon")))
             elif f.get("geo_bounding_box"):
                 if f.get("meta").get("negate"):
-                    filter["must_not"].append( {"geo_bounding_box":f.get("geo_bounding_box")})
+                    filter["must_not"].append(dict(geo_bounding_box=f.get("geo_bounding_box")))
                 else:
-                    filter["filter"].append( {"geo_bounding_box":f.get("geo_bounding_box")})
-        else:
-            #Handle phrase matching
+                    filter["filter"].append(dict(geo_bounding_box=f.get("geo_bounding_box")))
+        #Handle phrase matching
+        elif f.get("meta").get("type") in ("phrase", "phrases", "bool"):
             if f.get("meta").get("negate"):
                 filter["must_not"].append( f.get("query"))
-            elif f.get("meta").get("disabled") in ("true", True):
-                continue
             else:
-                #Handle "is one of"
-                is_phrase_match = False
-                for match_field, match_params in f.get("query", {}).get("match", {}).items():
-                    if match_params.get("type") == "phrase":
-                        match_params.pop("type", None)
-                        is_phrase_match = True
-                        break
-                if is_phrase_match:
-                    f["query"]["match_phrase"] = f.get("query", {}).pop("match", {})
-                
                 filter["filter"].append(f.get("query"))
-
+        elif f.get("meta").get("type") == "range":
+            if f.get("meta").get("negate"):
+                filter["must_not"].append(dict(range=f.get("range")))
+            else:
+                filter["filter"].append(dict(range=f.get("range")))
+        elif f.get("meta").get("type") == "exists":
+            if f.get("meta").get("negate"):
+                filter["must_not"].append(dict(exists=f.get("exists")))
+            else:
+                filter["filter"].append(dict(exists=f.get("exists")))
+        else:
+            raise ValueError("unsupported filter type %s", f.get("meta").get("type"))
+    current_app.logger.info("Filter output %s", filter)
     return filter
 
 def quantizeTimeRange(start_time, stop_time):
