@@ -1710,6 +1710,8 @@ def create_app(args=None):
     #Limit logging at INFO, reduce if needed for debugging
     if flask_app.config["LOG_LEVEL"]:
         flask_app.logger.setLevel(getattr(logging, flask_app.config["LOG_LEVEL"]))
+        # Also set global logging level
+        logging.getLogger().setLevel(getattr(logging, flask_app.config["LOG_LEVEL"]))
 
     flask_app.logger.info("Loaded configuration %s", flask_app.config)
     flask_app.logger.info("Loaded environment %s", os.environ)
