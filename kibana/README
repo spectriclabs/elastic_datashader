@@ -1,0 +1,4 @@
+IMPORTANT
+
+Per the Elastic License, any container built using this Dockerfile can only be
+used in a non-production environment because it modifies the x-pack code.
