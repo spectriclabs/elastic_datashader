@@ -127,25 +127,25 @@ Get Tile
 
 **Required:**
 
-`geopoint_field=[alphanumeric]` : the field to use for geopoint coordinates.
+* `geopoint_field=[alphanumeric]` : the field to use for geopoint coordinates.
 
 **Optional:**
 
-`timestamp_field=[string]` : the field to use for time (default: `@timestamp`)
-`params=[json]` : query/filter parameters from kibana.
-`cmap=[alphanumeric]` : the colorcet map to use (default: `bmy` for heatmap and `glasbey_category10` for colored points)
-`category_field=[alphanumeric]` : the field to be used for coloring points/ellipses
-`category_type=[alphanumeric]` : the type of the category_field (as found in Kibana Index Pattern)
-`category_format=[alphanumeric]` : the format for numeric category fields (in NumeralJS format)
-`ellipses=[boolean]` : if ellipse shapes should be drawn (default: `false`)
-`ellipse_major=[alphanumeric]` : the field that contains the ellipse major axis size
-`ellipse_minor=[alphanumeric]` : the field that contains the ellipse minor axis size
-`ellipse_tilt=[alphanumeric]` : the field that contains the ellipse tilt degrees
-`ellipse_units=[alphanumeric]` : the units for the ellipse axis (one of `majmin_nm`, `semi_majmin_nm`, or `semi_majmin_m`)
-`ellipse_search=[alphanumeric]` : how far to search for ellipse when generating tiles (one of `narrow`, `normal`, or `wide`)
-`spread=[alphanumeric]` : how large points should be rendered (one of `large`, `medium`, `small`, `auto`)
-`span_range=[alphanumeric]` : the dyanmic range to be applied for alpha channel (one of `flat`, `narrow`, `normal`, `wide`, `auto`)
-`resolution=[alphanumeric]` : the aggregation grid size (default: `finest`),
+* `timestamp_field=[string]` : the field to use for time (default: `@timestamp`)
+* `params=[json]` : query/filter parameters from kibana.
+* `cmap=[alphanumeric]` : the colorcet map to use (default: `bmy` for heatmap and `glasbey_category10` for colored points)
+* `category_field=[alphanumeric]` : the field to be used for coloring points/ellipses
+* `category_type=[alphanumeric]` : the type of the category_field (as found in Kibana Index Pattern)
+* `category_format=[alphanumeric]` : the format for numeric category fields (in NumeralJS format)
+* `ellipses=[boolean]` : if ellipse shapes should be drawn (default: `false`)
+* `ellipse_major=[alphanumeric]` : the field that contains the ellipse major axis size
+* `ellipse_minor=[alphanumeric]` : the field that contains the ellipse minor axis size
+* `ellipse_tilt=[alphanumeric]` : the field that contains the ellipse tilt degrees
+* `ellipse_units=[alphanumeric]` : the units for the ellipse axis (one of `majmin_nm`, `semi_majmin_nm`, or `semi_majmin_m`)
+* `ellipse_search=[alphanumeric]` : how far to search for ellipse when generating tiles (one of `narrow`, `normal`, or `wide`)
+* `spread=[alphanumeric]` : how large points should be rendered (one of `large`, `medium`, `small`, `auto`)
+* `span_range=[alphanumeric]` : the dyanmic range to be applied for alpha channel (one of `flat`, `narrow`, `normal`, `wide`, `auto`)
+* `resolution=[alphanumeric]` : the aggregation grid size (default: `finest`),
 
 **Params**
 
@@ -168,16 +168,16 @@ Get Legend
 
 **Required:**
 
-`geopoint_field=[alphanumeric]` : the field to use for geopoint coordinates.
+* `geopoint_field=[alphanumeric]` : the field to use for geopoint coordinates.
 
 **Optional:**
 
-`timestamp_field=[string]` : the field to use for time (default: `@timestamp`)
-`params=[json]` : query/filter parameters from kibana.
-`category_field=[alphanumeric]` : the field to be used for coloring points/ellipses
-`category_type=[alphanumeric]` : the type of the category_field (as found in Kibana Index Pattern)
-`category_format=[alphanumeric]` : the format for numeric category fields (in NumeralJS format)
-`cmap=[alphanumeric]` : the colorcet map to use (default: `bmy` for heatmap and `glasbey_category10` for colored points)
+* `timestamp_field=[string]` : the field to use for time (default: `@timestamp`)
+* `params=[json]` : query/filter parameters from kibana.
+* `category_field=[alphanumeric]` : the field to be used for coloring points/ellipses
+* `category_type=[alphanumeric]` : the type of the category_field (as found in Kibana Index Pattern)
+* `category_format=[alphanumeric]` : the format for numeric category fields (in NumeralJS format)
+* `cmap=[alphanumeric]` : the colorcet map to use (default: `bmy` for heatmap and `glasbey_category10` for colored points)
 
 **Params**
 
