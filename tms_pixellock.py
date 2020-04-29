@@ -631,7 +631,7 @@ def merge_generated_parameters(params, paramsfile, idx):
                 current_app.logger.warn("Found parameters file, using generated params from that")
                 #Params file exists so read it in
                 with open(paramsfile, 'r') as stream:
-                    full_params = yaml.safe_load(stream)
+                    full_params = json.load(stream)
                 #update timestamp for cache cleanup purposes
                 os.utime(os.path.join(paramsfile))
                 generated_params = full_params.get("generated_params", None)
