@@ -1104,9 +1104,7 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
 
             #Handle deg->Meters conversion and everything else
             x0,y0 = ds.utils.lnglat_to_meters(loc["lon"], loc["lat"])
-            major = hit[ellipse_major]
-            minor = hit[ellipse_minor]
-            angle = hit[ellipse_tilt] * ((2.0*pi)/360.0) #Convert degrees to radians
+            angle = angle * ((2.0*pi)/360.0) #Convert degrees to radians
             if ellipse_units == "majmin_nm":
                 major = major * 1852 #nm to meters
                 minor = minor * 1852 #nm to meters
