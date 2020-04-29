@@ -1015,6 +1015,34 @@ def ellipse(ra,rb,ang,x0,y0,Nb=16):
     Y=radm*cos(the)*si+co*radn*sin(the)+ypos
     return X,Y
 
+def split_fieldname_to_list(field):
+    field = field.split(".")
+    # .raw and .keyword are common conventions, but the
+    # only way to actually do this right is to lookup the
+    # mapping
+    if field[-1] in ('.raw', '.keyword'):
+        field.pop()
+    return field
+
+def get_nested_field_from_hit(hit, field, default=None):
+    # make it safe to call with a string or a list of strings
+    if isinstance(field, str):
+        field = [ field ]
+
+    if len(field) == 0:
+        raise ValueError("field must be provided")
+    elif len(field) == 1:
+        return getattr(hit, field[0], default)
+    elif len(field) > 1:
+        # iterate being careful if the field and the hit are not consistent
+        v = hit.to_dict()
+        for f in field:
+            if isinstance(v, dict) or isinstance(v, AttrDict):
+                v = v.get(f, None)
+            else:
+                return default
+        return v
+
 NAN_LINE = {'x':None, 'y': None, 'c':"None"}
 def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters,
                                            metrics=None, histogram_interval=None):
@@ -1031,6 +1059,14 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
     ellipse_units = geopoint_fields["ellipse_units"]
     category_field = geopoint_fields.get("category_field")
 
+    _geopoint_center = split_fieldname_to_list(geopoint_center)
+    _ellipse_major = split_fieldname_to_list(ellipse_major) 
+    _ellipse_minor = split_fieldname_to_list(ellipse_minor) 
+    _ellipse_tilt = split_fieldname_to_list(ellipse_tilt)
+
+    if category_field:
+        category_field = split_fieldname_to_list(category_field)
+
     for i, hit in enumerate(search.scan()):
         metrics["hits"] += 1
         # NB. this actually isn't maximum ellipses per tile, but rather
@@ -1042,10 +1078,10 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             break
 
         #Get all the ellipse fields
-        locs = getattr(hit, geopoint_center, None)
-        majors = getattr(hit, ellipse_major, None)
-        minors = getattr(hit, ellipse_minor, None)
-        angles = getattr(hit, ellipse_tilt, None)
+        locs = get_nested_field_from_hit(hit, _geopoint_center, None)
+        majors = get_nested_field_from_hit(hit, _ellipse_major, None)
+        minors = get_nested_field_from_hit(hit, _ellipse_minor, None)
+        angles = get_nested_field_from_hit(hit, _ellipse_tilt, None)
 
         #Check that we have all the fields
         if locs is None:
@@ -1126,12 +1162,12 @@ def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_elli
             if category_field:
                 if histogram_interval:
                     #Do quantization
-                    raw = getattr(hit, category_field, 0.0)
+                    raw = get_nested_field_from_hit(hit, category_field, 0.0)
                     quantized = math.floor(raw/histogram_interval)*histogram_interval
                     c = str(quantized)
                 else:
                     #Just use the value
-                    c = str(getattr(hit, category_field, "None"))
+                    c = str(get_nested_field_from_hit(hit, category_field, "None"))
             else:
                 c = "None"
         
