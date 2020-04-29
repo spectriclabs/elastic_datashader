@@ -392,6 +392,7 @@ def extract_parameters(request):
         "timestamp_field": "@timestamp",
         
         "lucene_query": None,
+        "dsl_query": None,
         "dsl_filter": None,
         
         "cmap": None,
@@ -424,10 +425,13 @@ def extract_parameters(request):
             from_time = arg_params.get("timeFilters",{}).get("from")
         if arg_params.get("timeFilters",{}).get("to"):
             to_time = arg_params.get("timeFilters",{}).get("to")
-        if arg_params.get("filters") and params["lucene_query"] is None:
+        if arg_params.get("filters"):
             params["dsl_filter"] = build_dsl_filter(arg_params.get("filters"))
-        if arg_params.get("query") and params["lucene_query"] is None:
+        if arg_params.get("query") and arg_params.get("query", {}).get("language", None) in ("lucene", "kuery"):
+            # accept 'kuery' for backwords compatibility...
             params["lucene_query"] = arg_params.get("query").get("query")
+        elif arg_params.get("query") and arg_params.get("query", {}).get("language", None) == "dsl":
+            params["dsl_query"] = arg_params.get("query").get("query")
     elif arg_params and arg_params == '{params}':
         #If the parameters haven't been provided yet
         resp = Response("TMS parameters not yet provided", status=204)
@@ -534,6 +538,7 @@ def generate_global_params(params, idx):
     spread=params["spread"]
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
+    dsl_query=params["dsl_query"]
     dsl_filter=params["dsl_filter"]
 
     histogram_interval = None
@@ -660,6 +665,7 @@ def get_search_base(params, idx):
     start_time=params["start_time"]
     stop_time=params["stop_time"]
     lucene_query=params["lucene_query"]
+    dsl_query=params["dsl_query"]
     dsl_filter=params["dsl_filter"]
     
     # Connect to Elasticsearch
@@ -687,19 +693,27 @@ def get_search_base(params, idx):
     #Add lucene query
     if lucene_query:
         base_s = base_s.filter('query_string', query=lucene_query)
+    
 
     #Add dsl filtering
-    if dsl_filter:
+    if dsl_filter or dsl_query:
         #Need to convert to a dict, merge with filters then convert back to a search object
         base_dict = base_s.to_dict()
+        # setup an empty filter list if necessary
         if base_dict.get("query",{}).get("bool",{}).get("filter") == None:
             base_dict["query"]["bool"]["filter"] = []
-        for f in dsl_filter["filter"]:
-            base_dict["query"]["bool"]["filter"].append(f)
-        if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
-            base_dict["query"]["bool"]["must_not"] = []
-        for f in dsl_filter["must_not"]:
-            base_dict["query"]["bool"]["must_not"].append(f)            
+        # Add the dsl_query
+        if dsl_query:
+            base_dict["query"]["bool"]["filter"].append(dsl_query)
+        # add dsl_filters
+        if dsl_filter:
+            for f in dsl_filter["filter"]:
+                base_dict["query"]["bool"]["filter"].append(f)
+            if base_dict.get("query",{}).get("bool",{}).get("must_not") == None:
+                base_dict["query"]["bool"]["must_not"] = []
+            for f in dsl_filter["must_not"]:
+                base_dict["query"]["bool"]["must_not"].append(f)
+        # convert back          
         base_s = Search.from_dict(base_dict)          
         base_s = base_s.index(idx).using(es)
     
@@ -1138,6 +1152,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
     spread=params["spread"]
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
+    dsl_query=params["dsl_query"]
     dsl_filter=params["dsl_filter"]
     ellipse_major=params["ellipse_major"] 
     ellipse_minor=params["ellipse_minor"]
@@ -1325,6 +1340,7 @@ def generate_tile(idx, x, y, z, params):
     resolution=params["resolution"]
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
+    dsl_query=params["dsl_query"]
     dsl_filter=params["dsl_filter"]
     max_bins=params["max_bins"]
     histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
