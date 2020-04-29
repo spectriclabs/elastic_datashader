@@ -541,6 +541,7 @@ def generate_global_params(params, idx):
     dsl_query=params["dsl_query"]
     dsl_filter=params["dsl_filter"]
 
+    histogram_range = 0
     histogram_interval = None
     global_doc_cnt = None
     global_bounds = None
@@ -601,19 +602,20 @@ def generate_global_params(params, idx):
                 else:
                     category_cnt = 500
                 # determine the range of category values
-                if (bounds_resp.aggregations.field_stats.max is None):
-                    histogram_range = 0
-                elif (bounds_resp.aggregations.field_stats.min is None):
-                    histogram_range = 0
-                else:
-                    histogram_range = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)
-                    if histogram_range > 0:
-                        # round to the nearest larger power of 10
-                        histogram_range = math.pow(10, math.ceil(math.log10(histogram_range)))
-                        histogram_interval = histogram_range / category_cnt
-                        current_app.logger.info("histogram interval %s, category_cnt: %s ", histogram_interval, category_cnt)
-                    else:
+                if (bounds_resp.aggregations.field_stats.count > 0):
+                    if (bounds_resp.aggregations.field_stats.max is None):
                         histogram_range = 0
+                    elif (bounds_resp.aggregations.field_stats.min is None):
+                        histogram_range = 0
+                    else:
+                        histogram_range = (bounds_resp.aggregations.field_stats.max - bounds_resp.aggregations.field_stats.min)
+                        if histogram_range > 0:
+                            # round to the nearest larger power of 10
+                            histogram_range = math.pow(10, math.ceil(math.log10(histogram_range)))
+                            histogram_interval = histogram_range / category_cnt
+                            current_app.logger.info("histogram interval %s, category_cnt: %s ", histogram_interval, category_cnt)
+                        else:
+                            histogram_range = 0
     else:
         current_app.logger.debug("Skipping global query")
 
