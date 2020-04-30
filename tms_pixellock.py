@@ -1105,6 +1105,7 @@ def replace_low_freq_inplace(s, threshold=None, last=None, replacement='Other'):
         raise ValueError('only threshold or last can be provided')
     s.cat.add_categories(["Other"], inplace=True)
     s.fillna("Other", inplace=True)
+    s.cat.remove_unused_categories(inplace=True)
 
 NAN_LINE = {'x':None, 'y': None, 'c':"None"}
 def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters,
