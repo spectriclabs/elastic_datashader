@@ -1369,10 +1369,9 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
                 img = gen_overlay(img)
         else:
             #Generate the image
-            df["C"] = df["c"].astype('category')
-            df.drop(columns=['c'])
+            df["c"] = df["c"].astype('category')
             # prevent memory explosion in datashader _colorize
-            _, color_key = simplify_categories(df, "C", create_color_key(df["C"].cat.categories, cmap=cmap), inplace=True)
+            _, color_key = simplify_categories(df, "c", create_color_key(df["c"].cat.categories, cmap=cmap), inplace=True)
             
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px            
@@ -1385,7 +1384,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
                     plot_height=tile_height_px,
                     x_range=x_range,
                     y_range=y_range
-                ).line(df, 'x', 'y', agg=rd.count_cat('C'))
+                ).line(df, 'x', 'y', agg=rd.count_cat('c'))
         
                 span = None
                 if span_range == 'flat':
@@ -1702,22 +1701,21 @@ def generate_tile(idx, x, y, z, params):
                 ###############################################################
                 # Category Mode
                 if category_field:
-                    df["T"] = df["t"].astype('category')
-                    df.drop(columns=['t'])
+                    df["t"] = df["t"].astype('category')
                     
                     # When the number of categories exceeds the number of colors, we can simply
                     # replaced the category name with the desired color (i.e. use the color as the category)
                     # field.  This is especially important in highly categorical data where the number of
                     # categories can be very large and thus cause huge memory allocations in `_colorize`
-                    _, color_key = simplify_categories(df, "T", create_color_key(df["T"].cat.categories, cmap=cmap), inplace=True)
+                    _, color_key = simplify_categories(df, "t", create_color_key(df["t"].cat.categories, cmap=cmap), inplace=True)
 
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
                         plot_height=tile_height_px,
                         x_range=x_range,
                         y_range=y_range
-                    ).points(df, 'x', 'y', agg=sum_cat('T', 'c'))
-                    
+                    ).points(df, 'x', 'y', agg=sum_cat('t', 'c'))
+
                     span = None
                     if span_range == 'flat':
                         min_alpha = 255
