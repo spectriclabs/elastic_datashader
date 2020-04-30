@@ -1059,6 +1059,40 @@ def get_nested_field_from_hit(hit, field, default=None):
                 return default
         return v
 
+def simplify_categories(df, col, color_key, inplace=False):
+    # TODO add check that df[col] is categorical
+    cats = df[col].cat.categories
+    
+    if isinstance(color_key, dict):
+        missing_colors = set(cats) - color_key.keys()
+        # Without simplification, datashader requires that a color_key
+        # dictionary contain a color for each category.  Therefore,
+        # when we simplify we will require the same.  In other words
+        # the set of keys() in color_key needs to be a superset.
+        if missing_colors:
+             raise ValueError(
+                 "insufficient colors provided (%s) for the categorical fields availabile (%s)" % (
+                     len(cats) - len(missing_colors), 
+                     len(cats)
+                 )
+             )
+    elif isinstance(color_key, list):
+        ncolors = len( color_key )
+        color_key = { k : color_key[i % ncolors] for i, k in enumerate(cats) }
+    else:
+        raise ValueError("color_key must be dict or list")
+
+    # TODO - benchmark/consider alternatives
+    if inplace == False:
+        df = df.copy()
+    df[col] = df[col].map(color_key)
+    df[col] = df[col].astype('category')
+    df[col].cat.remove_unused_categories(inplace=True)
+    # at this point, categories and colors are the same thing
+    # return a new color key that can be passed to shade()
+    new_color_key = { x:x for x in df[col].cat.categories }
+    return df, new_color_key
+
 def replace_low_freq_inplace(s, threshold=None, last=None, replacement='Other'):
     c = s.value_counts()
     if (threshold is not None) and (last is None):
@@ -1336,10 +1370,8 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
             #Generate the image
             df["C"] = df["c"].astype('category')
             df.drop(columns=['c'])
-            # prevent memory explosion
-            if df["C"].describe()['unique'] > 5000:
-                replace_low_freq_inplace(df["C"], last=5000)
-            assert(df["C"].describe()['unique'] <= 5001)
+            # prevent memory explosion in datashader _colorize
+            _, color_key = simplify_categories(df, "C", create_color_key(df["c"], cmap=cmap), inplace=True)
             
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px            
@@ -1375,7 +1407,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
                 img = tf.shade(
                             agg, 
                             cmap=cc.palette[cmap], 
-                            color_key=create_color_key(df["C"], cmap=cmap),
+                            color_key=color_key,
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
@@ -1671,10 +1703,13 @@ def generate_tile(idx, x, y, z, params):
                 if category_field:
                     df["T"] = df["t"].astype('category')
                     df.drop(columns=['t'])
-                    # prevent memory explosion
-                    if df["T"].describe()['unique'] > 5000:
-                        replace_low_freq_inplace(df["T"], last=5000)
-                    assert(df["T"].describe()['unique'] <= 5001)
+                    
+                    # When the number of categories exceeds the number of colors, we can simply
+                    # replaced the category name with the desired color (i.e. use the color as the category)
+                    # field.  This is especially important in highly categorical data where the number of
+                    # categories can be very large and thus cause huge memory allocations in `_colorize`
+                    _, color_key = simplify_categories(df, "T", create_color_key(df["T"], cmap=cmap), inplace=True)
+
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
                         plot_height=tile_height_px,
@@ -1704,7 +1739,7 @@ def generate_tile(idx, x, y, z, params):
                     img = tf.shade(
                             agg, 
                             cmap=cc.palette[cmap], 
-                            color_key=create_color_key(df["T"], cmap=cmap), 
+                            color_key=color_key, 
                             min_alpha=min_alpha,
                             how="log",
                             span=span)
