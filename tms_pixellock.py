@@ -1060,7 +1060,8 @@ def get_nested_field_from_hit(hit, field, default=None):
         return v
 
 def simplify_categories(df, col, color_key, inplace=False):
-    # TODO add check that df[col] is categorical
+    if not isinstance(df.dtypes[col], pd.CategoricalDtype):
+        raise ValueError("selected column must be categorical")
     cats = df[col].cat.categories
     
     if isinstance(color_key, dict):
