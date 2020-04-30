@@ -922,7 +922,7 @@ def convert(response):
 
 def create_color_key(categories, cmap='glasbey_category10'):
     color_key = {}
-    for k in set(categories):
+    for k in categories:
         color_key[k] = cc.palette[cmap][int(hashlib.md5(k.encode('utf-8')).hexdigest()[0:2], 16)]
     return color_key
 
@@ -1372,7 +1372,7 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
             df["C"] = df["c"].astype('category')
             df.drop(columns=['c'])
             # prevent memory explosion in datashader _colorize
-            _, color_key = simplify_categories(df, "C", create_color_key(df["c"], cmap=cmap), inplace=True)
+            _, color_key = simplify_categories(df, "C", create_color_key(df["C"].cat.categories, cmap=cmap), inplace=True)
             
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px            
@@ -1709,7 +1709,7 @@ def generate_tile(idx, x, y, z, params):
                     # replaced the category name with the desired color (i.e. use the color as the category)
                     # field.  This is especially important in highly categorical data where the number of
                     # categories can be very large and thus cause huge memory allocations in `_colorize`
-                    _, color_key = simplify_categories(df, "T", create_color_key(df["T"], cmap=cmap), inplace=True)
+                    _, color_key = simplify_categories(df, "T", create_color_key(df["T"].cat.categories, cmap=cmap), inplace=True)
 
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
