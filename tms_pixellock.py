@@ -295,11 +295,11 @@ def provide_legend(idx, field_name):
             k = str(category.key)
         c = create_color_key([str(category.key)], cmap=cmap).get(str(category.key), "#000000")
         color_key_legend.append(dict(key=k, color=c, count=category.doc_count))
-
+    
     other_cnt = getattr(response.aggregations.categories, "sum_other_doc_count", 0)
     if other_cnt > 0:
         c = create_color_key(["Other"], cmap=cmap).get("Other", "#000000")
-        color_key_legend.append(dict(key="Other", color=c, count=other_cnt))
+        color_key_legend.append(dict(key="Other", count=other_cnt))
 
 
     data = json.dumps(color_key_legend)
