@@ -224,6 +224,7 @@ def provide_legend(idx, field_name):
     #Assign param value to legacy keyword values
     geopoint_field = params["geopoint_field"]
     category_type = params["category_type"]
+    category_histogram = params["category_histogram"]
     category_format = params["category_format"]
     cmap = params["cmap"]
     histogram_interval=params.get("generated_params", {}).get("histogram_interval", None)
@@ -252,7 +253,7 @@ def provide_legend(idx, field_name):
             }  )
 
     max_legend_categories = 50
-    if histogram_interval != None:
+    if histogram_interval != None and category_histogram in (True, None):
         #Put in the histogram search
         legend_s.aggs.bucket(
                         'categories',
@@ -282,7 +283,7 @@ def provide_legend(idx, field_name):
     # Generate the legend list
     color_key_legend = []
     for category in response.aggregations.categories:
-        if histogram_interval and category_type == "number":
+        if histogram_interval and category_type == "number" and category_histogram in (True, None):
             #Bin the data
             raw = float(category.key)
             #Format with pynumeral if provided
@@ -399,7 +400,7 @@ def extract_parameters(request):
         "category_field": None,
         "category_type": None,
         "category_format": None,
-        
+        "category_histogram": None,
         "ellipses": False,
         "ellipse_major": "",
         "ellipse_minor": "",
@@ -459,6 +460,14 @@ def extract_parameters(request):
     params["category_field"] = request.args.get('category_field', default=params["category_field"])
     params["category_format"] = request.args.get('category_pattern', default=params["category_format"])
     params["category_type"] = request.args.get('category_type', default=params["category_type"])
+    params["category_histogram"] = request.args.get('category_histogram', default=params["category_histogram"])
+    if params["category_histogram"] in ("true", "True", "TRUE"):
+        params["category_histogram"] = True
+    elif params["category_histogram"] in ("false", "False", "False"):
+        params["category_histogram"] = False
+    else:
+        params["category_histogram"] = None
+
     params["spread"] = request.args.get('spread')
     # Handle text-value spread in both legacy and new format
     if params["spread"] in ("coarse", "large"):
@@ -535,6 +544,7 @@ def generate_global_params(params, idx):
     stop_time=params["stop_time"]
     category_field=params["category_field"]
     category_type=params["category_type"]
+    category_histogram=params["category_histogram"]
     spread=params["spread"]
     span_range=params["span_range"]
     lucene_query=params["lucene_query"]
@@ -568,7 +578,7 @@ def generate_global_params(params, idx):
             'point_count','value_count',field=geopoint_field
         )
     #If the field is a number, we need to figure out it's min/max globally
-    if category_type == "number":
+    if category_type == "number" and category_histogram in (True, None):
         bounds_s.aggs.metric(
             'field_stats', 'stats', field=category_field
         )
@@ -590,7 +600,7 @@ def generate_global_params(params, idx):
             global_doc_cnt = bounds_resp.aggregations.point_count.value
         
         # In a numeric field, we can fall back to histogram mode if there are too many unique values
-        if category_type == "number":
+        if category_type == "number" and category_histogram in (True, None):
             current_app.logger.info("Generating histogram parameters")
             if hasattr(bounds_resp.aggregations, 'field_stats'):
                 current_app.logger.info("field stats %s", bounds_resp.aggregations.field_stats)
