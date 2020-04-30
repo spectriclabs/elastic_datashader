@@ -1059,6 +1059,19 @@ def get_nested_field_from_hit(hit, field, default=None):
                 return default
         return v
 
+def replace_low_freq_inplace(s, threshold=None, last=None, replacement='Other'):
+    c = s.value_counts()
+    if (threshold is not None) and (last is None):
+        s.cat.remove_categories(c.index[c < threshold], inplace=True)
+    elif (threshold is None) and (last is not None):
+        s.cat.remove_categories(c.index[last:], inplace=True)
+    elif (threshold is None) and (last is None):
+        raise ValueError('either threshold or last can be provided')
+    else:
+        raise ValueError('only threshold or last can be provided')
+    s.cat.add_categories(["Other"], inplace=True)
+    s.fillna("Other", inplace=True)
+
 NAN_LINE = {'x':None, 'y': None, 'c':"None"}
 def create_datashader_ellipses_from_search(search, geopoint_fields, maximum_ellipses_per_tile, extend_meters,
                                            metrics=None, histogram_interval=None):
@@ -1322,6 +1335,11 @@ def generate_nonaggregated_tile(idx, x, y, z, params):
         else:
             #Generate the image
             df["C"] = df["c"].astype('category')
+            df.drop(columns=['c'])
+            # prevent memory explosion
+            if df["C"].describe()['unique'] > 5000:
+                replace_low_freq_inplace(df["C"], last=5000)
+            assert(df["C"].describe()['unique'] <= 5001)
             
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px            
@@ -1652,6 +1670,11 @@ def generate_tile(idx, x, y, z, params):
                 # Category Mode
                 if category_field:
                     df["T"] = df["t"].astype('category')
+                    df.drop(columns=['t'])
+                    # prevent memory explosion
+                    if df["T"].describe()['unique'] > 5000:
+                        replace_low_freq_inplace(df["T"], last=5000)
+                    assert(df["T"].describe()['unique'] <= 5001)
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
                         plot_height=tile_height_px,
