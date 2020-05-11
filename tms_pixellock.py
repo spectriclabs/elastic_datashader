@@ -48,11 +48,6 @@ from elasticsearch_dsl import Search, A, Q
 from elasticsearch_dsl.aggs import Bucket
 from elasticsearch_dsl.utils import AttrList, AttrDict
 
-
-
-
-
-
 #Disable warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
@@ -353,6 +348,7 @@ def get_tms(idx, x, y, z):
         check_cache_dir(idx)
 
         headers = get_es_headers(request.headers)
+        current_app.logger.info("Loaded input headers %s", request.headers)
         current_app.logger.info("Loaded elasticsearch headers %s", headers)
 
         #Get or generate extended parameters
@@ -395,6 +391,7 @@ def extract_parameters(request):
     from_time = None
     to_time = "now"
     params = {
+        "user": None,
         "geopoint_field": None,
         "timestamp_field": "@timestamp",
         
@@ -424,7 +421,10 @@ def extract_parameters(request):
         "max_ellipses_per_tile":  int(current_app.config["MAX_ELLIPSES_PER_TILE"])
     }
 
-    #Argument Parameter, NB. These overwrite what is in index config
+    #Extract user from headers
+    params["user"] = request.headers.get("es-security-runas-user", None)
+
+    #Argument Parameters
     arg_params = request.args.get('params')
     if arg_params and arg_params != '{params}':
         arg_params = json.loads(request.args.get('params'))
@@ -691,7 +691,7 @@ def get_search_base(params, idx):
         current_app.config.get("ELASTIC"),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(request)
+        headers=get_es_headers(request, params.get("user"))
     )
     #Create base search 
     base_s = Search(index=idx).using(es)
@@ -928,7 +928,7 @@ def create_color_key(categories, cmap='glasbey_category10'):
 
 HEADERS = None
 header_lock = threading.Lock()
-def get_es_headers(request_headers=None):
+def get_es_headers(request_headers=None, user=None):
     global HEADERS, header_lock
 
     with header_lock:
@@ -945,6 +945,8 @@ def get_es_headers(request_headers=None):
                     current_app.logger.exception("Failed to load headers from %s", header_file)
                     # in failure, headers are set to empty
                     HEADERS = {}
+            else:
+                HEADERS = {}
 
     result = copy.deepcopy(HEADERS)
 
@@ -954,6 +956,10 @@ def get_es_headers(request_headers=None):
         for hh in whitelist_headers.split(","):
             if hh in request_headers:
                 result[hh] = request_headers[hh]
+
+    #Set runas user based off user provided
+    if user:
+        result["es-security-runas-user"] = user
 
     return result
 
@@ -1817,7 +1823,6 @@ def create_app(args=None):
 
     https://flask.palletsprojects.com/en/1.1.x/tutorial/factory/
     """
-
     flask_app = Flask(__name__)
 
     # Load default settings

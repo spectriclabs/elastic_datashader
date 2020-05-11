@@ -10,6 +10,7 @@
 <tr>
     <th></th>
     <th>Index Name / Hash</th>
+    <th>User</th>
     <th>Size</th>
     <th>Age</th>
     <th>Start</th>
@@ -29,11 +30,13 @@
     <td></td>
     <td></td>
     <td></td>
+    <td></td>
 </tr>
 {% for h,params in hashes.items() %}
 <tr>
     <td><a href="./clear_cache?name={{ l }}&hash={{ h }}">Clear</a></td>
     <td>&nbsp;&nbsp;&nbsp;&nbsp;{{ h }}</td>
+    <td>{{ params['user'] }}</td> 
     <td>{{ params['size'] }}</td>
     <td>{{ params['age'] }}</td>
     <td>{{ params['start_time'] }}</td>
