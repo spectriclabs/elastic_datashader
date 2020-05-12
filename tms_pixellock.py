@@ -48,6 +48,8 @@ from elasticsearch_dsl import Search, A, Q
 from elasticsearch_dsl.aggs import Bucket
 from elasticsearch_dsl.utils import AttrList, AttrDict
 
+from datemath import convert_kibana_time
+
 #Disable warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)
@@ -511,7 +513,7 @@ def extract_parameters(request):
     params["stop_time"] = now
     if to_time:
         try:
-            params["stop_time"] = convertKibanaTime(to_time, now)
+            params["stop_time"] = convert_kibana_time(to_time, now)
         except ValueError:
             current_app.logger.exception("invalid to_time parameter")
             raise Exception('invalid to_time parameter') 
@@ -519,7 +521,7 @@ def extract_parameters(request):
     params["start_time"] = None
     if from_time:
         try:
-            params["start_time"] = convertKibanaTime(from_time, now)
+            params["start_time"] = convert_kibana_time(from_time, now)
         except ValueError:
             current_app.logger.exception("invalid from_time parameter")
             raise Exception('invalid from_time parameter') 
@@ -809,45 +811,6 @@ def quantizeTimeRange(start_time, stop_time):
         start_time = start_time.replace(minute=math.floor(start_time.minute/5.0)*5, second=0, microsecond=0)
         stop_time = stop_time.replace(minute=math.floor(stop_time.minute/5.0)*5, second=0, microsecond=0)
         return start_time, stop_time
-
-def convertKibanaTime(time_string, current_time):
-    if time_string.startswith("now"):
-        if time_string == "now":
-            return current_time
-        elif time_string.startswith("now-"):
-            offset = time_string.split('-')[1]
-            unit = offset[-1]
-            value = int(offset[0:-1])
-            if unit == 's':
-                return current_time - timedelta(seconds=value)
-            elif unit == 'm':
-                return current_time - timedelta(minutes=value)
-            elif unit == 'h' or unit == 'H':
-                return current_time - timedelta(hours=value)
-            elif unit == 'd':
-                return current_time - timedelta(days=value)
-            elif unit == 'w':
-                return current_time - timedelta(weeks=value)
-            elif unit == 'M':
-                return current_time - timedelta(days=value*30) #Kind of a hack
-            elif unit == "y":
-                return current_time - timedelta(days=value*365) #Kind of a hack
-            else:
-                raise ValueError("%s is not a valid time offset" % unit)
-        elif time_string.startswith("now+"):
-            raise ValueError("now+ time strings are not currently supported")
-    elif time_string[10] == 'T':
-        # fromisoformat doesn't support the 'Z'
-        if time_string[-1] == 'Z':
-            time_string = time_string[:-1]
-
-        try:
-             t = datetime.fromisoformat(time_string)
-             return t
-        except ValueError:
-            raise ValueError("error parsing isoformat time %s", time_string)
-    
-    raise ValueError("unknown time string %s" % time_string)
 
 def pretty_time_delta(seconds):
     sign_string = '-' if seconds < 0 else ''
