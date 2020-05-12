@@ -822,11 +822,11 @@ def convertKibanaTime(time_string, current_time):
     :Examples:
     >>> now = datetime(2020, 5, 12, 15, 0, 0)
     >>> convertKibanaTime("now-3m", now)
-    ...
+    datetime.datetime(2020, 5, 12, 14, 57, tzinfo=tzutc())
     """
     if isinstance(current_time, datetime):
         current_time = arrow.get(current_time)
-    return datemath.datemath(time_string, now=current_time, type="datetime")
+    return datemath.datemath(time_string, now=current_time)
 
 def pretty_time_delta(seconds):
     sign_string = '-' if seconds < 0 else ''
