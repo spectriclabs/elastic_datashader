@@ -690,7 +690,7 @@ def get_search_base(params, idx):
     
     # Connect to Elasticsearch
     es = Elasticsearch(
-        current_app.config.get("ELASTIC"),
+        current_app.config.get("ELASTIC").split(','),
         verify_certs=False,
         timeout=900,
         headers=get_es_headers(request.headers, params.get("user"))
@@ -1878,7 +1878,7 @@ if __name__ == '__main__':
     # App configuration
     parser.add_argument('-d', '--cache_directory', default=Config.CACHE_DIRECTORY, help="Directory for tile cache")
     parser.add_argument('-t', '--cache_timeout', default=Config.CACHE_TIMEOUT, help="Cache lifespan in sec")
-    parser.add_argument('-e', '--elastic', default=Config.ELASTIC, help="Elasticsearch URL")
+    parser.add_argument('-e', '--elastic', default=Config.ELASTIC, help="Elasticsearch URL, can be comma separated")
     parser.add_argument('--hostname', default=socket.getfqdn(), help="node hostname")
     parser.add_argument('-H', '--proxy_host', default=Config.PROXY_HOST, help="Proxy host")
     parser.add_argument('-P', '--proxy_prefix', default=Config.PROXY_PREFIX, help="Proxy prefix")
