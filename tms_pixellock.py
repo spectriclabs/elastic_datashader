@@ -28,6 +28,7 @@ import fcntl
 from functools import lru_cache
 import ssl
 from datetime import datetime, timedelta
+import datemath
 from pprint import pprint, pformat
 import pynumeral
 
@@ -36,6 +37,7 @@ from numpy import linspace, pi, sin, cos
 from PIL import Image, ImageDraw
 import mercantile
 
+import arrow
 import datashader as ds
 import pandas as pd
 import colorcet as cc
@@ -811,43 +813,20 @@ def quantizeTimeRange(start_time, stop_time):
         return start_time, stop_time
 
 def convertKibanaTime(time_string, current_time):
-    if time_string.startswith("now"):
-        if time_string == "now":
-            return current_time
-        elif time_string.startswith("now-"):
-            offset = time_string.split('-')[1]
-            unit = offset[-1]
-            value = int(offset[0:-1])
-            if unit == 's':
-                return current_time - timedelta(seconds=value)
-            elif unit == 'm':
-                return current_time - timedelta(minutes=value)
-            elif unit == 'h' or unit == 'H':
-                return current_time - timedelta(hours=value)
-            elif unit == 'd':
-                return current_time - timedelta(days=value)
-            elif unit == 'w':
-                return current_time - timedelta(weeks=value)
-            elif unit == 'M':
-                return current_time - timedelta(days=value*30) #Kind of a hack
-            elif unit == "y":
-                return current_time - timedelta(days=value*365) #Kind of a hack
-            else:
-                raise ValueError("%s is not a valid time offset" % unit)
-        elif time_string.startswith("now+"):
-            raise ValueError("now+ time strings are not currently supported")
-    elif time_string[10] == 'T':
-        # fromisoformat doesn't support the 'Z'
-        if time_string[-1] == 'Z':
-            time_string = time_string[:-1]
+    """Convert Kibana/ES date math into Python datetimes
 
-        try:
-             t = datetime.fromisoformat(time_string)
-             return t
-        except ValueError:
-            raise ValueError("error parsing isoformat time %s", time_string)
-    
-    raise ValueError("unknown time string %s" % time_string)
+    :param time_string: Time-string following
+    :param current_time: Reference point for date math
+    :return: Datetime object based on ``time_string`` math
+
+    :Examples:
+    >>> now = datetime(2020, 5, 12, 15, 0, 0)
+    >>> convertKibanaTime("now-3m", now)
+    datetime.datetime(2020, 5, 12, 14, 57, tzinfo=tzutc())
+    """
+    if isinstance(current_time, datetime):
+        current_time = arrow.get(current_time)
+    return datemath.datemath(time_string, now=current_time)
 
 def pretty_time_delta(seconds):
     sign_string = '-' if seconds < 0 else ''
