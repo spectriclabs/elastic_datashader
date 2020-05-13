@@ -691,7 +691,7 @@ def get_search_base(params, idx):
         current_app.config.get("ELASTIC"),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(request, params.get("user"))
+        headers=get_es_headers(request.headers, params.get("user"))
     )
     #Create base search 
     base_s = Search(index=idx).using(es)
