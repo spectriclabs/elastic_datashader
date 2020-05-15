@@ -1,54 +1,49 @@
 #!/usr/bin/env python
-
-from flask import Flask, Response, current_app
-from flask import request, render_template, redirect
-from flask import Blueprint
-from flask_apscheduler import APScheduler
-
-import time
-import math
+import argparse
+import collections
+import copy
+import fcntl
+import hashlib
 import io
+import json
+import logging
+import math
 import os
 import pathlib
-import copy
-import argparse
-import logging
-import yaml
-import hashlib
-import subprocess
 import shutil
-import threading
-import copy
-import collections
-import png
 import socket
-import urllib3
-import json
-import fcntl
-from functools import lru_cache
 import ssl
+import subprocess
+import threading
+import time
 from datetime import datetime, timedelta
-import datemath
-from pprint import pprint, pformat
-import pynumeral
-
-from numba import jit
-from numpy import linspace, pi, sin, cos 
-from PIL import Image, ImageDraw
-import mercantile
+from functools import lru_cache
+from pprint import pformat
 
 import arrow
-import datashader as ds
-import pandas as pd
 import colorcet as cc
-import datashader.transfer_functions as tf
+import datashader as ds
 import datashader.reductions as rd
-from datashader_helpers import sum_cat
-
+import datashader.transfer_functions as tf
+import datemath
+import mercantile
+import pandas as pd
+import pynumeral
+import urllib3
+import yaml
+from PIL import Image, ImageDraw
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Search, A, Q
+from elasticsearch_dsl import Search
 from elasticsearch_dsl.aggs import Bucket
 from elasticsearch_dsl.utils import AttrList, AttrDict
+from flask import Blueprint
+from flask import Flask, Response, current_app
+from flask import request, render_template, redirect
+from flask_apscheduler import APScheduler
+from numba import jit
+from numpy import linspace, pi, sin, cos
+
+from datashader_helpers import sum_cat
 
 #Disable warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
