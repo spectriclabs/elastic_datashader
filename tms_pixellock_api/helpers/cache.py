@@ -53,7 +53,7 @@ def check_cache_age(cache_dir: Union[Path, str], age_limit: int) -> None:
 
     :param cache_dir: Directory where the cache is (where the subdirectory
                       is layers)
-    :param age_limit: The age limit above which to delete files
+    :param age_limit: The age limit in seconds above which to delete files
     """
     cache_path = Path(cache_dir)
     for layer_dir in cache_path.iterdir():
