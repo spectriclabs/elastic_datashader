@@ -179,7 +179,7 @@ def setup_cli_parser() -> argparse.Namespace:
         default=False,
         action="store_true",
         help=(
-            "Enable SSL, set environment variables to confgure: "
+            "Enable SSL, set environment variables to configure: "
             "SSL_SERVER_KEY, SSL_SERVER_CERT, SSL_CA_CHAIN"
         ),
     )
