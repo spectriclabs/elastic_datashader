@@ -2,12 +2,12 @@
 import hashlib
 import io
 from functools import lru_cache
-from typing import Dict
+from typing import Dict, Tuple
 
 import colorcet as cc
 from PIL import Image, ImageDraw
-from numba import jit
-from numpy import linspace, cos, sin, pi
+from numba import njit
+import numpy as np
 
 
 def create_color_key(categories, cmap: str = "glasbey_category10") -> Dict[str, str]:
@@ -85,7 +85,7 @@ def gen_debug_overlay(img: bytes, text: str) -> bytes:
     :return: Debug overlay on image
     """
     base = Image.open(io.BytesIO(img))
-    overlay = gen_debug_img(*base.size, text)
+    overlay = gen_debug_img(base.size[0], base.size[1], text)
     out = Image.alpha_composite(base, overlay)
     with io.BytesIO() as output:
         out.save(output, format="PNG")
@@ -128,24 +128,28 @@ def gen_empty(width: int, height: int) -> bytes:
         return output.getvalue()
 
 
-@jit(nopython=True)
-def ellipse(ra, rb, ang, x0, y0, Nb=16):
+@njit
+def ellipse(
+    radm: float,
+    radn: float,
+    tilt: float,
+    xpos: float,
+    ypos: float,
+    num_points: int = 16,
+) -> Tuple[np.ndarray, np.ndarray]:
     """Accelerated helper function for generating ellipses from point data
 
-    :param ra:
-    :param rb:
-    :param ang:
-    :param x0:
-    :param y0:
-    :param Nb:
+    :param radm:
+    :param radn:
+    :param tilt:
+    :param xpos:
+    :param ypos:
+    :param num_points:
     :return:
     """
-    xpos, ypos = x0, y0
-    radm, radn = ra, rb
-    an = ang
-
-    co, si = cos(an), sin(an)
-    the = linspace(0, 2 * pi, Nb)
-    X = radm * cos(the) * co - si * radn * sin(the) + xpos
-    Y = radm * cos(the) * si + co * radn * sin(the) + ypos
-    return X, Y
+    co = np.cos(tilt)
+    si = np.sin(tilt)
+    the = np.linspace(0, 2 * np.pi, num_points)
+    xarr = radm * np.cos(the) * co - si * radn * np.sin(the) + xpos
+    yarr = radm * np.cos(the) * si + co * radn * np.sin(the) + ypos
+    return xarr, yarr

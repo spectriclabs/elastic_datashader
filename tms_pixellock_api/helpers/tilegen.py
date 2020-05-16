@@ -180,7 +180,7 @@ def create_datashader_ellipses_from_search(
                 continue
 
             X, Y = ellipse(
-                minor / 2.0, major / 2.0, angle, x0, y0, Nb=16
+                minor / 2.0, major / 2.0, angle, x0, y0, num_points=16
             )  # Points per ellipse, NB. this takes semi-maj/min
             if category_field:
                 if histogram_interval:
