@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
-import hashlib
+from hashlib import md5
 import io
 from functools import lru_cache
-from typing import Dict, Tuple
+from typing import Dict, Iterable, Sequence, Tuple
 
-import colorcet as cc
+from colorcet import palette
 from PIL import Image, ImageDraw
 from numba import njit
 import numpy as np
 
 
-def create_color_key(categories, cmap: str = "glasbey_category10") -> Dict[str, str]:
-    """
+def create_color_key(
+    categories: Iterable,
+    cmap: str = "glasbey_category10"
+) -> Dict[str, str]:
+    """Create a mapping from category to color
 
-    :param categories:
-    :param cmap:
-    :return:
+    :param categories: Categories to encode as different colors
+    :param cmap: Colorcet color-map name (defaults to "glasbey_category10")
+    :return: Dictionary containing each category and their respective color
+
+    :Example:
+    >>> create_color_key(["foo", "bar", "baz"])
+    {'foo': '#9a0390', 'bar': '#8a9500', 'baz': '#870062'}
     """
-    color_key = {}
-    for k in categories:
-        color_key[k] = cc.palette[cmap][
-            int(hashlib.md5(k.encode("utf-8")).hexdigest()[0:2], 16)
-        ]
-    return color_key
+    return {
+        k: palette[cmap][int(md5(k.encode("utf-8")).hexdigest()[0:2], 16)]
+        for k in categories
+    }
 
 
 @lru_cache(10)
@@ -30,10 +35,10 @@ def gen_overlay_img(width: int, height: int, thickness: int) -> Image:
     """Create an overlay hash image, using an lru_cache since the same
     overlay can be generated once and then reused indefinitely
 
-    :param width:
-    :param height:
-    :param thickness:
-    :return:
+    :param width: Width of overlay image
+    :param height: Height of overlay image
+    :param thickness: Thickness of border
+    :return: Image object
     """
     overlay = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(overlay)
@@ -48,11 +53,11 @@ def gen_debug_img(width: int, height: int, text: str, thickness: int = 2) -> Ima
     """Create an overlay hash image, using an lru_cache since the same
     overlay can be generated once and then reused indefinitely
 
-    :param width:
-    :param height:
-    :param text:
-    :param thickness:
-    :return:
+    :param width: Width of debug image
+    :param height: Height of debug image
+    :param text: Text that will be on image
+    :param thickness: Thickness of border
+    :return: Image object
     """
     overlay = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(overlay)
@@ -63,11 +68,11 @@ def gen_debug_img(width: int, height: int, text: str, thickness: int = 2) -> Ima
 
 
 def gen_overlay(img, thickness: int = 8) -> bytes:
-    """
+    """Generate and overlay to image
 
-    :param img:
-    :param thickness:
-    :return:
+    :param img: Image over which to add an overlay
+    :param thickness: Thickness of border
+    :return: Image bytes
     """
     base = Image.open(io.BytesIO(img))
     overlay = gen_overlay_img(*base.size, thickness=thickness)
@@ -78,7 +83,7 @@ def gen_overlay(img, thickness: int = 8) -> bytes:
 
 
 def gen_debug_overlay(img: bytes, text: str) -> bytes:
-    """Generate debug overlay
+    """Generate debug overlay (with text) for image
 
     :param img: Image to overlay debug
     :param text: Text to put on image
