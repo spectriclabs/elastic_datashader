@@ -13,11 +13,7 @@ def test_quantize_time_range_no_stop():
 @pytest.mark.parametrize(
     "start,stop,expected",
     (
-        (
-            None,
-            datetime(2020, 5, 11, 12, 0, 1),
-            (None, datetime(2020, 5, 11, 0, 0)),
-        ),
+        (None, datetime(2020, 5, 11, 12, 0, 1), (None, datetime(2020, 5, 11, 0, 0))),
         (
             datetime(2020, 5, 1, 0, 0, 5),
             datetime(2020, 5, 11, 12, 0, 1),
@@ -43,8 +39,12 @@ def test_quantize_time_range(start, stop, expected):
     "time_string,current_time,expected",
     (
         ("now-3d", datetime(2020, 5, 11, 12), datetime(2020, 5, 8, 12, tzinfo=tzutc())),
-        ("now+3d", datetime(2020, 5, 11, 12), datetime(2020, 5, 14, 12, tzinfo=tzutc())),
-    )
+        (
+            "now+3d",
+            datetime(2020, 5, 11, 12),
+            datetime(2020, 5, 14, 12, tzinfo=tzutc()),
+        ),
+    ),
 )
 def test_convert_kibana_time(time_string, current_time, expected):
     assert expected == timeutil.convert_kibana_time(time_string, current_time)
@@ -58,7 +58,7 @@ def test_convert_kibana_time(time_string, current_time, expected):
         (86404, "1d0h0m4s"),
         (61, "1m1s"),
         (59, "59s"),
-    )
+    ),
 )
 def test_pretty_time_delta(seconds, expected):
     assert expected == timeutil.pretty_time_delta(seconds)
