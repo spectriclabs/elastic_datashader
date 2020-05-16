@@ -12,3 +12,6 @@ Pillow
 pynumeral
 arrow
 python-datemath
+numba
+numpy
+urllib3
