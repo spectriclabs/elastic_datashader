@@ -2,7 +2,7 @@
 from hashlib import md5
 import io
 from functools import lru_cache
-from typing import Dict, Iterable, Sequence, Tuple
+from typing import Dict, Iterable, Tuple
 
 from colorcet import palette
 from PIL import Image, ImageDraw
