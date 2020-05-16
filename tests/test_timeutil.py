@@ -24,9 +24,14 @@ def test_quantize_time_range_no_stop():
             (datetime(2020, 5, 1, 0, 0), datetime(2020, 5, 11, 0, 0)),
         ),
         (
-                datetime(2020, 3, 1, 0, 0, 5),
-                datetime(2020, 5, 11, 12, 0, 1),
-                (datetime(2020, 3, 1, 0, 0), datetime(2020, 5, 11, 0, 0)),
+            datetime(2020, 3, 1, 0, 0, 5),
+            datetime(2020, 5, 11, 12, 0, 1),
+            (datetime(2020, 3, 1, 0, 0), datetime(2020, 5, 11, 0, 0)),
+        ),
+        (
+            datetime(2020, 5, 11, 12, 0, 0),
+            datetime(2020, 5, 11, 12, 0, 3),
+            (datetime(2020, 5, 11, 12, 0), datetime(2020, 5, 11, 12, 0)),
         ),
     ),
 )
@@ -51,7 +56,8 @@ def test_convert_kibana_time(time_string, current_time, expected):
         (3601, "1h0m1s"),
         (-3601, "-1h0m1s"),
         (86404, "1d0h0m4s"),
-        (61, "1m1s")
+        (61, "1m1s"),
+        (59, "59s"),
     )
 )
 def test_pretty_time_delta(seconds, expected):
