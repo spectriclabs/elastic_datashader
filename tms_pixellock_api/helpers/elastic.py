@@ -2,16 +2,20 @@
 import copy
 import os
 import threading
-from typing import List
+from typing import Any, Dict, List
 
-import datashader as ds
 import yaml
+from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, AttrDict
 from flask import current_app, request
 
 
-def get_search_base(elastic_uri, params, idx):
+def get_search_base(
+    elastic_uri: str,
+    params: Dict[str, Any],
+    idx: int
+) -> Search:
     """
 
     :param elastic_uri:
@@ -197,7 +201,7 @@ def convert(response):
     if hasattr(response.aggregations, "categories"):
         for category in response.aggregations.categories:
             for bucket in category.grids:
-                x, y = ds.utils.lnglat_to_meters(
+                x, y = lnglat_to_meters(
                     bucket.centroid.location.lon, bucket.centroid.location.lat
                 )
                 yield {
@@ -212,15 +216,15 @@ def convert(response):
         for bucket in response.aggregations.grids:
             lon = bucket.centroid.location.lon
             lat = bucket.centroid.location.lat
-            x, y = ds.utils.lnglat_to_meters(lon, lat)
+            x, y = lnglat_to_meters(lon, lat)
             yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
 
 
 def split_fieldname_to_list(field: str) -> List[str]:
-    """
+    """Remove .raw and .keyword from ``field``
 
-    :param field:
-    :return:
+    :param field: Field name to split
+    :return: List containing field name
     """
     field = field.split(".")
     # .raw and .keyword are common conventions, but the
