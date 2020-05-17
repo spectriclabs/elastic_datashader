@@ -301,38 +301,50 @@ def generate_global_params(params, idx):
 
 
 def merge_generated_parameters(params, paramsfile, idx):
+    """
+
+    :param params:
+    :param paramsfile:
+    :param idx:
+    :return:
+    """
     # Lock and open file
-    pathlib.Path(os.path.dirname(os.path.join(paramsfile))).mkdir(
-        parents=True, exist_ok=True
-    )
+    params_path = pathlib.Path(paramsfile)
+    params_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lockfile_path = params_path.with_suffix(params_path.suffix + ".lock")
+
     generated_params = None
-    with open(paramsfile + ".lock", "w") as lockfile:
+    with lockfile_path.open("w") as lockfile:
         fcntl.flock(lockfile, fcntl.LOCK_EX)
         try:
-            if os.path.exists(os.path.join(paramsfile)):
+            if params_path.exists():
                 current_app.logger.warn(
                     "Found parameters file, using generated params from that"
                 )
                 # Params file exists so read it in
-                with open(paramsfile, "r") as stream:
+                with params_path.open("r") as stream:
                     full_params = json.load(stream)
                 # update timestamp for cache cleanup purposes
-                os.utime(os.path.join(paramsfile))
-                generated_params = full_params.get("generated_params", None)
+                params_path.touch(exist_ok=True)
+                generated_params = full_params.get("generated_params")
 
             if generated_params is None:
                 current_app.logger.warn("Discovering generated params")
-                # Params file either does not exists or does not have generated parameters in it
+                # Params file either does not exists
+                # or does not have generated parameters in it
                 generated_params = generate_global_params(params, idx)
+
                 # Write extended params to file
                 params_cleaned = copy.copy(params)
                 params_cleaned["generated_params"] = generated_params
+
                 # Change all datetimes to string format
-                for k, p in sorted(params_cleaned.items()):
+                for k, p in params_cleaned.items():
                     if isinstance(p, datetime):
                         params_cleaned[k] = p.isoformat()
-                with open(os.path.join(paramsfile), "w") as i:
-                    i.write(json.dumps(params_cleaned))
+                with params_path.open("w") as pfile:
+                    json.dump(params_cleaned, pfile)
         finally:
             fcntl.lockf(lockfile, fcntl.LOCK_UN)
 
