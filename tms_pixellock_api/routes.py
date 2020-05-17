@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-import collections
 import copy
 import json
 import logging
-import os
 import shutil
 import subprocess
-import time
+from pathlib import Path
 from pprint import pformat
 
 import pynumeral
@@ -17,188 +15,118 @@ from tms_pixellock_api.helpers.cache import (
     get_cache,
     check_cache_dir,
     set_cache,
+    build_layer_info,
 )
-from tms_pixellock_api.helpers.tilegen import generate_nonaggregated_tile, generate_tile
 from tms_pixellock_api.helpers.drawing import create_color_key, gen_error
-from tms_pixellock_api.helpers.timeutil import pretty_time_delta
 from tms_pixellock_api.helpers.elastic import get_search_base, get_es_headers
 from tms_pixellock_api.helpers.parameters import (
     extract_parameters,
     merge_generated_parameters,
 )
-
+from tms_pixellock_api.helpers.tilegen import generate_nonaggregated_tile, generate_tile
 
 blueprints = Blueprint("rest_api", __name__, template_folder="templates")
+
+
+##############################
+# VIEW ENDPOINTS
+##############################
 
 
 @blueprints.route("/")
 @blueprints.route("/index")
 def index():
+    cache_dir = current_app.config["CACHE_DIRECTORY"]
+
     # Calc Cache Size
     cache_size = (
-        subprocess.check_output(["du", "-sh", current_app.config["CACHE_DIRECTORY"]])
-        .split()[0]
-        .decode("utf-8")
+        subprocess.check_output(["du", "-sh", cache_dir]).split()[0].decode("utf-8")
     )
-    # Build Layer Info
-    layer_info = {}
-    layers = os.listdir(current_app.config["CACHE_DIRECTORY"])
-    for l in layers:
-        if not os.path.isfile(current_app.config["CACHE_DIRECTORY"] + l):
-            hashes = os.listdir(current_app.config["CACHE_DIRECTORY"] + l + "/")
-            for h in hashes:
-                if os.path.exists(
-                    current_app.config["CACHE_DIRECTORY"] + l + "/" + h + "/params.json"
-                ):
-                    with open(
-                        current_app.config["CACHE_DIRECTORY"]
-                        + l
-                        + "/"
-                        + h
-                        + "/params.json"
-                    ) as f:
-                        params = json.loads(f.read())
-                    # Check age of hash
-                    params["age_timestamp"] = os.path.getmtime(
-                        current_app.config["CACHE_DIRECTORY"]
-                        + l
-                        + "/"
-                        + h
-                        + "/params.json"
-                    )
-                    params["age"] = pretty_time_delta(
-                        time.time() - params["age_timestamp"]
-                    )
-                    # Check size of hash
-                    try:
-                        params["size"] = (
-                            subprocess.check_output(
-                                [
-                                    "du",
-                                    "-sh",
-                                    current_app.config["CACHE_DIRECTORY"] + l + "/" + h,
-                                ]
-                            )
-                            .split()[0]
-                            .decode("utf-8")
-                        )
-                    except OSError:
-                        params["size"] = "Error"
-                    if layer_info.get(l) is None:
-                        layer_info[l] = collections.OrderedDict()
-                    layer_info[l][h] = params
 
-            # Order hashes based off age, newest to oldest
-            if layer_info.get(l):
-                layer_info[l] = collections.OrderedDict(
-                    reversed(
-                        sorted(
-                            layer_info[l].items(), key=lambda x: x[1]["age_timestamp"]
-                        )
-                    )
-                )
+    # Build Layer Info
     return render_template(
         "index.html",
         title="Elastic Data Shader Server",
         cache_size=cache_size,
-        layer_info=layer_info,
+        layer_info=build_layer_info(cache_dir),
     )
 
 
 @blueprints.route("/parameters", methods=["GET"])
 def display_parameters():
-    color_file = os.path.join(
-        current_app.config["CACHE_DIRECTORY"]
-        + "/%s/%s-colormap.json" % (request.args.get("name"), request.args.get("field"))
-    )
+    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
+    name = request.args.get("name")
+    hash_ = request.args.get("hash")
 
-    # Build Layer Info
-    layers = os.listdir(current_app.config["CACHE_DIRECTORY"])
-    for l in layers:
-        if l == request.args.get("name"):
-            if not os.path.isfile(current_app.config["CACHE_DIRECTORY"] + l):
-                hashes = os.listdir(current_app.config["CACHE_DIRECTORY"] + l + "/")
-                for h in hashes:
-                    if h == request.args.get("hash"):
-                        if os.path.exists(
-                            current_app.config["CACHE_DIRECTORY"]
-                            + l
-                            + "/"
-                            + h
-                            + "/params.json"
-                        ):
-                            with open(
-                                current_app.config["CACHE_DIRECTORY"]
-                                + l
-                                + "/"
-                                + h
-                                + "/params.json"
-                            ) as f:
-                                params = json.loads(f.read())
-                                generated_params = pformat(
-                                    params.get("generated_params", {})
-                                )
-                                return render_template(
-                                    "parameters.html",
-                                    title="Elastic Data Shader Server",
-                                    params=params,
-                                    generated_params=generated_params,
-                                    name=request.args.get("name"),
-                                    hash=request.args.get("hash"),
-                                )
-    return render_template(
-        "parameters.html",
-        title="Elastic Data Shader Server",
-        params={},
-        name=request.args.get("name"),
-        hash=request.args.get("hash"),
-    )
+    template_kwargs = {
+        "title": "Elastic Data Shader Server",
+        "name": name,
+        "hash": hash_,
+        "params": {},
+    }
+
+    params_json = cache_dir / name / hash_ / "params.json"
+    if params_json.exists():
+        with params_json.open("r") as f:
+            params = json.load(f)
+        template_kwargs.update(
+            {
+                "params": params,
+                "generated_params": pformat(params.get("generated_params", {})),
+            }
+        )
+
+    return render_template("parameters.html", **template_kwargs)
+
+
+##############################
+# API ENDPOINTS
+##############################
 
 
 @blueprints.route("/clear_cache", methods=["GET"])
 def clear_cache():
-    if request.args.get("name") is not None:
-        # delete a specific cache
-        tile_cache_path = os.path.join(
-            current_app.config.get("CACHE_DIRECTORY"), request.args.get("name")
-        )
-        if request.args.get("hash") is not None:
-            tile_cache_path = os.path.join(
-                current_app.config.get("CACHE_DIRECTORY"),
-                request.args.get("name"),
-                request.args.get("hash"),
-            )
+    name = request.args.get("name")
+    hash_ = request.args.get("hash")
+    cache_dir = current_app.config.get("CACHE_DIRECTORY")
 
-        # Check if it exists
-        if os.path.exists(tile_cache_path):
-            shutil.rmtree(tile_cache_path)
-            current_app.logger.info("Clearing hash/layer : %s", tile_cache_path)
+    # If no name is provided, we're done
+    if name is None:
+        return Response(f"Unknown request: {name} / {hash_}", status=500)
 
-        # Not needed with the hashing approach?
-        # current_app.logger.warn("Recreating cache path %s", tile_cache_path)
-        # pathlib.Path(os.path.join(tile_cache_path)).mkdir(parents=True, exist_ok=True)
+    # delete a specific cache
+    tile_cache_path = Path(cache_dir) / name
+    if hash_ is not None:
+        tile_cache_path = tile_cache_path / hash_
 
-        return redirect(request.referrer)
-    return Response(
-        "Unknown request: %s / %s"
-        % (request.args.get("name"), request.args.get("hash")),
-        status=500,
-    )
+    # Check if it exists
+    if tile_cache_path.exists():
+        shutil.rmtree(tile_cache_path)
+        current_app.logger.info("Clearing hash/layer: %s", tile_cache_path)
+
+    # Not needed with the hashing approach?
+    # current_app.logger.warn("Recreating cache path %s", tile_cache_path)
+    # tile_cache_path.mkdir(parents=True, exist_ok=True)
+
+    return redirect(request.referrer)
 
 
 @blueprints.route("/age_cache", methods=["GET"])
 def age_cache():
-    # Either the index name or age must be set.  We do not allow blanket deletes
-    if request.args.get("age") is not None:
-        age_limit = int(request.args.get("age"))
-        cache_dir = current_app.config["CACHE_DIRECTORY"]
-        check_cache_age(cache_dir, age_limit)
-        return redirect(request.referrer)
-    return Response(
-        "Unknown request: %s / %s"
-        % (request.args.get("name"), request.args.get("hash")),
-        status=500,
-    )
+    # Either the index name or age must be set.
+    # We do not allow blanket deletes.
+    age = request.args.get("age")
+    name = request.args.get("name")
+    hash_ = request.args.get("hash")
+
+    # if no age is provided, we're done
+    if age is None:
+        return Response(f"Unknown request: {name} / {hash_}", status=500)
+
+    age_limit = int(age)
+    cache_dir = current_app.config["CACHE_DIRECTORY"]
+    check_cache_age(cache_dir, age_limit)
+    return redirect(request.referrer)
 
 
 @blueprints.route("/<idx>/<field_name>/legend.json", methods=["GET"])
@@ -207,34 +135,23 @@ def provide_legend(idx, field_name):
     extent = None
     params = request.args.get("params")
     if params and params != "{params}":
-        params = json.loads(request.args.get("params"))
-        if params.get("extent"):
-            extent = params.get("extent")
+        params = json.loads(params)
+        extent = params.get("extent")
 
     # Get hash and parameters
     try:
         parameter_hash, params = extract_parameters(request)
     except Exception as e:
         current_app.logger.exception("Error while extracting parameters")
-        resp = Response("[]", status=200)
-        resp.headers["Content-Type"] = "application/json"
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Error"] = str(e)
-        resp.cache_control.max_age = 60
-        return resp
+        return legend_response("[]", e)
 
     # If not in category mode, just return nothing
     if params["category_field"] is None:
-        resp = Response("[]", status=200)
-        resp.headers["Content-Type"] = "application/json"
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.cache_control.max_age = 60
-        return resp
+        return legend_response("[]")
 
     # Get or generate extended parameters
-    paramsfile = os.path.join(
-        current_app.config["CACHE_DIRECTORY"], idx, "%s/params.json" % parameter_hash
-    )
+    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
+    paramsfile = cache_dir / f"{idx}/{parameter_hash}/params.json"
     params = merge_generated_parameters(params, paramsfile, idx)
 
     # Assign param value to legacy keyword values
@@ -286,11 +203,7 @@ def provide_legend(idx, field_name):
     response = legend_s.execute()
     # If no categories then return blank list
     if not hasattr(response.aggregations, "categories"):
-        resp = Response("[]", status=200)
-        resp.headers["Content-Type"] = "application/json"
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.cache_control.max_age = 60
-        return resp
+        return legend_response("[]")
 
     # Generate the legend list
     color_key_legend = []
@@ -315,36 +228,42 @@ def provide_legend(idx, field_name):
         c = create_color_key([str(category.key)], cmap=cmap).get(
             str(category.key), "#000000"
         )
-        color_key_legend.append(dict(key=k, color=c, count=category.doc_count))
+        color_key_legend.append({"key": k, "color": c, "count": category.doc_count})
 
     other_cnt = getattr(response.aggregations.categories, "sum_other_doc_count", 0)
     if other_cnt > 0:
         c = create_color_key(["Other"], cmap=cmap).get("Other", "#000000")
-        color_key_legend.append(dict(key="Other", count=other_cnt))
+        color_key_legend.append({"key": "Other", "count": other_cnt})
 
-    data = json.dumps(color_key_legend)
+    return legend_response(json.dumps(color_key_legend))
+
+
+def legend_response(data, error=None) -> Response:
     resp = Response(data, status=200)
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.cache_control.max_age = 60
+    if error is not None:
+        resp.headers["Error"] = str(error)
     return resp
 
 
 @blueprints.route("/tms/<idx>/<int:z>/<int:x>/<int:y>.png", methods=["GET"])
-def get_tms(idx, x, y, z):
+def get_tms(idx, x: int, y: int, z: int):
     tile_height_px = 256
     tile_width_px = 256
 
     # Validate request is from proxy if proxy mode is enabled
-    if current_app.config.get("TMS_KEY") is not None:
-        if current_app.config.get("TMS_KEY") != request.headers.get("TMS_PROXY_KEY"):
+    tms_key = current_app.config.get("TMS_KEY")
+    tms_proxy_key = request.headers.get("TMS_PROXY_KEY")
+    if tms_key is not None:
+        if tms_key != tms_proxy_key:
             current_app.logger.warning(
                 "TMS must be accessed via reverse proxy: keys %s != %s",
-                current_app.config.get("TMS_KEY"),
-                request.headers.get("TMS_PROXY_KEY"),
+                tms_key,
+                tms_proxy_key,
             )
-            resp = Response("TMS must be accessed via reverse proxy", status=403)
-            return resp
+            return Response("TMS must be accessed via reverse proxy", status=403)
 
     # TMS tile coordinates
     x = int(x)
@@ -356,48 +275,39 @@ def get_tms(idx, x, y, z):
         parameter_hash, params = extract_parameters(request)
     except Exception as e:
         current_app.logger.exception("Error while extracting parameters")
-        img = gen_error(tile_height_px, tile_width_px)
-        resp = Response(img, status=200)
-        resp.headers["Content-Type"] = "image/png"
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Error"] = str(e)
-        resp.cache_control.max_age = 60
-        return resp
+        return error_tile_response(e, tile_height_px, tile_width_px)
+
+    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
+    tile_name = f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
+    force = request.args.get("force")
 
     # Check if the cached image already exists
-    c = get_cache(
-        current_app.config["CACHE_DIRECTORY"],
-        "/%s/%s/%s/%s/%s.png" % (idx, parameter_hash, z, x, y),
-    )
-    if c is not None and request.args.get("force") is None:
-        current_app.logger.info("Hit cache (%s), returning" % parameter_hash)
+    c = get_cache(cache_dir, tile_name)
+    if c is not None and force is None:
+        current_app.logger.info("Hit cache (%s), returning", parameter_hash)
         # Return Cached Value
         img = c
     else:
         # Generate a tile
-        if request.args.get("force") is not None:
+        if force is not None:
             current_app.logger.info(
-                "Forced cache flush, generating a new tile %s/%s/%s" % (z, x, y)
+                "Forced cache flush, generating a new tile %s/%s/%s", z, x, y
             )
         else:
             current_app.logger.info(
-                "No cache (%s), generating a new tile %s/%s/%s"
-                % (parameter_hash, z, x, y)
+                "No cache (%s), generating a new tile %s/%s/%s", parameter_hash, z, x, y
             )
 
-        check_cache_dir(current_app.config.get("CACHE_DIRECTORY"), idx)
+        check_cache_dir(cache_dir, idx)
 
         headers = get_es_headers(request.headers)
         current_app.logger.info("Loaded input headers %s", request.headers)
         current_app.logger.info("Loaded elasticsearch headers %s", headers)
 
         # Get or generate extended parameters
-        paramsfile = os.path.join(
-            current_app.config["CACHE_DIRECTORY"],
-            idx,
-            "%s/params.json" % parameter_hash,
-        )
+        paramsfile = cache_dir / idx / f"{parameter_hash}/params.json"
         params = merge_generated_parameters(params, paramsfile, idx)
+
         # Separate call for ellipse
         try:
             if params["ellipses"]:
@@ -407,23 +317,25 @@ def get_tms(idx, x, y, z):
         except Exception as e:
             logging.exception("Exception Generating Tile for request %s", request)
             # generate an error tile/don't cache cache it
-            img = gen_error(tile_width_px, tile_height_px)
-            resp = Response(img, status=200)
-            resp.headers["Content-Type"] = "image/png"
-            resp.headers["Access-Control-Allow-Origin"] = "*"
-            resp.headers["Error"] = str(e.args)
-            resp.cache_control.max_age = 60
-            return resp
+            return error_tile_response(e, tile_height_px, tile_width_px)
 
         # Store image as well
-        set_cache(
-            current_app.config["CACHE_DIRECTORY"],
-            "/%s/%s/%s/%s/%s.png" % (idx, parameter_hash, z, x, y),
-            img,
-        )
+        set_cache(cache_dir, tile_name, img)
 
     resp = Response(img, status=200)
     resp.headers["Content-Type"] = "image/png"
     resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.cache_control.max_age = 60
+    return resp
+
+
+def error_tile_response(
+    e: Exception, tile_height_px: int, tile_width_px: int
+) -> Response:
+    img = gen_error(tile_height_px, tile_width_px)
+    resp = Response(img, status=200)
+    resp.headers["Content-Type"] = "image/png"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Error"] = str(e)
     resp.cache_control.max_age = 60
     return resp

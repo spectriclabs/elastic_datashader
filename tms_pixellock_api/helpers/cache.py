@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
+import json
 import logging
 import shutil
+import subprocess
 import time
+from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, Union
+from typing import Dict, Optional, Union
+
+from tms_pixellock_api.helpers.timeutil import pretty_time_delta
 
 
 def get_cache(cache_dir: Union[Path, str], tile: str) -> Optional[bytes]:
@@ -110,3 +115,53 @@ def scheduled_cache_check_task(id_: str, cache_dir: Union[Path, str]) -> None:
         check_cache_age(cache_dir, 86400)
 
         logging.info("Cache check complete (%s)", id_)
+
+
+def build_layer_info(cache_dir: Union[str, Path]) -> Dict[str, OrderedDict]:
+    """Build up dictionary of layer info
+
+    :param cache_dir: Cache directory
+    :return: Dictionary containing parameters for each layer and hash
+    """
+    layer_info = {}
+    for layer in Path(cache_dir).iterdir():
+        # We only care if the layer isn't a file
+        if layer.is_file():
+            continue
+
+        for hash_dir in layer.iterdir():
+            params_json = hash_dir / "params.json"
+
+            # We only care if params_json exists
+            if not params_json.exists():
+                continue
+
+            with params_json.open("r") as f:
+                params = json.load(f)
+
+            # Check age of hash
+            params["age_timestamp"] = params_json.stat().st_mtime
+            params["age"] = pretty_time_delta(time.time() - params["age_timestamp"])
+            # Check size of hash
+            try:
+                params["size"] = (
+                    subprocess.check_output(["du", "-sh", str(hash_dir)])
+                    .split()[0]
+                    .decode("utf-8")
+                )
+            except OSError:
+                params["size"] = "Error"
+            layer_info.setdefault(layer.name, OrderedDict())
+            layer_info[layer.name][hash_dir.name] = params
+
+        # Order hashes based off age, newest to oldest
+        if layer_info.get(layer.name):
+            layer_info[layer.name] = OrderedDict(
+                reversed(
+                    sorted(
+                        layer_info[layer.name].items(),
+                        key=lambda x: x[1]["age_timestamp"],
+                    )
+                )
+            )
+    return layer_info
