@@ -4,7 +4,6 @@ import fcntl
 import hashlib
 import json
 import math
-import os
 import pathlib
 from datetime import datetime
 
@@ -15,7 +14,10 @@ from tms_pixellock_api.helpers.elastic import get_search_base, build_dsl_filter
 
 
 def extract_parameters(request):
-    # Get the parameters from a request and return hash and dict of parameters
+    """Get the parameters from a request and return hash and dict of parameters
+
+    :param request:
+    """
 
     # Default values
     from_time = None
@@ -209,7 +211,7 @@ def generate_global_params(params, idx):
     global_bounds = None
 
     # Create base search
-    base_s = get_search_base(params, idx)
+    base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
 
     # west, south, east, north
     global_bounds = [-180, -90, 180, 90]

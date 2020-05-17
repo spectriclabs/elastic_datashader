@@ -515,7 +515,7 @@ def generate_tile(idx, x, y, z, params):
         area = xwidth * yheight
 
         # Create base search
-        base_s = get_search_base(params, idx)
+        base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
 
         # Now find out how many documents
         count_s = copy.copy(base_s)
