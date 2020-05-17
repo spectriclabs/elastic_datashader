@@ -41,7 +41,7 @@ def simplify_categories(
         ncolors = len(color_key)
         color_key = {k: color_key[i % ncolors] for i, k in enumerate(cats)}
     else:
-        raise ValueError("color_key must be dict or list")
+        raise TypeError("color_key must be dict or list")
 
     # TODO - benchmark/consider alternatives
     if not inplace:
