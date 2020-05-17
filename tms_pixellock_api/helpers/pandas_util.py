@@ -79,6 +79,6 @@ def replace_low_freq_inplace(
         raise ValueError("either threshold or last can be provided")
     else:
         raise ValueError("only threshold or last can be provided")
-    s.cat.add_categories(["Other"], inplace=True)
-    s.fillna("Other", inplace=True)
+    s.cat.add_categories([replacement], inplace=True)
+    s.fillna(replacement, inplace=True)
     s.cat.remove_unused_categories(inplace=True)
