@@ -113,7 +113,6 @@ def display_parameters():
     )
 
     # Build Layer Info
-    layer_info = {}
     layers = os.listdir(current_app.config["CACHE_DIRECTORY"])
     for l in layers:
         if l == request.args.get("name"):
