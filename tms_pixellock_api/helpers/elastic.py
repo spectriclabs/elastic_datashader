@@ -104,21 +104,17 @@ def build_dsl_filter(filter_inputs):
         # Handle spatial filters
         if f.get("meta").get("type") == "spatial_filter":
             if f.get("geo_polygon"):
+                geo_polygon_dict = {"geo_polygon": f.get("geo_polygon")}
                 if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(
-                        dict(geo_polygon=f.get("geo_polygon"))
-                    )
+                    filter_dict["must_not"].append(geo_polygon_dict)
                 else:
-                    filter_dict["filter"].append(dict(geo_polygon=f.get("geo_polygon")))
+                    filter_dict["filter"].append(geo_polygon_dict)
             elif f.get("geo_bounding_box"):
+                geo_bbox_dict = {"geo_bounding_box": f.get("geo_bounding_box")}
                 if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(
-                        dict(geo_bounding_box=f.get("geo_bounding_box"))
-                    )
+                    filter_dict["must_not"].append(geo_bbox_dict)
                 else:
-                    filter_dict["filter"].append(
-                        dict(geo_bounding_box=f.get("geo_bounding_box"))
-                    )
+                    filter_dict["filter"].append(geo_bbox_dict)
         # Handle phrase matching
         elif f.get("meta").get("type") in ("phrase", "phrases", "bool"):
             if f.get("meta").get("negate"):
@@ -126,17 +122,19 @@ def build_dsl_filter(filter_inputs):
             else:
                 filter_dict["filter"].append(f.get("query"))
         elif f.get("meta").get("type") == "range":
+            range_dict = {"range": f.get("range")}
             if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(dict(range=f.get("range")))
+                filter_dict["must_not"].append(range_dict)
             else:
-                filter_dict["filter"].append(dict(range=f.get("range")))
+                filter_dict["filter"].append(range_dict)
         elif f.get("meta").get("type") == "exists":
+            exists_dict = {"exists": f.get("exists")}
             if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(dict(exists=f.get("exists")))
+                filter_dict["must_not"].append(exists_dict)
             else:
-                filter_dict["filter"].append(dict(exists=f.get("exists")))
+                filter_dict["filter"].append(exists_dict)
         else:
-            raise ValueError("unsupported filter type %s", f.get("meta").get("type"))
+            raise ValueError("unsupported filter type %s" % f.get("meta").get("type"))
     current_app.logger.info("Filter output %s", filter_dict)
     return filter_dict
 
