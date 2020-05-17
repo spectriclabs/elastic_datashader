@@ -164,7 +164,7 @@ def get_es_headers(request_headers=None, user=None):
                         raise ValueError(
                             f"header YAML file must return a mapping, received {HEADERS}"
                         )
-                except (OSError, IOError, ValueError):
+                except (OSError, IOError, ValueError, yaml.YAMLError):
                     current_app.logger.exception(
                         "Failed to load headers from %s", header_file
                     )
