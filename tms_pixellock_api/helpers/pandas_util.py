@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
+from typing import Dict, List, Tuple, Union
+
 import pandas as pd
 
 
-def simplify_categories(df, col, color_key, inplace=False):
-    """
+def simplify_categories(
+    df: pd.DataFrame,
+    col: str,
+    color_key: Union[Dict[str, str], List[str]],
+    inplace: bool = False,
+) -> Tuple[pd.DataFrame, Dict[str, str]]:
+    """Simplify categories in a Pandas dataframe
 
-    :param df:
-    :param col:
-    :param color_key:
-    :param inplace:
-    :return:
+    :param df: Dataframe to simplify categories
+    :param col: Column name of categorical series in dataframe
+                that will be simplified
+    :param color_key: Color mapping dictionary or list
+    :param inplace: Whether to mutate ``df`` in place or not
+    :return: Tuple of updated dataframe and dict containing color mapping
+    :raises ValueError: If column is not categorical or if
+                        fewer colors than categories
+    :raises TypeError: If color_key isn't a list or dict
     """
     if not isinstance(df.dtypes[col], pd.CategoricalDtype):
         raise ValueError("selected column must be categorical")
@@ -44,14 +55,20 @@ def simplify_categories(df, col, color_key, inplace=False):
     return df, new_color_key
 
 
-def replace_low_freq_inplace(s, threshold=None, last=None, replacement="Other"):
-    """
+def replace_low_freq_inplace(
+    s: pd.Series,
+    threshold: int = None,
+    last: int = None,
+    replacement: str = "Other"
+) -> None:
+    """Replace low frequency categories in place
 
-    :param s:
-    :param threshold:
-    :param last:
-    :param replacement:
-    :return:
+    :param s: Pandas Series or Index object
+    :param threshold: Threshold below which category will be removed
+    :param last: Last N categories to remove
+    :param replacement: String with which to replace categories
+    :raises ValueError: if ``threshold`` and ``last`` are both ``None``
+                        or both not ``None``
     """
     c = s.value_counts()
     if (threshold is not None) and (last is None):
