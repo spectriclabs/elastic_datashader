@@ -160,12 +160,11 @@ def get_es_headers(request_headers=None, user=None):
                 try:
                     with open(header_file) as ff:
                         HEADERS = yaml.safe_load(ff)
-                        if not isinstance(HEADERS, dict):
-                            raise ValueError(
-                                "header YAML file must return a mapping, received %s",
-                                HEADERS,
-                            )
-                except:
+                    if not isinstance(HEADERS, dict):
+                        raise ValueError(
+                            f"header YAML file must return a mapping, received {HEADERS}"
+                        )
+                except (OSError, IOError, ValueError):
                     current_app.logger.exception(
                         "Failed to load headers from %s", header_file
                     )
