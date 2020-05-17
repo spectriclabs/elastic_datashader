@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from pprint import pformat
+from typing import Optional
 
 import pynumeral
 from flask import Blueprint, current_app, render_template, request, redirect, Response
@@ -238,16 +239,6 @@ def provide_legend(idx, field_name):
     return legend_response(json.dumps(color_key_legend))
 
 
-def legend_response(data, error=None) -> Response:
-    resp = Response(data, status=200)
-    resp.headers["Content-Type"] = "application/json"
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.cache_control.max_age = 60
-    if error is not None:
-        resp.headers["Error"] = str(error)
-    return resp
-
-
 @blueprints.route("/tms/<idx>/<int:z>/<int:x>/<int:y>.png", methods=["GET"])
 def get_tms(idx, x: int, y: int, z: int):
     tile_height_px = 256
@@ -329,8 +320,23 @@ def get_tms(idx, x: int, y: int, z: int):
     return resp
 
 
+def legend_response(
+    data: str,
+    error: Optional[Exception] = None
+) -> Response:
+    resp = Response(data, status=200)
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.cache_control.max_age = 60
+    if error is not None:
+        resp.headers["Error"] = str(error)
+    return resp
+
+
 def error_tile_response(
-    e: Exception, tile_height_px: int, tile_width_px: int
+    e: Exception,
+    tile_height_px: int,
+    tile_width_px: int
 ) -> Response:
     img = gen_error(tile_height_px, tile_width_px)
     resp = Response(img, status=200)
