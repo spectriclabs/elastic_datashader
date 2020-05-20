@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-
 {% block content %}
 
 <h2>index:{{name}} / hash:{{hash}}</h2>
@@ -9,15 +8,15 @@
       border: 1px solid black;
     }
   </style>
-<tr>
-  <th>Parameter</th>
-  <th>Value</th>
-</tr>
-{% for p, v in params.items() %}
-<tr>
-  <td >{{ p }}</td>
-  <td>{% if p == 'generated_params' %} {{generated_params}} {% else %} {{ v }} {% endif %}  </td>
-</tr>
-{% endfor %}
+  <tr>
+    <th>Parameter</th>
+    <th>Value</th>
+  </tr>
+  {% for p, v in params.items() %}
+  <tr>
+    <td>{{ p }}</td>
+    <td>{% if p == 'generated_params' %}{{generated_params}}{% else %}{{ v }}{% endif %}</td>
+  </tr>
+  {% endfor %}
 </table>
 {% endblock %}
