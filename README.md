@@ -30,13 +30,13 @@ Locally
 To run in debug development mode:
 
 ```
-$ python tms_pixellock.py --debug -p 6002 -e http://user:password@host:9200
+$ python tms_datashader.py --debug -p 6002 -e http://user:password@host:9200
 ```
 
 To run in quasi-production mode:
 
 ```
-$ python tms_pixellock.py -p 6002 -e http://user:password@host:9200
+$ python tms_datashader.py -p 6002 -e http://user:password@host:9200
 ```
 
 When running locally you will need patches to be applied against datashader 0.10.0.  These can be applied
