@@ -227,7 +227,7 @@ def split_fieldname_to_list(field: str) -> List[str]:
     # .raw and .keyword are common conventions, but the
     # only way to actually do this right is to lookup the
     # mapping
-    if field[-1] in (".raw", ".keyword"):
+    if field[-1] in ("raw", "keyword"):
         field.pop()
     return field
 
