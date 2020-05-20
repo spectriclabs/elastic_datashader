@@ -6,25 +6,23 @@ COPY deployment/pip.conf /root/.pip/pip.conf
 
 RUN mkdir -p /opt/elastic_datashader/tms_cache
 
-ADD requirements.txt /opt/elastic_datashader
+COPY requirements.txt /opt/elastic_datashader
 
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r /opt/elastic_datashader/requirements.txt
-RUN pip install gunicorn
+RUN pip install --upgrade pip && \
+    pip install wheel && \
+    pip install --no-cache-dir -r /opt/elastic_datashader/requirements.txt && \
+    pip install gunicorn
 
-ADD tms_pixellock.py /opt/elastic_datashader
-ADD datashader_helpers.py /opt/elastic_datashader
-ADD templates /opt/elastic_datashader/templates
-ADD data_shader.patch /var/tmp
-
-RUN patch -p1 -d /usr/local/lib/python3.7/site-packages/datashader/transfer_functions < /var/tmp/data_shader.patch
-VOLUME ["/opt/elastic_datashader/tms-cache"]
-
+COPY tms_datashader.py /opt/elastic_datashader
+COPY tms_datashader_api /opt/elastic_datashader/tms_datashader_api
+COPY templates /opt/elastic_datashader/templates
 COPY deployment/gunicorn_config.py /opt/elastic_datashader
+
+VOLUME ["/opt/elastic_datashader/tms-cache"]
 
 ENTRYPOINT [ "gunicorn", \
     "--chdir", "/opt/elastic_datashader", \
     "-c", "/opt/elastic_datashader/gunicorn_config.py", \
     "--env", "DATASHADER_CACHE_DIR=/opt/elastic_datashader/tms-cache", \
-    "tms_pixellock:create_app()" \
+    "tms_datashader:create_app()" \
 ]

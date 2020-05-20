@@ -1,0 +1,4 @@
+venv/
+.github
+.pytest_cache
+kibana/
