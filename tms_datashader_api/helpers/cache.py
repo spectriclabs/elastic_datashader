@@ -8,7 +8,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from tms_pixellock_api.helpers.timeutil import pretty_time_delta
+from tms_datashader_api.helpers.timeutil import pretty_time_delta
 
 
 def get_cache(cache_dir: Union[Path, str], tile: str) -> Optional[bytes]:

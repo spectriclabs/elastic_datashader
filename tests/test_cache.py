@@ -2,7 +2,7 @@
 import os
 import time
 from unittest import mock
-from tms_pixellock_api.helpers import cache
+from tms_datashader_api.helpers import cache
 
 
 def test_get_cache_none():
@@ -55,7 +55,7 @@ def test_check_cache_age(tmp_path):
     assert not (cache_path / "hello").exists()
 
 
-@mock.patch("tms_pixellock_api.helpers.cache.check_cache_age")
+@mock.patch("tms_datashader_api.helpers.cache.check_cache_age")
 def test_scheduled_cache_check_task_file_nexist(check_cache_age_mock, tmp_path):
     cache.scheduled_cache_check_task("random_id", tmp_path)
 
@@ -63,7 +63,7 @@ def test_scheduled_cache_check_task_file_nexist(check_cache_age_mock, tmp_path):
     assert not check_cache_age_mock.called
 
 
-@mock.patch("tms_pixellock_api.helpers.cache.check_cache_age")
+@mock.patch("tms_datashader_api.helpers.cache.check_cache_age")
 def test_scheduled_cache_check_task_file_exist_new(check_cache_age_mock, tmp_path):
     cache_check_path = tmp_path / "cache.age.check"
     cache_check_path.touch()
@@ -73,7 +73,7 @@ def test_scheduled_cache_check_task_file_exist_new(check_cache_age_mock, tmp_pat
     assert not check_cache_age_mock.called
 
 
-@mock.patch("tms_pixellock_api.helpers.cache.check_cache_age")
+@mock.patch("tms_datashader_api.helpers.cache.check_cache_age")
 def test_scheduled_cache_check_task_file_exist_old(check_cache_age_mock, tmp_path):
     cache_check_path = tmp_path / "cache.age.check"
     cache_check_path.touch()

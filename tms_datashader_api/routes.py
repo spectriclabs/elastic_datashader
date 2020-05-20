@@ -11,20 +11,20 @@ from typing import Optional
 import pynumeral
 from flask import Blueprint, current_app, render_template, request, redirect, Response
 
-from tms_pixellock_api.helpers.cache import (
+from tms_datashader_api.helpers.cache import (
     check_cache_age,
     get_cache,
     check_cache_dir,
     set_cache,
     build_layer_info,
 )
-from tms_pixellock_api.helpers.drawing import create_color_key, gen_error
-from tms_pixellock_api.helpers.elastic import get_search_base, get_es_headers
-from tms_pixellock_api.helpers.parameters import (
+from tms_datashader_api.helpers.drawing import create_color_key, gen_error
+from tms_datashader_api.helpers.elastic import get_search_base, get_es_headers
+from tms_datashader_api.helpers.parameters import (
     extract_parameters,
     merge_generated_parameters,
 )
-from tms_pixellock_api.helpers.tilegen import generate_nonaggregated_tile, generate_tile
+from tms_datashader_api.helpers.tilegen import generate_nonaggregated_tile, generate_tile
 
 blueprints = Blueprint("rest_api", __name__, template_folder="templates")
 

@@ -2,7 +2,7 @@
 import numpy as np
 from PIL import Image
 import pytest
-from tms_pixellock_api.helpers import drawing
+from tms_datashader_api.helpers import drawing
 
 
 @pytest.mark.parametrize(

@@ -10,9 +10,9 @@ import urllib3
 from flask import Flask
 from flask_apscheduler import APScheduler
 
-from tms_pixellock_api.helpers.cache import scheduled_cache_check_task
-from tms_pixellock_api.helpers.config import Config
-from tms_pixellock_api.routes import blueprints
+from tms_datashader_api.helpers.cache import scheduled_cache_check_task
+from tms_datashader_api.helpers.config import Config
+from tms_datashader_api.routes import blueprints
 
 
 def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:

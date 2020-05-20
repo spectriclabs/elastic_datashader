@@ -9,8 +9,8 @@ from datetime import datetime
 
 from flask import current_app, Response
 
-from tms_pixellock_api.helpers.timeutil import quantize_time_range, convert_kibana_time
-from tms_pixellock_api.helpers.elastic import get_search_base, build_dsl_filter
+from tms_datashader_api.helpers.timeutil import quantize_time_range, convert_kibana_time
+from tms_datashader_api.helpers.elastic import get_search_base, build_dsl_filter
 
 
 def extract_parameters(request):

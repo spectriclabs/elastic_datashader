@@ -2,7 +2,7 @@
 from datetime import datetime
 from dateutil.tz import tzutc
 import pytest
-from tms_pixellock_api.helpers import timeutil
+from tms_datashader_api.helpers import timeutil
 
 
 def test_quantize_time_range_no_stop():

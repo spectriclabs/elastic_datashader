@@ -5,7 +5,7 @@ import importlib
 
 
 def test_config_defaults():
-    from tms_pixellock_api.helpers import config
+    from tms_datashader_api.helpers import config
 
     assert config.Config.LOG_LEVEL is None
     assert config.Config.CACHE_DIRECTORY == "./tms-cache/"
@@ -41,7 +41,7 @@ def test_config_env():
             "DATASHADER_DEBUG_TILES": "True",
         }
     )
-    from tms_pixellock_api.helpers import config
+    from tms_datashader_api.helpers import config
 
     importlib.reload(config)
 

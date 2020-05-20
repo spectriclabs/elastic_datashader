@@ -1,6 +1,6 @@
 #!/usr/bin/env pytest
 import pytest
-from tms_pixellock_api.helpers import elastic
+from tms_datashader_api.helpers import elastic
 
 
 def test_get_search_base():

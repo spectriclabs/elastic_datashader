@@ -13,21 +13,21 @@ from elasticsearch_dsl.aggs import Bucket
 from flask import current_app, request
 from numpy import pi
 
-from tms_pixellock_api.helpers.drawing import (
+from tms_datashader_api.helpers.drawing import (
     ellipse,
     gen_empty,
     gen_overlay,
     create_color_key,
     gen_debug_overlay,
 )
-from tms_pixellock_api.helpers.elastic import (
+from tms_datashader_api.helpers.elastic import (
     get_search_base,
     convert,
     split_fieldname_to_list,
     get_nested_field_from_hit,
 )
-from tms_pixellock_api.helpers.pandas_util import simplify_categories
-from tms_pixellock_api.helpers.datashader_helpers import sum_cat
+from tms_datashader_api.helpers.pandas_util import simplify_categories
+from tms_datashader_api.helpers.datashader_helpers import sum_cat
 
 NAN_LINE = {"x": None, "y": None, "c": "None"}
 
