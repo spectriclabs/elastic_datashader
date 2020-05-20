@@ -3,20 +3,17 @@ import copy
 import json
 import logging
 import shutil
-import subprocess
 from pathlib import Path
-from pprint import pformat
 from typing import Optional
 
 import pynumeral
-from flask import Blueprint, current_app, render_template, request, redirect, Response
+from flask import Blueprint, current_app, request, redirect, Response
 
 from tms_datashader_api.helpers.cache import (
     check_cache_age,
     get_cache,
     check_cache_dir,
     set_cache,
-    build_layer_info,
 )
 from tms_datashader_api.helpers.drawing import create_color_key, gen_error
 from tms_datashader_api.helpers.elastic import get_search_base, get_es_headers
@@ -24,68 +21,15 @@ from tms_datashader_api.helpers.parameters import (
     extract_parameters,
     merge_generated_parameters,
 )
-from tms_datashader_api.helpers.tilegen import generate_nonaggregated_tile, generate_tile
+from tms_datashader_api.helpers.tilegen import (
+    generate_nonaggregated_tile,
+    generate_tile,
+)
 
-blueprints = Blueprint("rest_api", __name__, template_folder="templates")
-
-
-##############################
-# VIEW ENDPOINTS
-##############################
+api_blueprints = Blueprint("rest_api", __name__)
 
 
-@blueprints.route("/")
-@blueprints.route("/index")
-def index():
-    cache_dir = current_app.config["CACHE_DIRECTORY"]
-
-    # Calc Cache Size
-    cache_size = (
-        subprocess.check_output(["du", "-sh", cache_dir]).split()[0].decode("utf-8")
-    )
-
-    # Build Layer Info
-    return render_template(
-        "index.html",
-        title="Elastic Data Shader Server",
-        cache_size=cache_size,
-        layer_info=build_layer_info(cache_dir),
-    )
-
-
-@blueprints.route("/parameters", methods=["GET"])
-def display_parameters():
-    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
-    name = request.args.get("name")
-    hash_ = request.args.get("hash")
-
-    template_kwargs = {
-        "title": "Elastic Data Shader Server",
-        "name": name,
-        "hash": hash_,
-        "params": {},
-    }
-
-    params_json = cache_dir / name / hash_ / "params.json"
-    if params_json.exists():
-        with params_json.open("r") as f:
-            params = json.load(f)
-        template_kwargs.update(
-            {
-                "params": params,
-                "generated_params": pformat(params.get("generated_params", {})),
-            }
-        )
-
-    return render_template("parameters.html", **template_kwargs)
-
-
-##############################
-# API ENDPOINTS
-##############################
-
-
-@blueprints.route("/clear_cache", methods=["GET"])
+@api_blueprints.route("/clear_cache", methods=["GET"])
 def clear_cache():
     name = request.args.get("name")
     hash_ = request.args.get("hash")
@@ -112,7 +56,7 @@ def clear_cache():
     return redirect(request.referrer)
 
 
-@blueprints.route("/age_cache", methods=["GET"])
+@api_blueprints.route("/age_cache", methods=["GET"])
 def age_cache():
     # Either the index name or age must be set.
     # We do not allow blanket deletes.
@@ -130,7 +74,7 @@ def age_cache():
     return redirect(request.referrer)
 
 
-@blueprints.route("/<idx>/<field_name>/legend.json", methods=["GET"])
+@api_blueprints.route("/<idx>/<field_name>/legend.json", methods=["GET"])
 def provide_legend(idx, field_name):
     # Extract out special extent parameter that is independent from hash
     extent = None
@@ -239,7 +183,7 @@ def provide_legend(idx, field_name):
     return legend_response(json.dumps(color_key_legend))
 
 
-@blueprints.route("/tms/<idx>/<int:z>/<int:x>/<int:y>.png", methods=["GET"])
+@api_blueprints.route("/tms/<idx>/<int:z>/<int:x>/<int:y>.png", methods=["GET"])
 def get_tms(idx, x: int, y: int, z: int):
     tile_height_px = 256
     tile_width_px = 256
@@ -320,10 +264,7 @@ def get_tms(idx, x: int, y: int, z: int):
     return resp
 
 
-def legend_response(
-    data: str,
-    error: Optional[Exception] = None
-) -> Response:
+def legend_response(data: str, error: Optional[Exception] = None) -> Response:
     resp = Response(data, status=200)
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Access-Control-Allow-Origin"] = "*"
@@ -334,9 +275,7 @@ def legend_response(
 
 
 def error_tile_response(
-    e: Exception,
-    tile_height_px: int,
-    tile_width_px: int
+    e: Exception, tile_height_px: int, tile_width_px: int
 ) -> Response:
     img = gen_error(tile_height_px, tile_width_px)
     resp = Response(img, status=200)

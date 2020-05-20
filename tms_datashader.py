@@ -12,7 +12,8 @@ from flask_apscheduler import APScheduler
 
 from tms_datashader_api.helpers.cache import scheduled_cache_check_task
 from tms_datashader_api.helpers.config import Config
-from tms_datashader_api.routes import blueprints
+from tms_datashader_api.routes import api_blueprints
+from tms_datashader_api.views import view_blueprints
 
 
 def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:
@@ -47,7 +48,10 @@ def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:
 
     # Register the API
     flask_app.logger.info("Registering API")
-    flask_app.register_blueprint(blueprints)
+    flask_app.register_blueprint(api_blueprints)
+
+    flask_app.logger.info("Registering Views")
+    flask_app.register_blueprint(view_blueprints)
 
     # If ElasticAPM can be loaded, then attempt to configure
     # if via environment variable.  To install APM
