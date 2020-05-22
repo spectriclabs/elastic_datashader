@@ -10,54 +10,26 @@ import datemath
 def quantize_time_range(
     start_time: Optional[datetime], stop_time: datetime
 ) -> Tuple[Optional[datetime], datetime]:
-    """Quantize the start and end times so when Kibana uses
-    "now" we do not constantly invalidate cache.
+    """Quantize the start and end times to 5 min boundaries.
 
     :param start_time: Start time
     :param stop_time: Stop time
     :return: Quantized start and end times
-
-    :Example:
-    >>> start = datetime(2020, 5, 1, 0, 0, 5)
-    >>> end = datetime(2020, 5, 11, 12, 0, 1)
-    >>> quantize_time_range(None, end)
-    (None, datetime.datetime(2020, 5, 11, 0, 0))
-    >>> qstart, qend = quantize_time_range(start, end)
-    >>> qstart
-    datetime.datetime(2020, 5, 1, 0, 0)
-    >>> qend
-    datetime.datetime(2020, 5, 11, 0, 0)
     """
     if stop_time is None:
         raise ValueError("stop time must be provided")
 
-    # If the range is all time, just truncate to rayday
-    if start_time is None:
-        stop_time = stop_time.replace(hour=0, minute=0, second=0, microsecond=0)
-        return start_time, stop_time
-
-    # Calculate the span
-    delta_time = stop_time - start_time
-
-    if delta_time > timedelta(days=29):
-        # delta > 29 days, truncate to rayday
-        start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
-        stop_time = stop_time.replace(hour=0, minute=0, second=0, microsecond=0)
-        return start_time, stop_time
-    elif delta_time > timedelta(days=1):
-        # More than a day, truncate to an hour
-        start_time = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
-        stop_time = stop_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    # truncate to 5 min
+    truncated_start_time = start_time.replace(
+        minute=math.floor(start_time.minute / 5.0) * 5, second=0, microsecond=0
+    )
+    truncated_stop_time = stop_time.replace(
+        minute=math.floor(stop_time.minute / 5.0) * 5, second=0, microsecond=0
+    )
+    if truncated_start_time == truncated_stop_time:
         return start_time, stop_time
     else:
-        # truncate to 5 min
-        start_time = start_time.replace(
-            minute=math.floor(start_time.minute / 5.0) * 5, second=0, microsecond=0
-        )
-        stop_time = stop_time.replace(
-            minute=math.floor(stop_time.minute / 5.0) * 5, second=0, microsecond=0
-        )
-        return start_time, stop_time
+        return truncated_start_time, truncated_stop_time
 
 
 def convert_kibana_time(time_string, current_time):
