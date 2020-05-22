@@ -3,11 +3,17 @@ import copy
 import json
 import logging
 import shutil
+import os
+import socket
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import pynumeral
 from flask import Blueprint, current_app, request, redirect, Response
+
+from elasticsearch import Elasticsearch
+from elasticsearch_dsl import Search, AttrDict, Document
 
 from tms_datashader_api.helpers.cache import (
     check_cache_age,
@@ -240,10 +246,10 @@ def get_tms(idx, x: int, y: int, z: int):
         current_app.logger.info("Loaded elasticsearch headers %s", headers)
 
         # Get or generate extended parameters
-        paramsfile = cache_dir / idx / f"{parameter_hash}/params.json"
-        params = merge_generated_parameters(params, paramsfile, idx)
+        params = merge_generated_parameters(params, idx, parameter_hash)
 
         # Separate call for ellipse
+        t1 = datetime.now()
         try:
             if params["ellipses"]:
                 img = generate_nonaggregated_tile(idx, x, y, z, params)
@@ -253,6 +259,23 @@ def get_tms(idx, x: int, y: int, z: int):
             logging.exception("Exception Generating Tile for request %s", request)
             # generate an error tile/don't cache cache it
             return error_tile_response(e, tile_height_px, tile_width_px)
+        et = (datetime.now()-t1).total_seconds()
+        # Make entry into .datashader_tiles
+        es = Elasticsearch(
+            current_app.config.get("ELASTIC").split(","),
+            verify_certs=False,
+            timeout=120)
+        doc = Document( hash=parameter_hash,
+                        idx=idx,
+                        x=x,
+                        y=x,
+                        z=z,
+                        host=socket.gethostname(),
+                        pid=os.getpid(),
+                        render_time=et,
+                        timestamp=datetime.now(),
+                        params=params)
+        doc.save(using=es, index=".datashader_tile")
 
         # Store image as well
         set_cache(cache_dir, tile_name, img)

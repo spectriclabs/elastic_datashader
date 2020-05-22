@@ -5,9 +5,17 @@ import hashlib
 import json
 import math
 import pathlib
-from datetime import datetime
+import threading
+import os
+import socket
+import time
+from datetime import datetime, timedelta
 
 from flask import current_app, Response
+
+from elasticsearch import Elasticsearch
+from elasticsearch_dsl import Search, AttrDict, Document
+from elasticsearch.exceptions import NotFoundError, ConflictError
 
 from tms_datashader_api.helpers.timeutil import quantize_time_range, convert_kibana_time
 from tms_datashader_api.helpers.elastic import get_search_base, build_dsl_filter
@@ -300,7 +308,7 @@ def generate_global_params(params, idx):
     return generated_params
 
 
-def merge_generated_parameters(params, paramsfile, idx):
+def merge_generated_parameters(params, idx, hash):
     """
 
     :param params:
@@ -308,45 +316,82 @@ def merge_generated_parameters(params, paramsfile, idx):
     :param idx:
     :return:
     """
-    # Lock and open file
-    params_path = pathlib.Path(paramsfile)
-    params_path.parent.mkdir(parents=True, exist_ok=True)
 
-    lockfile_path = params_path.with_suffix(params_path.suffix + ".lock")
+    layer_id = "%s_%s" % (hash, socket.gethostname())
+    es = Elasticsearch(
+        current_app.config.get("ELASTIC").split(","),
+        verify_certs=False,
+        timeout=120
+    )
 
-    generated_params = None
-    with lockfile_path.open("w") as lockfile:
-        fcntl.flock(lockfile, fcntl.LOCK_EX)
+    #See if the hash exists
+    try:
+        doc = Document.get(id=hash, using=es, index=".datashader_layers")
+    except NotFoundError:
+        doc = None
+
+    if not doc:
+        #if not, create the hash in the db but only if it does not already exist
         try:
-            if params_path.exists():
-                current_app.logger.warn(
-                    "Found parameters file, using generated params from that"
-                )
-                # Params file exists so read it in
-                with params_path.open("r") as stream:
-                    full_params = json.load(stream)
-                # update timestamp for cache cleanup purposes
-                params_path.touch(exist_ok=True)
-                generated_params = full_params.get("generated_params")
+            doc = Document(_id=layer_id,
+                            creating_host=socket.gethostname(),
+                            creating_pid=os.getpid(),
+                            creating_timestamp=datetime.now(),
+                            generated_params=None,
+                            params=params)
+            doc.save(using=es, index=".datashader_layers", op_type="create", skip_empty=False)
+            current_app.logger.debug("Created Hash document")
+        except ConflictError:
+            current_app.logger.debug("Hash document now exists, continuing")
 
-            if generated_params is None:
-                current_app.logger.warn("Discovering generated params")
-                # Params file either does not exists
-                # or does not have generated parameters in it
-                generated_params = generate_global_params(params, idx)
+        #re-fetch to get sequence number correct
+        doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
 
-                # Write extended params to file
-                params_cleaned = copy.copy(params)
-                params_cleaned["generated_params"] = generated_params
+    #Check for generator timeouts:
+    if doc.to_dict().get("generated_params", {}).get("generation_start_time") and \
+                datetime.now() > datetime.strptime(doc.to_dict().get("generated_params", {}).get("generation_start_time"),"%Y-%m-%dT%H:%M:%S.%f")+timedelta(seconds=5*60):
+        #Something caused the worker generating the params to time out so clear that entry
+        try:
+            doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \
+                generated_params=None)
+        except ConflictError:
+            current_app.logger.debug("Abandoned resetting parameters due to conflict, other process has completed.")
 
-                # Change all datetimes to string format
-                for k, p in params_cleaned.items():
-                    if isinstance(p, datetime):
-                        params_cleaned[k] = p.isoformat()
-                with params_path.open("w") as pfile:
-                    json.dump(params_cleaned, pfile)
-        finally:
-            fcntl.lockf(lockfile, fcntl.LOCK_UN)
+    #Loop-check if the generated params are in missing/in-process/complete
+    timeout_at = datetime.now()+timedelta(seconds=45)
+    while doc.to_dict().get("generated_params", {}).get("complete", False) == False:
+        if datetime.now() > timeout_at:
+            current_app.logger.info("Hit timeout waiting for generated parameters to be placed into database")
+            break
+        #If missing, mark them as in generation
+        if not doc.to_dict().get("generated_params", None):
+            #Mark them as being generated but do so with concurrenty control
+            #https://www.elastic.co/guide/en/elasticsearch/reference/current/optimistic-concurrency-control.html
+            current_app.logger.info("Discovering generated parameters")
+            generated_params = dict()
+            generated_params["complete"] = False
+            generated_params["generation_start_time"] = datetime.now()
+            generated_params["generating_host"] = socket.gethostname()
+            generated_params["generating_pid"] = os.getpid()
+            try:
+                doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \
+                    generated_params=generated_params)
+            except ConflictError:
+                current_app.logger.debug("Abandoned generating parameters due to conflict, will wait for other process to complete.")
+                break
+            #Generate and save off parameters
+            current_app.logger.warn("Discovering generated params")
+            generated_params.update(generate_global_params(params, idx))
+            generated_params["generation_complete_time"] = datetime.now()
+            generated_params["complete"] = True
+            #Store off generated params
+            doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \
+                    generated_params=generated_params)
+            break
+        else:
+            time.sleep(1)
+            doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
 
-    params["generated_params"] = generated_params
+    #We now have params so use them
+    params["generated_params"] = doc.to_dict().get("generated_params")
     return params
