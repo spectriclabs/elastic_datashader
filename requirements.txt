@@ -2,7 +2,7 @@ Flask
 elasticsearch
 elasticsearch_dsl
 pyOpenSSL
-git+git://github.com/holoviz/datashader@v0.11.0a4
+git+git://github.com/holoviz/datashader@v0.11.0rc1
 pandas
 colorcet
 mercantile
