@@ -1,8 +1,9 @@
 Introduction
 ============
 
-Elastic Datashader combines the power of [ElasticSearch](www.elastic.co) with
-Datashader(https://datashader.org/).  So you can go from this:
+[Elastic Datashader](https://github.com/spectriclabs/elastic_datashader) combines
+the power of [ElasticSearch](www.elastic.co) with [Datashader](https://datashader.org/).
+So you can go from this:
 
 ![Kibana Default Heatmap](doc/img/elastic_heatmap.png)
 
