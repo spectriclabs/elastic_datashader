@@ -28,7 +28,6 @@ from tms_datashader_api.helpers.elastic import (
     get_nested_field_from_hit,
 )
 from tms_datashader_api.helpers.pandas_util import simplify_categories
-from tms_datashader_api.helpers.datashader_helpers import sum_cat
 
 NAN_LINE = {"x": None, "y": None, "c": "None"}
 
@@ -751,7 +750,7 @@ def generate_tile(idx, x, y, z, params):
                         plot_height=tile_height_px,
                         x_range=x_range,
                         y_range=y_range,
-                    ).points(df, "x", "y", agg=sum_cat("t", "c"))
+                    ).points(df, "x", "y", agg=ds.by("t", ds.sum("c")))
 
                     span = None
                     if span_range == "flat":
