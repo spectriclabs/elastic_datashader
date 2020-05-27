@@ -1,6 +1,6 @@
 FROM python:3.7
 LABEL maintainer="mastley@spectric.com" \
-      version="0.0.3"
+      version="0.0.4"
 
 COPY deployment/pip.conf /root/.pip/pip.conf
 
