@@ -12,6 +12,7 @@ from elasticsearch_dsl import AttrList, AttrDict
 from elasticsearch_dsl.aggs import Bucket
 from flask import current_app, request
 from numpy import pi
+from datashader.utils import lnglat_to_meters
 
 from tms_datashader_api.helpers.drawing import (
     ellipse,
@@ -162,7 +163,7 @@ def create_datashader_ellipses_from_search(
             angle = angles[ii]
 
             # Handle deg->Meters conversion and everything else
-            x0, y0 = ds.utils.lnglat_to_meters(loc["lon"], loc["lat"])
+            x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
             angle = angle * ((2.0 * pi) / 360.0)  # Convert degrees to radians
             if ellipse_units == "majmin_nm":
                 major = major * 1852  # nm to meters
@@ -352,7 +353,7 @@ def generate_nonaggregated_tile(
 
         # Estimate the number of points per tile assuming uniform density
         estimated_points_per_tile = None
-        if span_range == "auto" or span_range == None:
+        if span_range == "auto" or span_range is None:
             num_tiles_at_level = sum(
                 1 for _ in mercantile.tiles(*global_bounds, zooms=z, truncate=False)
             )
@@ -408,7 +409,7 @@ def generate_nonaggregated_tile(
                     span = [0, math.log(1e9)]
                     min_alpha = 50
                 else:
-                    assert estimated_points_per_tile != None
+                    assert estimated_points_per_tile is not None
                     span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
                     alpha_span = int(span[1]) * 25
                     min_alpha = 255 - min(alpha_span, 225)
@@ -458,11 +459,9 @@ def generate_tile(idx, x, y, z, params):
     dsl_query = params["dsl_query"]
     dsl_filter = params["dsl_filter"]
     max_bins = params["max_bins"]
-    histogram_interval = params.get("generated_params", {}).get(
-        "histogram_interval", None
-    )
-    global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt", None)
-    global_bounds = params.get("generated_params", {}).get("global_bounds", None)
+    histogram_interval = params.get("generated_params", {}).get("histogram_interval")
+    global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt")
+    global_bounds = params.get("generated_params", {}).get("global_bounds")
 
     current_app.logger.debug(
         "Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"
@@ -767,7 +766,7 @@ def generate_tile(idx, x, y, z, params):
                         span = [0, math.log(1e9)]
                         min_alpha = 50
                     else:
-                        assert estimated_points_per_tile != None
+                        assert estimated_points_per_tile is not None
                         span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
                         alpha_span = int(span[1]) * 25
                         min_alpha = 255 - min(alpha_span, 225)
