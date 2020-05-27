@@ -5,29 +5,36 @@ import pytest
 from tms_datashader_api.helpers import timeutil
 
 
-def test_quantize_time_range_no_stop():
+@pytest.mark.parametrize(
+    "start,stop",
+    (
+        (None, datetime(2020, 5, 1, 0, 0, 5)),
+        (datetime(2020, 5, 1, 0, 0, 5), None),
+        (None, None),
+    )
+)
+def test_quantize_time_range_no_stop(start, stop):
     with pytest.raises(ValueError):
-        timeutil.quantize_time_range(None, None)
+        timeutil.quantize_time_range(start, stop)
 
 
 @pytest.mark.parametrize(
     "start,stop,expected",
     (
-        (None, datetime(2020, 5, 11, 12, 0, 1), (None, datetime(2020, 5, 11, 0, 0))),
         (
             datetime(2020, 5, 1, 0, 0, 5),
             datetime(2020, 5, 11, 12, 0, 1),
-            (datetime(2020, 5, 1, 0, 0), datetime(2020, 5, 11, 0, 0)),
+            (datetime(2020, 5, 1, 0, 0), datetime(2020, 5, 11, 12, 0)),
         ),
         (
             datetime(2020, 3, 1, 0, 0, 5),
             datetime(2020, 5, 11, 12, 0, 1),
-            (datetime(2020, 3, 1, 0, 0), datetime(2020, 5, 11, 0, 0)),
+            (datetime(2020, 3, 1, 0, 0), datetime(2020, 5, 11, 12, 0)),
         ),
         (
             datetime(2020, 5, 11, 12, 0, 0),
             datetime(2020, 5, 11, 12, 0, 3),
-            (datetime(2020, 5, 11, 12, 0), datetime(2020, 5, 11, 12, 0)),
+            (datetime(2020, 5, 11, 12, 0), datetime(2020, 5, 11, 12, 0, 3)),
         ),
     ),
 )

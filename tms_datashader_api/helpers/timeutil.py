@@ -8,16 +8,17 @@ import datemath
 
 
 def quantize_time_range(
-    start_time: Optional[datetime], stop_time: datetime
-) -> Tuple[Optional[datetime], datetime]:
+    start_time: datetime,
+    stop_time: datetime
+) -> Tuple[datetime, datetime]:
     """Quantize the start and end times to 5 min boundaries.
 
     :param start_time: Start time
     :param stop_time: Stop time
     :return: Quantized start and end times
     """
-    if stop_time is None:
-        raise ValueError("stop time must be provided")
+    if start_time is None or stop_time is None:
+        raise ValueError("both start and stop times must be provided")
 
     # truncate to 5 min
     truncated_start_time = start_time.replace(
