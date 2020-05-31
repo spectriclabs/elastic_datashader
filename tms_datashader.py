@@ -12,9 +12,9 @@ from flask_apscheduler import APScheduler
 
 from tms_datashader_api.helpers.cache import scheduled_cache_check_task
 from tms_datashader_api.helpers.config import Config
+from tms_datashader_api.helpers.elastic import verify_datashader_indices
 from tms_datashader_api.routes import api_blueprints
 from tms_datashader_api.views import view_blueprints
-from tms_datashader_api.helpers.elastic import verify_datashader_indices
 
 
 def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:
@@ -48,7 +48,7 @@ def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:
     flask_app.logger.info("Loaded environment %s", os.environ)
 
     with flask_app.app_context():
-        #Verify indices exist
+        # Verify indices exist
         verify_datashader_indices()
 
     # Register the API
