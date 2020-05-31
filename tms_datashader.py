@@ -47,9 +47,8 @@ def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:
     flask_app.logger.info("Loaded configuration %s", flask_app.config)
     flask_app.logger.info("Loaded environment %s", os.environ)
 
-    with flask_app.app_context():
-        # Verify indices exist
-        verify_datashader_indices()
+    # Verify indices exist
+    verify_datashader_indices(flask_app.config.get("ELASTIC"))
 
     # Register the API
     flask_app.logger.info("Registering API")

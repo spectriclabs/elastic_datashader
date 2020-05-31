@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import copy
+import logging
 import os
 import threading
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 import yaml
 from datashader.utils import lnglat_to_meters
@@ -12,32 +14,38 @@ from elasticsearch_dsl import Search, AttrDict, Index
 from flask import current_app, request
 
 
-def verify_datashader_indices():
+def verify_datashader_indices(elasticsearch_uri: str):
+    """Verify the ES indices exist
+
+    :param elasticsearch_uri:
+    """
     es = Elasticsearch(
-        current_app.config.get("ELASTIC").split(","),
+        elasticsearch_uri.split(","),
         verify_certs=False,
         timeout=120
     )
     try:
         Index(".datashader_layers", using=es).create()
     except RequestError:
-        current_app.logger.debug("Index .datashader_layers already exists, continuing")
+        logging.debug("Index .datashader_layers already exists, continuing")
     try:
         Index(".datashader_tiles", using=es).create()
     except RequestError:
-        current_app.logger.debug("Index .datashader_tiles already exists, continuing")
-    return
+        logging.debug("Index .datashader_tiles already exists, continuing")
+
 
 def get_search_base(
     elastic_uri: str,
     params: Dict[str, Any],
-    idx: int
+    idx: int,
+    header_file: Optional[Union[str, Path]] = None,
 ) -> Search:
     """
 
     :param elastic_uri:
     :param params:
     :param idx:
+    :param header_file:
     :return:
     """
     timestamp_field = params["timestamp_field"]
@@ -53,7 +61,7 @@ def get_search_base(
         elastic_uri.split(","),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(request.headers, user),
+        headers=get_es_headers(header_file, request.headers, user),
     )
 
     # Create base search
@@ -160,9 +168,10 @@ HEADERS = None
 header_lock = threading.Lock()
 
 
-def get_es_headers(request_headers=None, user=None):
+def get_es_headers(header_file=None, request_headers=None, user=None):
     """
 
+    :param header_file:
     :param request_headers:
     :param user:
     :return:
@@ -172,7 +181,6 @@ def get_es_headers(request_headers=None, user=None):
     with header_lock:
         if HEADERS is None:
             # Load HEADERS from the file if requested
-            header_file = current_app.config.get("HEADER_FILE")
             if header_file and os.path.exists(header_file):
                 try:
                     with open(header_file) as ff:
