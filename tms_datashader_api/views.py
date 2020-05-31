@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 import json
-import subprocess
 from pathlib import Path
 from pprint import pformat
 
 from flask import current_app, render_template, request, Blueprint
 
-from tms_datashader_api.helpers.cache import build_layer_info
+from tms_datashader_api.helpers.cache import du, build_layer_info
 
 view_blueprints = Blueprint("views", __name__, template_folder="templates")
 
@@ -17,9 +16,7 @@ def index():
     cache_dir = current_app.config["CACHE_DIRECTORY"]
 
     # Calc Cache Size
-    cache_size = (
-        subprocess.check_output(["du", "-sh", cache_dir]).split()[0].decode("utf-8")
-    )
+    cache_size = du(cache_dir)
 
     # Build Layer Info
     return render_template(

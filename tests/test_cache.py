@@ -1,8 +1,23 @@
 #!/usr/bin/env pytest
 import os
+import subprocess
 import time
 from unittest import mock
+import pytest
 from tms_datashader_api.helpers import cache
+
+
+def test_du_fail(tmp_path):
+    with pytest.raises(subprocess.CalledProcessError):
+        cache.du(tmp_path / "foo" / "bar" / "baz")
+
+
+def test_du(tmp_path):
+    foo = tmp_path / "foo.txt"
+    foo.write_text("Hello, World!")
+    actual = cache.du(foo)
+    assert isinstance(actual, str)
+    assert actual.endswith(".0K")
 
 
 def test_get_cache_none():

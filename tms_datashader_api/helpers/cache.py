@@ -11,6 +11,11 @@ from typing import Dict, Optional, Union
 from tms_datashader_api.helpers.timeutil import pretty_time_delta
 
 
+def du(path: Union[str, Path]) -> str:
+    """Disk usage in human readable format (e.g. '2.1GB')"""
+    return subprocess.check_output(['du', '-sh', path]).split()[0].decode('utf-8')
+
+
 def get_cache(cache_dir: Union[Path, str], tile: str) -> Optional[bytes]:
     """Retrieve data from the cache
 
@@ -21,9 +26,7 @@ def get_cache(cache_dir: Union[Path, str], tile: str) -> Optional[bytes]:
     # Check if tile exists
     tile_path = Path(cache_dir) / tile
     if tile_path.exists():
-        with tile_path.open("rb") as tile_data:
-            return tile_data.read()
-    return None
+        return tile_path.read_bytes()
 
 
 def set_cache(cache_dir: Union[Path, str], tile: str, img: bytes) -> None:
@@ -39,8 +42,7 @@ def set_cache(cache_dir: Union[Path, str], tile: str, img: bytes) -> None:
     tile_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Write the file to the cache
-    with tile_path.open("wb") as tile_file:
-        tile_file.write(img)
+    tile_path.write_bytes(img)
 
 
 def check_cache_dir(cache_dir: Union[str, Path], layer_name: str) -> None:
@@ -144,11 +146,7 @@ def build_layer_info(cache_dir: Union[str, Path]) -> Dict[str, OrderedDict]:
             params["age"] = pretty_time_delta(time.time() - params["age_timestamp"])
             # Check size of hash
             try:
-                params["size"] = (
-                    subprocess.check_output(["du", "-sh", str(hash_dir)])
-                    .split()[0]
-                    .decode("utf-8")
-                )
+                params["size"] = du(hash_dir)
             except OSError:
                 params["size"] = "Error"
             layer_info.setdefault(layer.name, OrderedDict())
