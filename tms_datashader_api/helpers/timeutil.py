@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import math
-from datetime import timedelta, datetime
-from typing import Optional, Tuple
+from datetime import datetime
+from typing import Tuple
 
 import arrow
 import datemath
@@ -16,6 +16,16 @@ def quantize_time_range(
     :param start_time: Start time
     :param stop_time: Stop time
     :return: Quantized start and end times
+    :raises ValueError: if ``start_time`` or ``stop_time`` is ``None``
+
+    :Examples:
+    >>> start = datetime(2020, 5, 1, 12, 0, 1)
+    >>> stop = datetime(2020, 5, 1, 16, 0, 6)
+    >>> qstart, qstop = quantize_time_range(start, stop)
+    >>> qstart
+    datetime.datetime(2020, 5, 1, 12, 0)
+    >>> qstop
+    datetime.datetime(2020, 5, 1, 16, 0)
     """
     if start_time is None or stop_time is None:
         raise ValueError("both start and stop times must be provided")
