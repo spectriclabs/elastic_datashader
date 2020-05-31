@@ -7,9 +7,10 @@ from typing import Any, Dict, List
 import yaml
 from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Search, AttrDict, Index
 from elasticsearch.exceptions import RequestError
+from elasticsearch_dsl import Search, AttrDict, Index
 from flask import current_app, request
+
 
 def verify_datashader_indices():
     es = Elasticsearch(
