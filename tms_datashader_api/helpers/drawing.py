@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-from hashlib import md5
 import io
 from functools import lru_cache
+from hashlib import md5
 from typing import Dict, Iterable, Tuple
 
-from colorcet import palette
-from PIL import Image, ImageDraw
-from numba import njit
 import numpy as np
+from PIL import Image, ImageDraw
+from colorcet import palette
+from numba import njit
 
 
 def create_color_key(
@@ -144,13 +144,13 @@ def ellipse(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Accelerated helper function for generating ellipses from point data
 
-    :param radm:
-    :param radn:
-    :param tilt:
-    :param xpos:
-    :param ypos:
-    :param num_points:
-    :return:
+    :param radm: Semimajor axis
+    :param radn: Semiminor axis
+    :param tilt: Ellipse tilt in radians
+    :param xpos: Cartesian coordinate x position
+    :param ypos: Cartesian coordinate y position
+    :param num_points: Number of points with which to draw ellipse
+    :return: Tuple containing X points and corresponding Y points for ellipse
     """
     co = np.cos(tilt)
     si = np.sin(tilt)
