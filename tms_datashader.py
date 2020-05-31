@@ -17,7 +17,10 @@ from tms_datashader_api.routes import api_blueprints
 from tms_datashader_api.views import view_blueprints
 
 
-def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:
+def create_app(
+    app_args: Optional[argparse.Namespace] = None,
+    verify_indices: bool = True
+) -> Flask:
     """Application factory for setting up Flask app
 
     Use factory pattern as shown in:
@@ -48,7 +51,8 @@ def create_app(app_args: Optional[argparse.Namespace] = None) -> Flask:
     flask_app.logger.info("Loaded environment %s", os.environ)
 
     # Verify indices exist
-    verify_datashader_indices(flask_app.config.get("ELASTIC"))
+    if verify_indices:
+        verify_datashader_indices(flask_app.config.get("ELASTIC"))
 
     # Register the API
     flask_app.logger.info("Registering API")
