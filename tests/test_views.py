@@ -10,6 +10,7 @@ from tms_datashader_api.helpers.cache import du
 
 
 def setup_cache(cache_path: Path):
+    """Helper method to setup cache directory for tests"""
     hash_dir = cache_path / "foo" / "abcdef"
     hash_dir.mkdir(exist_ok=True, parents=True)
     with (hash_dir / "params.json").open("w") as f:
