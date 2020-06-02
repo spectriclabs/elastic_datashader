@@ -12,7 +12,11 @@ from tms_datashader_api.helpers.timeutil import pretty_time_delta
 
 
 def du(path: Union[str, Path]) -> str:
-    """Disk usage in human readable format (e.g. '2.1GB')"""
+    """Disk usage in human readable format (e.g. '2.1GB')
+
+    :param path: Path in ``du -sh <path>``
+    :return: Disk usage in human readable form
+    """
     return subprocess.check_output(['du', '-sh', path]).split()[0].decode('utf-8')
 
 
