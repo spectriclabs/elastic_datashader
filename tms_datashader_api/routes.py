@@ -241,7 +241,7 @@ def get_tms(idx, x: int, y: int, z: int):
 
         check_cache_dir(cache_dir, idx)
 
-        headers = get_es_headers(request.headers)
+        headers = get_es_headers(request_headers=request.headers, user=params["user"])
         current_app.logger.info("Loaded input headers %s", request.headers)
         current_app.logger.info("Loaded elasticsearch headers %s", headers)
 
