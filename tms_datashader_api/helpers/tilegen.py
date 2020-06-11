@@ -686,8 +686,7 @@ def generate_tile(idx, x, y, z, params):
                     resp = subframe_s.execute()
                 except:
                     current_app.logger.exception(
-                        "failed to generate subframe %s subframe %s categories %s %s %s %s",
-                        subframe,
+                        "failed to generate subframe %s categories %s %s %s %s",
                         subframe_bounds,
                         category_cnt,
                         current_zoom,
