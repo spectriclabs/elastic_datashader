@@ -5,7 +5,6 @@ import time
 
 import colorcet as cc
 import datashader as ds
-import mercantile
 import pandas as pd
 from datashader import reductions as rd, transfer_functions as tf
 from elasticsearch_dsl import AttrList, AttrDict
@@ -14,6 +13,7 @@ from flask import current_app, request
 from numpy import pi
 from datashader.utils import lnglat_to_meters
 
+import tms_datashader_api.helpers.mercantile_util as mu
 from tms_datashader_api.helpers.drawing import (
     ellipse,
     gen_empty,
@@ -248,10 +248,10 @@ def generate_nonaggregated_tile(
     )
     try:
         # Get the web mercador bounds for the tile
-        xy_bounds = mercantile.xy_bounds(x, y, z)
+        xy_bounds = mu.xy_bounds(x, y, z)
         # Calculate the x/y range in meters
-        x_range = xy_bounds.left, xy_bounds.right
-        y_range = xy_bounds.bottom, xy_bounds.top
+        x_range = xy_bounds[0], xy_bounds[2]
+        y_range = xy_bounds[1], xy_bounds[3]
         # Swap the numbers so that [0] is always lowest
         if x_range[0] > x_range[1]:
             x_range = x_range[1], x_range[0]
@@ -262,10 +262,10 @@ def generate_nonaggregated_tile(
         extend_meters = ellipse_max_cep * 1852
 
         # Get the top_left/bot_rght for the tile
-        top_left = mercantile.lnglat(
+        top_left = mu.lnglat(
             x_range[0] - extend_meters, y_range[1] + extend_meters
         )
-        bot_rght = mercantile.lnglat(
+        bot_rght = mu.lnglat(
             x_range[1] + extend_meters, y_range[0] - extend_meters
         )
 
@@ -353,9 +353,7 @@ def generate_nonaggregated_tile(
         # Estimate the number of points per tile assuming uniform density
         estimated_points_per_tile = None
         if span_range == "auto" or span_range is None:
-            num_tiles_at_level = sum(
-                1 for _ in mercantile.tiles(*global_bounds, zooms=z, truncate=False)
-            )
+            num_tiles_at_level = mu.num_tiles(*global_bounds, z)
             estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
             current_app.logger.debug(
                 "Doc Bounds %s %s %s %s",
@@ -482,18 +480,18 @@ def generate_tile(idx, x, y, z, params):
         tile_width_px = 256
 
         # Get the web mercador bounds for the tile
-        xy_bounds = mercantile.xy_bounds(x, y, z)
+        xy_bounds = mu.xy_bounds(x, y, z)
         # Calculate the x/y range in meters
-        x_range = xy_bounds.left, xy_bounds.right
-        y_range = xy_bounds.bottom, xy_bounds.top
+        x_range = xy_bounds[0], xy_bounds[2]
+        y_range = xy_bounds[1], xy_bounds[3]
         # Swap the numbers so that [0] is always lowest
         if x_range[0] > x_range[1]:
             x_range = x_range[1], x_range[0]
         if y_range[0] > y_range[1]:
             y_range = y_range[1], y_range[0]
         # Get the top_left/bot_rght for the tile
-        top_left = mercantile.lnglat(x_range[0], y_range[1])
-        bot_rght = mercantile.lnglat(x_range[1], y_range[0])
+        top_left = mu.lnglat(x_range[0], y_range[1])
+        bot_rght = mu.lnglat(x_range[1], y_range[0])
         # Constrain exactly to map boundaries
         bb_dict = {
             "top_left": {
@@ -613,7 +611,7 @@ def generate_tile(idx, x, y, z, params):
             )
 
             # generate n subframe bounding boxes
-            subframes = mercantile.tiles(
+            subframes = mu.tiles_bounds(
                 bb_dict["top_left"]["lon"],  # west
                 bb_dict["bottom_right"]["lat"],  # south
                 bb_dict["bottom_right"]["lon"],  # east
@@ -624,16 +622,15 @@ def generate_tile(idx, x, y, z, params):
             partial_data = False
             df = pd.DataFrame()
             s1 = time.time()
-            for _, subframe in enumerate(subframes):
-                subframe_bounds = mercantile.bounds(subframe)
+            for subframe_bounds in subframes:
                 subframe_bbox = {
                     "top_left": {
-                        "lat": subframe_bounds.north,
-                        "lon": subframe_bounds.west,
+                        "lat": subframe_bounds[3],
+                        "lon": subframe_bounds[0],
                     },
                     "bottom_right": {
-                        "lat": subframe_bounds.south,
-                        "lon": subframe_bounds.east,
+                        "lat": subframe_bounds[1],
+                        "lon": subframe_bounds[2],
                     },
                 }
 
@@ -714,9 +711,7 @@ def generate_tile(idx, x, y, z, params):
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
             if span_range == "auto" or span_range == None:
-                num_tiles_at_level = sum(
-                    1 for _ in mercantile.tiles(*global_bounds, zooms=z, truncate=False)
-                )
+                num_tiles_at_level = mu.num_tiles(*global_bounds, z)
                 estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
                 current_app.logger.debug(
                     "Doc Bounds %s %s %s %s",
