@@ -206,9 +206,13 @@ if __name__ == "__main__":
     urllib3.disable_warnings(UserWarning)
 
     # Setup logging for non-Flask items
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     logging.getLogger("elasticsearch").setLevel(logging.WARN)
     logging.getLogger("urllib3").setLevel(logging.WARN)
+    logging.getLogger("numba").setLevel(logging.WARN)
 
     # Setup the Flask App
     args = setup_cli_parser()
