@@ -11,6 +11,10 @@ from typing import Dict, Optional, Union
 from tms_datashader_api.helpers.timeutil import pretty_time_delta
 
 
+_log = logging.getLogger("apscheduler.scheduler.cache")
+_log.addHandler(logging.NullHandler())
+
+
 def du(path: Union[str, Path]) -> str:
     """Disk usage in human readable format (e.g. '2.1GB')
 
@@ -83,7 +87,7 @@ def check_cache_age(cache_dir: Union[Path, str], age_limit: int) -> None:
             age_timestamp = time.time() - params_json.stat().st_mtime
             if age_timestamp > age_limit:
                 shutil.rmtree(hash_dir)
-                logging.info(
+                _log.info(
                     "Removing hash due to age: %s (%s>%s)",
                     hash_dir,
                     age_timestamp,
@@ -98,29 +102,29 @@ def scheduled_cache_check_task(id_: str, cache_dir: Union[Path, str]) -> None:
     :param cache_dir: Cache directory to check
     """
     # See last update file
-    logging.info("Checking for old cache (%s) at %s", id_, cache_dir)
+    _log.info("Checking for old cache %s (%s)", cache_dir, id_)
 
     cache_path = Path(cache_dir)
     check_file = cache_path / "cache.age.check"
 
     # If the file doesn't exist, create it
     if not check_file.exists():
-        logging.info("Had to recreate check file (%s) at %s", id_, cache_dir)
+        _log.info("Had to recreate check file %s (%s)", cache_dir, id_)
         check_file.touch()
 
     check_age = time.time() - check_file.stat().st_mtime
-    logging.info("Checking age(%s) at %s", id_, check_age)
+    _log.info("Checking age %s > %s (%s)", check_age, 300, id_)
 
     if check_age > 300:
         # Bump the utime
         check_file.touch(exist_ok=True)
 
-        logging.info("Doing age check (%s)", id_)
+        _log.info("Doing age check (%s)", id_)
 
         # Setup 24 hour cleanup (86400 == 24 * 60 * 60)
         check_cache_age(cache_dir, 86400)
 
-        logging.info("Cache check complete (%s)", id_)
+        _log.info("Cache check complete (%s)", id_)
 
 
 def build_layer_info(cache_dir: Union[str, Path]) -> Dict[str, OrderedDict]:
