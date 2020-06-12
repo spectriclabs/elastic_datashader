@@ -50,7 +50,7 @@ def ul(xtile, ytile, zoom):
     )
 
 
-@numba.njit
+@numba.njit(fastmath=True)
 def xy_bounds(xtile, ytile, zoom):
     tile_size = CE / 2 ** zoom
 
