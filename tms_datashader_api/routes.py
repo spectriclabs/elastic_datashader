@@ -242,8 +242,8 @@ def get_tms(idx, x: int, y: int, z: int):
         check_cache_dir(cache_dir, idx)
 
         headers = get_es_headers(request_headers=request.headers, user=params["user"])
-        current_app.logger.info("Loaded input headers %s", request.headers)
-        current_app.logger.info("Loaded elasticsearch headers %s", headers)
+        current_app.logger.debug("Loaded input headers %s", request.headers)
+        current_app.logger.debug("Loaded elasticsearch headers %s", headers)
 
         # Get or generate extended parameters
         params = merge_generated_parameters(params, idx, parameter_hash)
