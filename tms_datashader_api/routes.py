@@ -287,6 +287,38 @@ def get_tms(idx, x: int, y: int, z: int):
     return resp
 
 
+@api_blueprints.route("/indices", methods=["GET"])
+def retrieve_indices():
+    es = Elasticsearch(
+        current_app.config.get("ELASTIC").split(","),
+        verify_certs=False,
+        timeout=120)
+    indices = [idx for idx in es.indices.get_alias("*") if not idx.startswith(".")]
+    indices_json = json.dumps({"indices": indices})
+    resp = Response(indices_json, status=200)
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.cache_control.max_age = 60
+    return resp
+
+
+@api_blueprints.route("/indices/<index>/mapping", methods=["GET"])
+def retrieve_index_mapping(index):
+    es = Elasticsearch(
+        current_app.config.get("ELASTIC").split(","),
+        verify_certs=False,
+        timeout=120)
+    index_mapping = es.indices.get_mapping(index)
+    mapping = [field for field in index_mapping[index]["mappings"]["properties"]]
+
+    indices_json = json.dumps({"mapping": mapping})
+    resp = Response(indices_json, status=200)
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.cache_control.max_age = 60
+    return resp
+
+
 def legend_response(data: str, error: Optional[Exception] = None) -> Response:
     resp = Response(data, status=200)
     resp.headers["Content-Type"] = "application/json"
