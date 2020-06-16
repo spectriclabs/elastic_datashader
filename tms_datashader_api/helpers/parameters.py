@@ -216,7 +216,6 @@ def generate_global_params(params, idx):
     histogram_range = 0
     histogram_interval = None
     global_doc_cnt = None
-    global_bounds = None
 
     # Create base search
     base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
