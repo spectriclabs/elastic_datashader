@@ -547,7 +547,7 @@ def generate_tile(idx, x, y, z, params):
         # If count is zero then return a null image
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
-            img = gen_empty(tile_width_px, tile_height_px)
+            return gen_empty(tile_width_px, tile_height_px)
         else:
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
@@ -709,7 +709,7 @@ def generate_tile(idx, x, y, z, params):
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
-            if span_range == "auto" or span_range == None:
+            if span_range == "auto" or span_range is None:
                 num_tiles_at_level = mu.num_tiles(*global_bounds, z)
                 estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
                 current_app.logger.debug(
@@ -721,7 +721,7 @@ def generate_tile(idx, x, y, z, params):
                 )
 
             if len(df.index) == 0:
-                img = gen_empty(tile_width_px, tile_height_px)
+                return gen_empty(tile_width_px, tile_height_px)
             else:
                 ###############################################################
                 # Category Mode
