@@ -259,22 +259,25 @@ def get_tms(idx, x: int, y: int, z: int):
             logging.exception("Exception Generating Tile for request %s", request)
             # generate an error tile/don't cache cache it
             return error_tile_response(e, tile_height_px, tile_width_px)
-        et = (datetime.now()-t1).total_seconds()
+        et = (datetime.now() - t1).total_seconds()
         # Make entry into .datashader_tiles
         es = Elasticsearch(
             current_app.config.get("ELASTIC").split(","),
             verify_certs=False,
-            timeout=120)
-        doc = Document( hash=parameter_hash,
-                        idx=idx,
-                        x=x,
-                        y=x,
-                        z=z,
-                        host=socket.gethostname(),
-                        pid=os.getpid(),
-                        render_time=et,
-                        timestamp=datetime.now(),
-                        params=params)
+            timeout=120,
+        )
+        doc = Document(
+            hash=parameter_hash,
+            idx=idx,
+            x=x,
+            y=x,
+            z=z,
+            host=socket.gethostname(),
+            pid=os.getpid(),
+            render_time=et,
+            timestamp=datetime.now(),
+            params=params,
+        )
         doc.save(using=es, index=".datashader_tile")
 
         # Store image as well
@@ -305,11 +308,13 @@ def retrieve_indices():
 @api_blueprints.route("/indices/<index>/mapping", methods=["GET"])
 def retrieve_index_mapping(index):
     es = Elasticsearch(
-        current_app.config.get("ELASTIC").split(","),
-        verify_certs=False,
-        timeout=120)
+        current_app.config.get("ELASTIC").split(","), verify_certs=False, timeout=120
+    )
     index_mapping = es.indices.get_mapping(index)
-    mapping = [field for field in index_mapping[index]["mappings"]["properties"]]
+    mapping = [
+        {"name": field, "type": props["type"]}
+        for field, props in index_mapping[index]["mappings"]["properties"].items()
+    ]
 
     indices_json = json.dumps({"mapping": mapping})
     resp = Response(indices_json, status=200)
