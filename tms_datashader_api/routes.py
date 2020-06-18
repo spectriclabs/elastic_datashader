@@ -189,6 +189,62 @@ def provide_legend(idx, field_name):
     return legend_response(json.dumps(color_key_legend))
 
 
+@api_blueprints.route("/data/<idx>/<lat>/<lon>/<float:radius>", methods=["GET"])
+def get_data(idx, lat, lon, radius: float):
+    #Handle lat/lon conversion
+    try:
+        lat = float(lat)
+        lon = float(lon)
+        #Check for paging args
+        from_arg = int(request.args.get("from", 0))
+        size_arg = int(request.args.get("size", 100))
+    except Exception as e:
+        current_app.logger.exception("Error while converting lat/lon/from/size")
+        return error_data_response("Error while converting lat/lon/from/size")
+
+    # Validate request is from proxy if proxy mode is enabled
+    tms_key = current_app.config.get("TMS_KEY")
+    tms_proxy_key = request.headers.get("TMS_PROXY_KEY")
+    if tms_key is not None:
+        if tms_key != tms_proxy_key:
+            current_app.logger.warning(
+                "TMS must be accessed via reverse proxy: keys %s != %s",
+                tms_key,
+                tms_proxy_key,
+            )
+            return Response("TMS must be accessed via reverse proxy", status=403)
+
+    # Get hash and parameters
+    try:
+        parameter_hash, params = extract_parameters(request)
+    except Exception as e:
+        current_app.logger.exception("Error while extracting parameters")
+        return error_data_response("Error while extracting parameters")
+    geopoint_field = params["geopoint_field"]
+    timestamp_field = params["timestamp_field"]
+
+    #Build and execute search
+    base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
+    distance_dict = {"distance":"%sm"%radius, geopoint_field:{"lat":lat, "lon":lon}}
+    base_s = base_s.filter("geo_distance", **distance_dict)[from_arg:from_arg+size_arg]
+    search_resp = base_s.execute()
+    hits = []
+    hit_count = 0
+    for hit in search_resp:
+        hits.append(hit.to_dict())
+        hit_count += 1
+
+    #Generate response
+    current_app.logger.info("Processed %s hits"%hit_count)
+    resp = Response(json.dumps({"total_hits":search_resp.hits.total.value,
+                     "from":from_arg,
+                     "size":size_arg,
+                     "hits":hits}), status=200)
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.cache_control.max_age = 60
+    return resp
+
 @api_blueprints.route("/tms/<idx>/<int:z>/<int:x>/<int:y>.png", methods=["GET"])
 def get_tms(idx, x: int, y: int, z: int):
     tile_height_px = 256
@@ -342,5 +398,14 @@ def error_tile_response(
     resp.headers["Content-Type"] = "image/png"
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Error"] = str(e)
+    resp.cache_control.max_age = 60
+    return resp
+
+def error_data_response(
+    err: str
+) -> Response:
+    resp = Response(err, status=200)
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.cache_control.max_age = 60
     return resp
