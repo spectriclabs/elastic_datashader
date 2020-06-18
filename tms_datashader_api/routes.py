@@ -225,8 +225,13 @@ def get_data(idx, lat, lon, radius: float):
 
     #Build and execute search
     base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
-    distance_dict = {"distance":"%sm"%radius, geopoint_field:{"lat":lat, "lon":lon}}
-    base_s = base_s.filter("geo_distance", **distance_dict)[from_arg:from_arg+size_arg]
+    distance_filter_dict = {"distance":"%sm"%radius, geopoint_field:{"lat":lat, "lon":lon}}
+    base_s = base_s.filter("geo_distance", **distance_filter_dict)
+    distance_sort_dict = {geopoint_field:{"lat":lat, "lon":lon}, "order":"asc", "ignore_unmapped":True}
+    base_s = base_s.sort({"_geo_distance": distance_sort_dict})
+    #Paginate
+    base_s = base_s[from_arg:from_arg+size_arg]
+    
     search_resp = base_s.execute()
     hits = []
     hit_count = 0
