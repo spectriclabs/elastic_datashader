@@ -448,6 +448,7 @@ def generate_tile(idx, x, y, z, params):
     stop_time = params["stop_time"]
     category_field = params["category_field"]
     category_type = params["category_type"]
+    highlight = params["highlight"]
     cmap = params["cmap"]
     spread = params["spread"]
     resolution = params["resolution"]
@@ -735,7 +736,7 @@ def generate_tile(idx, x, y, z, params):
                     _, color_key = simplify_categories(
                         df,
                         "t",
-                        create_color_key(df["t"].cat.categories, cmap=cmap),
+                        create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight),
                         inplace=True,
                     )
 

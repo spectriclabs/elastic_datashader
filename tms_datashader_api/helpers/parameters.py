@@ -42,6 +42,7 @@ def extract_parameters(request):
         "category_type": None,
         "category_format": None,
         "category_histogram": None,
+        "highlight": None,
         "ellipses": False,
         "ellipse_major": "",
         "ellipse_minor": "",
@@ -125,6 +126,7 @@ def extract_parameters(request):
     else:
         params["category_histogram"] = None
 
+    params["highlight"] = request.args.get("highlight")
     params["spread"] = request.args.get("spread")
     # Handle text-value spread in both legacy and new format
     if params["spread"] in ("coarse", "large"):

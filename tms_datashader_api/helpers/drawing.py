@@ -12,22 +12,30 @@ from numba import njit
 
 def create_color_key(
     categories: Iterable,
-    cmap: str = "glasbey_category10"
+    cmap: str = "glasbey_category10",
+    highlight: str = None
 ) -> Dict[str, str]:
     """Create a mapping from category to color
 
     :param categories: Categories to encode as different colors
     :param cmap: Colorcet color-map name (defaults to "glasbey_category10")
+    :param highlight: Only colorize this category and make all others a default grey color
     :return: Dictionary containing each category and their respective color
 
     :Example:
     >>> create_color_key(["foo", "bar", "baz"])
     {'foo': '#9a0390', 'bar': '#8a9500', 'baz': '#870062'}
     """
-    return {
-        k: palette[cmap][int(md5(k.encode("utf-8")).hexdigest()[0:2], 16)]
-        for k in categories
-    }
+    mapping = {}
+    for k in categories:
+        if highlight:
+            if k == highlight:
+                mapping[k] = palette[cmap][int(md5(k.encode("utf-8")).hexdigest()[0:2], 16)]
+            else:
+                mapping[k] = '#D3D3D3' # Light Grey
+        else:
+            mapping[k] = palette[cmap][int(md5(k.encode("utf-8")).hexdigest()[0:2], 16)]
+    return mapping
 
 
 @lru_cache(10)
