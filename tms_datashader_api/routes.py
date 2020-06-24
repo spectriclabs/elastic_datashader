@@ -357,7 +357,7 @@ def retrieve_indices():
         current_app.config.get("ELASTIC").split(","),
         verify_certs=False,
         timeout=120)
-    indices = [idx for idx in es.indices.get_alias("*") if not idx.startswith(".")]
+    indices = [idx for idx in sorted(es.indices.get_alias("*")) if not idx.startswith(".")]
     indices_json = json.dumps({"indices": indices})
     resp = Response(indices_json, status=200)
     resp.headers["Content-Type"] = "application/json"
