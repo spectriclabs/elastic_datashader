@@ -365,6 +365,23 @@ def retrieve_indices():
     resp.cache_control.max_age = 60
     return resp
 
+@api_blueprints.route("/indices/<index>/field_caps", methods=["GET"])
+def retrieve_field_caps(index):
+    es = Elasticsearch(
+        current_app.config.get("ELASTIC").split(","), verify_certs=False, timeout=120
+    )
+    field_caps = es.field_caps(
+        index,
+        fields='*',
+        ignore_unavailable=True
+    )
+
+    response_json = json.dumps(field_caps)
+    resp = Response(response_json, status=200)
+    resp.headers["Content-Type"] = "application/json"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.cache_control.max_age = 60
+    return resp
 
 @api_blueprints.route("/indices/<index>/mapping", methods=["GET"])
 def retrieve_index_mapping(index):
