@@ -189,18 +189,24 @@ def provide_legend(idx, field_name):
     return legend_response(json.dumps(color_key_legend))
 
 
-@api_blueprints.route("/data/<idx>/<lat>/<lon>/<float:radius>", methods=["GET"])
-def get_data(idx, lat, lon, radius: float):
+@api_blueprints.route("/data/<idx>/<lat>/<lon>/<radius>", methods=["GET"])
+def get_data(idx, lat, lon, radius):
     #Handle lat/lon conversion
     try:
         lat = float(lat)
         lon = float(lon)
+        radius = float(radius)
         #Check for paging args
         from_arg = int(request.args.get("from", 0))
         size_arg = int(request.args.get("size", 100))
     except Exception as e:
-        current_app.logger.exception("Error while converting lat/lon/from/size")
-        return error_data_response("Error while converting lat/lon/from/size")
+        current_app.logger.exception("Error while converting lat/lon/radius/from/size")
+        return error_data_response("Error while converting lat/lon/radius/from/size")
+
+    #Handle includes list
+    includes_list = request.args.get("includes", None)
+    if includes_list:
+        includes_list = includes_list.split(',')
 
     # Validate request is from proxy if proxy mode is enabled
     tms_key = current_app.config.get("TMS_KEY")
@@ -236,7 +242,14 @@ def get_data(idx, lat, lon, radius: float):
     hits = []
     hit_count = 0
     for hit in search_resp:
-        hits.append(hit.to_dict())
+        if includes_list:
+            #Only include named fields
+            named = {}
+            for f in includes_list:
+                named[f] = hit.to_dict().get(f, None)
+            hits.append(named)
+        else:
+            hits.append(hit.to_dict())
         hit_count += 1
 
     #Generate response
