@@ -816,8 +816,9 @@ def generate_tile(idx, x, y, z, params):
                     if z >= spread_threshold:
                         # Increase spread at high zoom levels, with a min spread of 2
                         spread = math.floor(
-                            min_auto_spread + (z - (spread_threshold - 1)) * 0.25
+                            min_auto_spread + (z - (spread_threshold - 1)) * 0.5
                         )
+                        spread = max(spread, 1)
                     current_app.logger.info(
                         "Calculated auto-spread %s (min %s)", spread, min_auto_spread
                     )
