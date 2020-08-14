@@ -191,8 +191,12 @@ def create_datashader_ellipses_from_search(
                     )
                     c = str(quantized)
                 else:
-                    # Just use the value
-                    c = str(get_nested_field_from_hit(hit, category_field, "None"))
+                    #Check if integer, and append ".0" due to the way es reports aggregations of ints
+                    if type(get_nested_field_from_hit(hit, category_field, "None")) == type(1):
+                        c = str(get_nested_field_from_hit(hit, category_field))+".0"
+                    else:
+                        # Just use the value
+                        c = str(get_nested_field_from_hit(hit, category_field, "None"))
             else:
                 c = "None"
 
