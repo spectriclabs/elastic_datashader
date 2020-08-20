@@ -22,7 +22,7 @@ from tms_datashader_api.helpers.cache import (
     set_cache,
 )
 from tms_datashader_api.helpers.drawing import create_color_key, gen_error
-from tms_datashader_api.helpers.elastic import get_search_base, get_es_headers
+from tms_datashader_api.helpers.elastic import get_search_base, get_es_headers, to_32bit_float
 from tms_datashader_api.helpers.parameters import (
     extract_parameters,
     merge_generated_parameters,
@@ -168,18 +168,24 @@ def provide_legend(idx, field_name):
             raw = float(category.key)
             # Format with pynumeral if provided
             if category_format:
-                k = "%s-%s" % (
+                label = "%s-%s" % (
                     pynumeral.format(raw, category_format),
                     pynumeral.format(raw + histogram_interval, category_format),
                 )
             else:
-                k = "%s-%s" % (raw, raw + histogram_interval)
+                label = "%s-%s" % (raw, raw + histogram_interval)
+            k = str(to_32bit_float(category.key))
+        elif category_type == "number":
+            k = str(to_32bit_float(category.key))
+            label = k
         else:
             k = str(category.key)
-        c = create_color_key([str(category.key)], cmap=cmap).get(
-            str(category.key), "#000000"
+            label = k
+
+        c = create_color_key([k], cmap=cmap).get(
+            str(k), "#000000"
         )
-        color_key_legend.append({"key": k, "color": c, "count": category.doc_count})
+        color_key_legend.append({"key": label, "color": c, "count": category.doc_count})
 
     other_cnt = getattr(response.aggregations.categories, "sum_other_doc_count", 0)
     if other_cnt > 0:

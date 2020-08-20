@@ -3,6 +3,7 @@ import copy
 import logging
 import os
 import threading
+import struct
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -13,6 +14,8 @@ from elasticsearch.exceptions import RequestError
 from elasticsearch_dsl import Search, AttrDict, Index
 from flask import current_app, request
 
+def to_32bit_float(number):
+    return struct.unpack("f", struct.pack("f", number))[0]
 
 def verify_datashader_indices(elasticsearch_uri: str):
     """Verify the ES indices exist

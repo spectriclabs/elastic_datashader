@@ -26,6 +26,7 @@ from tms_datashader_api.helpers.elastic import (
     convert,
     split_fieldname_to_list,
     get_nested_field_from_hit,
+    to_32bit_float,
 )
 from tms_datashader_api.helpers.pandas_util import simplify_categories
 
@@ -64,6 +65,7 @@ def create_datashader_ellipses_from_search(
     ellipse_tilt = geopoint_fields["ellipse_tilt"]
     ellipse_units = geopoint_fields["ellipse_units"]
     category_field = geopoint_fields.get("category_field")
+    category_type = geopoint_fields.get("category_type")
 
     _geopoint_center = split_fieldname_to_list(geopoint_center)
     _ellipse_major = split_fieldname_to_list(ellipse_major)
@@ -189,14 +191,15 @@ def create_datashader_ellipses_from_search(
                     quantized = (
                         math.floor(raw / histogram_interval) * histogram_interval
                     )
-                    c = str(quantized)
+                    c = str(to_32bit_float(quantized))
                 else:
-                    #Check if integer, and append ".0" due to the way es reports aggregations of ints
-                    if type(get_nested_field_from_hit(hit, category_field, "None")) == type(1):
-                        c = str(get_nested_field_from_hit(hit, category_field))+".0"
+                    #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
+                    v = get_nested_field_from_hit(hit, category_field, "None")
+                    if category_type == "number" or type(v) in (int, float):
+                        c = "%0.1f" % to_32bit_float(v)
                     else:
                         # Just use the value
-                        c = str(get_nested_field_from_hit(hit, category_field, "None"))
+                        c = str(v)
             else:
                 c = "None"
 
