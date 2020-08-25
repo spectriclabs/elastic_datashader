@@ -94,11 +94,11 @@ def provide_legend(idx, field_name):
         parameter_hash, params = extract_parameters(request)
     except Exception as e:
         current_app.logger.exception("Error while extracting parameters")
-        return legend_response("[]", e)
+        return legend_response("[]", e, parameter_hash=parameter_hash, params=params)
 
     # If not in category mode, just return nothing
     if params["category_field"] is None:
-        return legend_response("[]")
+        return legend_response("[]", parameter_hash=parameter_hash, params=params)
 
     # Get or generate extended parameters
     cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
@@ -153,7 +153,7 @@ def provide_legend(idx, field_name):
     response = legend_s.execute()
     # If no categories then return blank list
     if not hasattr(response.aggregations, "categories"):
-        return legend_response("[]")
+        return legend_response("[]", parameter_hash=parameter_hash, params=params)
 
     # Generate the legend list
     color_key_legend = []
@@ -191,7 +191,7 @@ def provide_legend(idx, field_name):
         c = create_color_key(["Other"], cmap=cmap).get("Other", "#000000")
         color_key_legend.append({"key": "Other", "count": other_cnt})
 
-    return legend_response(json.dumps(color_key_legend))
+    return legend_response(json.dumps(color_key_legend), parameter_hash=parameter_hash, params=params)
 
 
 @api_blueprints.route("/data/<idx>/<lat>/<lon>/<radius>", methods=["GET"])
@@ -365,6 +365,8 @@ def get_tms(idx, x: int, y: int, z: int):
     resp = Response(img, status=200)
     resp.headers["Content-Type"] = "image/png"
     resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Datashader-Parameter-Hash"] = parameter_hash
+    resp.headers["Datashader-RunAs-User"] = params.get("user", "")
     resp.cache_control.max_age = 60
     return resp
 
@@ -420,10 +422,14 @@ def retrieve_index_mapping(index):
     return resp
 
 
-def legend_response(data: str, error: Optional[Exception] = None) -> Response:
+def legend_response(data: str, error: Optional[Exception] = None, **kwargs) -> Response:
     resp = Response(data, status=200)
     resp.headers["Content-Type"] = "application/json"
     resp.headers["Access-Control-Allow-Origin"] = "*"
+    if kwargs.get("parameter_hash"):
+        resp.headers["Datashader-Parameter-Hash"] = kwargs["parameter_hash"]
+    if kwargs.get("params"):
+        resp.headers["Datashader-RunAs-User"] = kwargs["params"].get("user", "")
     resp.cache_control.max_age = 60
     if error is not None:
         resp.headers["Error"] = str(error)
