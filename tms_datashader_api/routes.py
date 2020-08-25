@@ -102,8 +102,7 @@ def provide_legend(idx, field_name):
 
     # Get or generate extended parameters
     cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
-    paramsfile = cache_dir / f"{idx}/{parameter_hash}/params.json"
-    params = merge_generated_parameters(params, paramsfile, idx)
+    params = merge_generated_parameters(params, idx, parameter_hash)
 
     # Assign param value to legacy keyword values
     geopoint_field = params["geopoint_field"]
