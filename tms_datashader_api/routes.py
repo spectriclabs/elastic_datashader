@@ -13,7 +13,8 @@ import pynumeral
 from flask import Blueprint, current_app, request, redirect, Response
 
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Search, AttrDict, Document
+from elasticsearch_dsl import Search, AttrDict, Document, UpdateByQuery
+from elasticsearch.exceptions import NotFoundError
 
 from tms_datashader_api.helpers.cache import (
     check_cache_age,
@@ -301,12 +302,23 @@ def get_tms(idx, x: int, y: int, z: int):
     tile_name = f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
     force = request.args.get("force")
 
+    es = Elasticsearch(
+        current_app.config.get("ELASTIC").split(","),
+        verify_certs=False,
+        timeout=120,
+    )
+
     # Check if the cached image already exists
     c = get_cache(cache_dir, tile_name)
     if c is not None and force is None:
         current_app.logger.info("Hit cache (%s), returning", parameter_hash)
         # Return Cached Value
         img = c
+        try:
+            body = {"script" : {"source": "ctx._source.cache_hits++"}}
+            es.update(".datashader_tiles", "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y), body=body, retry_on_conflict=5)            
+        except NotFoundError:
+            current_app.logger.warn("Unable to find cached tile entry in .datashader_tiles")
     else:
         # Generate a tile
         if force is not None:
@@ -340,12 +352,8 @@ def get_tms(idx, x: int, y: int, z: int):
             return error_tile_response(e, tile_height_px, tile_width_px)
         et = (datetime.now() - t1).total_seconds()
         # Make entry into .datashader_tiles
-        es = Elasticsearch(
-            current_app.config.get("ELASTIC").split(","),
-            verify_certs=False,
-            timeout=120,
-        )
         doc = Document(
+            _id= "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y),
             hash=parameter_hash,
             idx=idx,
             x=x,
@@ -356,8 +364,9 @@ def get_tms(idx, x: int, y: int, z: int):
             render_time=et,
             timestamp=datetime.now(),
             params=params,
+            cache_hits=0,
         )
-        doc.save(using=es, index=".datashader_tile")
+        doc.save(using=es, index=".datashader_tiles")
 
         # Store image as well
         set_cache(cache_dir, tile_name, img)
