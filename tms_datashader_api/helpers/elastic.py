@@ -279,9 +279,13 @@ def get_nested_field_from_hit(hit, field, default=None):
     elif len(field) > 1:
         # iterate being careful if the field and the hit are not consistent
         v = hit.to_dict()
-        for f in field:
-            if isinstance(v, dict) or isinstance(v, AttrDict):
-                v = v.get(f, None)
-            else:
-                return default
+        f = ".".join(field)
+        if f in v:
+            return v.get(f)
+        else:
+            for f in field:
+                if isinstance(v, dict) or isinstance(v, AttrDict):
+                    v = v.get(f, None)
+                else:
+                    return default
         return v
