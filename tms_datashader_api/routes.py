@@ -291,22 +291,38 @@ def get_tms(idx, x: int, y: int, z: int):
     y = int(y)
     z = int(z)
 
-    # Get hash and parameters
-    try:
-        parameter_hash, params = extract_parameters(request)
-    except Exception as e:
-        current_app.logger.exception("Error while extracting parameters")
-        return error_tile_response(e, tile_height_px, tile_width_px)
-
-    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
-    tile_name = f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
-    force = request.args.get("force")
-
     es = Elasticsearch(
         current_app.config.get("ELASTIC").split(","),
         verify_certs=False,
         timeout=120,
     )
+
+    # Get hash and parameters
+    try:
+        parameter_hash, params = extract_parameters(request)
+    except Exception as e:
+        current_app.logger.exception("Error while extracting parameters")
+        #Create an error entry in .datashader_tiles
+        doc = Document(
+            _id= "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y),
+            hash=parameter_hash,
+            idx=idx,
+            x=x,
+            y=x,
+            z=z,
+            host=socket.gethostname(),
+            pid=os.getpid(),
+            timestamp=datetime.now(),
+            params=params,
+            error=str(e)
+        )
+        doc.save(using=es, index=".datashader_tiles")
+        #Generate and return an error tile
+        return error_tile_response(e, tile_height_px, tile_width_px)
+
+    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
+    tile_name = f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
+    force = request.args.get("force")
 
     # Check if the cached image already exists
     c = get_cache(cache_dir, tile_name)
@@ -348,6 +364,21 @@ def get_tms(idx, x: int, y: int, z: int):
                 img = generate_tile(idx, x, y, z, params)
         except Exception as e:
             logging.exception("Exception Generating Tile for request %s", request)
+            #Create an error entry in .datashader_tiles
+            doc = Document(
+                _id= "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y),
+                hash=parameter_hash,
+                idx=idx,
+                x=x,
+                y=x,
+                z=z,
+                host=socket.gethostname(),
+                pid=os.getpid(),
+                timestamp=datetime.now(),
+                params=params,
+                error=str(e)
+            )
+            doc.save(using=es, index=".datashader_tiles")
             # generate an error tile/don't cache cache it
             return error_tile_response(e, tile_height_px, tile_width_px)
         et = (datetime.now() - t1).total_seconds()
