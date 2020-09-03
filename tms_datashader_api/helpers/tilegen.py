@@ -534,6 +534,8 @@ def generate_tile(idx, x, y, z, params):
             ).metric("point_count", "value_count", field=geopoint_field)
             resp = count_s.execute()
             assert len(resp.hits) == 0
+            if resp._shards.failed != 0:
+                current_app.logger.warning("term_count response had shard failures")
             if hasattr(resp.aggregations, "term_count"):
                 category_cnt = resp.aggregations.term_count.value
                 if category_cnt <= 0:
