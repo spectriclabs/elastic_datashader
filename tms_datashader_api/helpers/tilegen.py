@@ -191,20 +191,29 @@ def create_datashader_ellipses_from_search(
                     quantized = (
                         math.floor(raw / histogram_interval) * histogram_interval
                     )
-                    c = str(to_32bit_float(quantized))
+                    C = [ str(to_32bit_float(quantized)) ]
                 else:
                     #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
                     v = get_nested_field_from_hit(hit, category_field, "None")
                     if category_type == "number" or type(v) in (int, float):
-                        c = "%0.1f" % to_32bit_float(v)
+                        C = [ "%0.1f" % to_32bit_float(v) ]
                     else:
                         # Just use the value
+                        if isinstance(v, list):
+                            C = v
+                        else:
+                            C = [ v ]
                         c = str(v)
             else:
-                c = "None"
+                C = [ "None" ]
 
-            for p in zip(X, Y, len(X) * [c]):
-                yield {"x": p[0], "y": p[1], "c": p[2]}
+            if len(C) > 100:
+                current_app.logger.warning("truncating category list of size %s to first 100 categories", len(C))
+                C = C[0:100]
+            
+            for c in C:
+                for p in zip(X, Y, len(X) * [c]):
+                    yield {"x": p[0], "y": p[1], "c": p[2]}
             yield NAN_LINE  # Break between ellipses
             metrics["ellipses"] += 1
 
