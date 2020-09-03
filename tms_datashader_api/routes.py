@@ -310,6 +310,7 @@ def get_tms(idx, x: int, y: int, z: int):
             x=x,
             y=x,
             z=z,
+            url=request.url,
             host=socket.gethostname(),
             pid=os.getpid(),
             timestamp=datetime.now(),
@@ -359,9 +360,9 @@ def get_tms(idx, x: int, y: int, z: int):
         t1 = datetime.now()
         try:
             if params["ellipses"]:
-                img = generate_nonaggregated_tile(idx, x, y, z, params)
+                img, metrics = generate_nonaggregated_tile(idx, x, y, z, params)
             else:
-                img = generate_tile(idx, x, y, z, params)
+                img, metrics = generate_tile(idx, x, y, z, params)
         except Exception as e:
             logging.exception("Exception Generating Tile for request %s", request)
             #Create an error entry in .datashader_tiles
@@ -372,6 +373,7 @@ def get_tms(idx, x: int, y: int, z: int):
                 x=x,
                 y=x,
                 z=z,
+                url=request.url,
                 host=socket.gethostname(),
                 pid=os.getpid(),
                 timestamp=datetime.now(),
@@ -390,11 +392,13 @@ def get_tms(idx, x: int, y: int, z: int):
             x=x,
             y=x,
             z=z,
+            url=request.url,
             host=socket.gethostname(),
             pid=os.getpid(),
             render_time=et,
             timestamp=datetime.now(),
             params=params,
+            metrics=metrics,
             cache_hits=0,
         )
         doc.save(using=es, index=".datashader_tiles")

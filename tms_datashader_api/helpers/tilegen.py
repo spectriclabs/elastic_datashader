@@ -438,7 +438,7 @@ def generate_nonaggregated_tile(
         if current_app.config.get("DEBUG_TILES"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         # Set headers and return data
-        return img
+        return img, metrics
     except Exception:
         current_app.logger.exception(
             "An exception occured while attempting to generate a tile:"
@@ -467,6 +467,8 @@ def generate_tile(idx, x, y, z, params):
     histogram_interval = params.get("generated_params", {}).get("histogram_interval")
     global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt")
     global_bounds = params.get("generated_params", {}).get("global_bounds")
+
+    metrics = dict()
 
     current_app.logger.debug(
         "Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"
@@ -549,15 +551,18 @@ def generate_tile(idx, x, y, z, params):
             current_app.logger.info(
                 "Document Count: %s, Category Count: %s", doc_cnt, category_cnt
             )
+            metrics['doc_cnt'] = doc_cnt
+            metrics['category_cnt'] = category_cnt
         else:
             category_cnt = 1  # Heat mode effectively has one category
             doc_cnt = count_s.count()
             current_app.logger.info("Document Count: %s", doc_cnt)
+            metrics['doc_cnt'] = doc_cnt
 
         # If count is zero then return a null image
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
-            return gen_empty(tile_width_px, tile_height_px)
+            return gen_empty(tile_width_px, tile_height_px), metrics
         else:
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
@@ -619,6 +624,8 @@ def generate_tile(idx, x, y, z, params):
                 geotile_precision,
                 geo_bins_per_subframe,
             )
+
+            metrics["sub_frame_level"] = sub_frame_level
 
             # generate n subframe bounding boxes
             subframes = mu.tiles_bounds(
@@ -716,6 +723,7 @@ def generate_tile(idx, x, y, z, params):
 
             s2 = time.time()
             current_app.logger.debug("ES took %s for %s" % ((s2 - s1), len(df)))
+            metrics["query_time"] = (s2 - s1)
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
@@ -731,7 +739,7 @@ def generate_tile(idx, x, y, z, params):
                 )
 
             if len(df.index) == 0:
-                return gen_empty(tile_width_px, tile_height_px)
+                return gen_empty(tile_width_px, tile_height_px), metrics
             else:
                 ###############################################################
                 # Category Mode
@@ -849,7 +857,7 @@ def generate_tile(idx, x, y, z, params):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
 
         # Set headers and return data
-        return img
+        return img, metrics
     except Exception:
         current_app.logger.exception(
             "An exception occured while attempting to generate a tile:"
