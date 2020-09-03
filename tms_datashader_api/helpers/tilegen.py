@@ -165,7 +165,7 @@ def create_datashader_ellipses_from_search(
 
             # Handle deg->Meters conversion and everything else
             x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
-            angle = angle * ((2.0 * pi) / 360.0)  # Convert degrees to radians
+            angle = (angle + 90.0) * ((2.0 * pi) / 360.0)  # Convert degrees to radians
             if ellipse_units == "majmin_nm":
                 major = major * 1852  # nm to meters
                 minor = minor * 1852  # nm to meters
@@ -356,6 +356,7 @@ def generate_nonaggregated_tile(
             metrics.get("ellipses", 0),
             metrics.get("hits", 0),
         )
+        metrics["query_time"] = (s2 - s1)
 
         # Estimate the number of points per tile assuming uniform density
         estimated_points_per_tile = None

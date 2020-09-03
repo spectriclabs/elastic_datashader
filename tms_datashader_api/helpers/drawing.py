@@ -154,7 +154,7 @@ def ellipse(
 
     :param radm: Semimajor axis
     :param radn: Semiminor axis
-    :param tilt: Ellipse tilt in radians
+    :param tilt: Ellipse tilt in radians (0 deg is East)
     :param xpos: Cartesian coordinate x position
     :param ypos: Cartesian coordinate y position
     :param num_points: Number of points with which to draw ellipse
