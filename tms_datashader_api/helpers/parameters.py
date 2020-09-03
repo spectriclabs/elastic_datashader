@@ -168,7 +168,7 @@ def extract_parameters(request):
     params["stop_time"] = now
     if to_time:
         try:
-            params["stop_time"] = convert_kibana_time(to_time, now)
+            params["stop_time"] = convert_kibana_time(to_time, now, 'up')
         except ValueError:
             current_app.logger.exception("invalid to_time parameter")
             raise Exception("invalid to_time parameter")
@@ -176,7 +176,7 @@ def extract_parameters(request):
     params["start_time"] = None
     if from_time:
         try:
-            params["start_time"] = convert_kibana_time(from_time, now)
+            params["start_time"] = convert_kibana_time(from_time, now, 'down')
         except ValueError:
             current_app.logger.exception("invalid from_time parameter")
             raise Exception("invalid from_time parameter")

@@ -43,7 +43,7 @@ def quantize_time_range(
         return truncated_start_time, truncated_stop_time
 
 
-def convert_kibana_time(time_string, current_time):
+def convert_kibana_time(time_string, current_time, round_direction):
     """Convert Kibana/ES date math into Python datetimes
 
     :param time_string: Time-string following
@@ -57,7 +57,25 @@ def convert_kibana_time(time_string, current_time):
     """
     if isinstance(current_time, datetime):
         current_time = arrow.get(current_time)
-    return datemath.datemath(time_string, now=current_time)
+    result = arrow.get(datemath.datemath(time_string, now=current_time))
+    
+    if isinstance(time_string, str) and round_direction=='up':
+        #Kibana treats time rounding different than elasticsearch
+        if time_string.endswith("/s"):
+            result = result.shift(seconds=1, microseconds=-1)
+        elif time_string.endswith("/m"):
+            result = result.shift(minutes=1, microseconds=-1)
+        elif time_string.endswith("/h"):
+            result = result.shift(hours=1, microseconds=-1)
+        elif time_string.endswith("/d"):
+            result = result.shift(days=1, microseconds=-1)
+        elif time_string.endswith("/w"):
+            result = result.shift(weeks=1, microseconds=-1)
+        elif time_string.endswith("/M"):
+            result = result.shift(months=1, microseconds=-1)
+        elif time_string.endswith("/y"):
+            result = result.shift(years=1, microseconds=-1)
+    return result.datetime
 
 
 def pretty_time_delta(seconds: int) -> str:
