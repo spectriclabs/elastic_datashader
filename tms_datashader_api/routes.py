@@ -304,7 +304,6 @@ def get_tms(idx, x: int, y: int, z: int):
         current_app.logger.exception("Error while extracting parameters")
         #Create an error entry in .datashader_tiles
         doc = Document(
-            _id= "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y),
             hash=parameter_hash,
             idx=idx,
             x=x,
@@ -367,7 +366,6 @@ def get_tms(idx, x: int, y: int, z: int):
             logging.exception("Exception Generating Tile for request %s", request)
             #Create an error entry in .datashader_tiles
             doc = Document(
-                _id= "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y),
                 hash=parameter_hash,
                 idx=idx,
                 x=x,
@@ -386,7 +384,6 @@ def get_tms(idx, x: int, y: int, z: int):
         et = (datetime.now() - t1).total_seconds()
         # Make entry into .datashader_tiles
         doc = Document(
-            _id= "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y),
             hash=parameter_hash,
             idx=idx,
             x=x,
