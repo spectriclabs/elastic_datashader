@@ -244,6 +244,26 @@ def convert(response):
             x, y = lnglat_to_meters(lon, lat)
             yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
 
+def convert_composite(response, categorical):
+    if categorical:
+        for bucket in response:
+            for category in bucket.categories:
+                lon = category.centroid.location.lon
+                lat = category.centroid.location.lat
+                x, y = lnglat_to_meters(lon, lat)
+                yield {
+                    "lon": category.centroid.location.lon,
+                    "lat": category.centroid.location.lat,
+                    "x": x,
+                    "y": y,
+                    "c": category.centroid.count,
+                    "t": str(category.key),
+                }
+        for bucket in response:
+            lon = bucket.centroid.location.lon
+            lat = bucket.centroid.location.lat
+            x, y = lnglat_to_meters(lon, lat)
+            yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
 
 def split_fieldname_to_list(field: str) -> List[str]:
     """Remove .raw and .keyword from ``field``
