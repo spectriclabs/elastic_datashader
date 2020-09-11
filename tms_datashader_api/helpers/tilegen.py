@@ -7,7 +7,7 @@ import colorcet as cc
 import datashader as ds
 import pandas as pd
 from datashader import reductions as rd, transfer_functions as tf
-from elasticsearch_dsl import AttrList, AttrDict
+from elasticsearch_dsl import AttrList, AttrDict, A
 from elasticsearch_dsl.aggs import Bucket
 from flask import current_app, request
 from numpy import pi
@@ -25,9 +25,11 @@ from tms_datashader_api.helpers.drawing import (
 from tms_datashader_api.helpers.elastic import (
     get_search_base,
     convert,
+    convert_composite,
     split_fieldname_to_list,
     get_nested_field_from_hit,
     to_32bit_float,
+    ScanAggs
 )
 from tms_datashader_api.helpers.pandas_util import simplify_categories
 
@@ -623,134 +625,61 @@ def generate_tile(idx, x, y, z, params):
 
             # don't allow geotile precision to be anyworse than current zoom
             geotile_precision = max(current_zoom, current_zoom + agg_zooms)
+            
+            tile_bbox = {
+                "top_left": {
+                    "lat": bb_dict["top_left"]["lat"],
+                    "lon": bb_dict["top_left"]["lon"]
+                },
+                "bottom_right": {
+                    "lat": bb_dict["bottom_right"]["lat"],
+                    "lon": bb_dict["bottom_right"]["lon"],
+                },
+            }
 
-            # calculate how many sub_frames are required to avoid more than max_bins per
-            # sub frame.  The number of bins in a sub-frame is 4**Z_delta so we need
-            # to move up the zoom-level no further than that
-            sub_frame_backout = int(math.log(max_bins, 4))
-
-            # adding more categories limits how big a sub_frame can be
-            if category_cnt <= max_bins:
-                max_sub_frame_backout = math.floor(math.log(max_bins / category_cnt, 4))
-            else:
-                # if there are more categories than max_bins, the situation is hopeless
-                max_sub_frame_backout = 0
-
-            sub_frame_backout = min(sub_frame_backout, max_sub_frame_backout)
-            sub_frame_level = max(current_zoom, geotile_precision - sub_frame_backout)
-
-            geo_bins_per_subframe = 4 ** sub_frame_backout
-
-            current_app.logger.debug(
-                "GeoTile Zoom Info: pixels %s, current %s, agg %s, backout %s, sub frame level %s, precision %s, bins %s",
-                pixels,
-                current_zoom,
-                agg_zooms,
-                sub_frame_backout,
-                sub_frame_level,
-                geotile_precision,
-                geo_bins_per_subframe,
+            tile_s = copy.copy(base_s)
+            tile_s = tile_s.params(size=0, track_total_hits=False)
+            tile_s = tile_s.filter(
+                "geo_bounding_box", **{geopoint_field: tile_bbox}
             )
 
-            metrics["sub_frame_level"] = sub_frame_level
-
-            # generate n subframe bounding boxes
-            subframes = mu.tiles_bounds(
-                bb_dict["top_left"]["lon"],  # west
-                bb_dict["bottom_right"]["lat"],  # south
-                bb_dict["bottom_right"]["lon"],  # east
-                bb_dict["top_left"]["lat"],  # north
-                sub_frame_level,
-            )
-
-            partial_data = False
-            df = pd.DataFrame()
             s1 = time.time()
-            for subframe_bounds in subframes:
-                subframe_bbox = {
-                    "top_left": {
-                        "lat": subframe_bounds[3],
-                        "lon": subframe_bounds[0],
-                    },
-                    "bottom_right": {
-                        "lat": subframe_bounds[1],
-                        "lon": subframe_bounds[2],
-                    },
+            
+            inner_aggs = {}
+            # TOOD if we are pixel locked, calcuating a centriod seems unnecessary
+            # TODO should we consider categories as the top level term?
+            # TODO should we consider doing only the top-N categories in one search
+            #      with a second search for "Other"
+            if category_field and histogram_interval == None: # Category Mode
+                inner_aggs = {
+                    "categories": A("terms", field=category_field, size=max_bins).metric("centroid", "geo_centroid", field=geopoint_field)
+                }
+            elif category_field and histogram_interval != None: # Histogram Mode
+                inner_aggs = {
+                    "categories": A("histogram", field=category_field, interval=histogram_interval, min_doc_count=1).metric("centroid", "geo_centroid", field=geopoint_field)
+                }
+            else:
+                inner_aggs = {
+                    "centroid": A("geo_centroid", field=geopoint_field)
                 }
 
-                subframe_s = copy.copy(base_s)
-                subframe_s = subframe_s.params(size=0)
-                subframe_s = subframe_s.filter(
-                    "geo_bounding_box", **{geopoint_field: subframe_bbox}
-                )
+            # a full tile would take one query if size=65536 (i.e. 256*256)
+            resp = ScanAggs(
+                tile_s,
+                {"grids": A("geotile_grid", field="location", precision=geotile_precision)},
+                inner_aggs,
+                size=min(max_bins, pixels)
+            )
 
-                # Set up the aggregations and the dataframe extraction
-                if category_field and histogram_interval == None:  # Category Mode
-                    assert (category_cnt * geo_bins_per_subframe) <= max_bins
-                    subframe_s.aggs.bucket(
-                        "categories", "terms", field=category_field, size=category_cnt
-                    ).bucket(
-                        "grids",
-                        "geotile_grid",
-                        field=geopoint_field,
-                        precision=geotile_precision,
-                        size=geo_bins_per_subframe,
-                    ).metric(
-                        "centroid", "geo_centroid", field=geopoint_field
-                    )
-                elif category_field and histogram_interval != None:  # Histogram Mode
-                    assert histogram_interval != None
-                    assert (category_cnt * geo_bins_per_subframe) <= max_bins
-                    subframe_s.aggs.bucket(
-                        "categories",
-                        "histogram",
-                        field=category_field,
-                        interval=histogram_interval,
-                        min_doc_count=1,
-                    ).bucket(
-                        "grids",
-                        "geotile_grid",
-                        field=geopoint_field,
-                        precision=geotile_precision,
-                        size=geo_bins_per_subframe,
-                    ).metric(
-                        "centroid", "geo_centroid", field=geopoint_field
-                    )
-                else:  # Heat Mode
-                    assert geo_bins_per_subframe <= max_bins
-                    subframe_s.aggs.bucket(
-                        "grids",
-                        "geotile_grid",
-                        field=geopoint_field,
-                        precision=geotile_precision,
-                        size=geo_bins_per_subframe,
-                    ).metric("centroid", "geo_centroid", field=geopoint_field)
-
-                try:
-                    resp = subframe_s.execute()
-                except:
-                    current_app.logger.exception(
-                        "failed to generate subframe %s categories %s %s %s %s",
-                        subframe_bounds,
-                        category_cnt,
-                        current_zoom,
-                        sub_frame_level,
-                        request,
-                    )
-                    raise
-
-                assert len(resp.hits) == 0
-
-                if hasattr(resp.aggregations, "categories") and hasattr(
-                    resp.aggregations.categories, "sum_other_doc_count"
-                ):
-                    partial_data = resp.aggregations.categories.sum_other_doc_count > 0
-
-                df = df.append(pd.DataFrame(convert(resp)), sort=False)
-
+            partial_data = False # TODO can we get partial data?
+            df = pd.DataFrame(
+                convert_composite(resp.execute(), (category_field != None) )
+            )
+            
             s2 = time.time()
-            current_app.logger.debug("ES took %s for %s" % ((s2 - s1), len(df)))
+            current_app.logger.info("ES took %s for %s with %s searches" % ((s2 - s1), len(df), resp.num_searches))
             metrics["query_time"] = (s2 - s1)
+            metrics["num_searches"] = resp.num_searches
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
