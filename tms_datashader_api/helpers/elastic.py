@@ -289,3 +289,44 @@ def get_nested_field_from_hit(hit, field, default=None):
                 else:
                     return default
         return v
+
+class ScanAggs(object):
+    def __init__(self, search, source_aggs, inner_aggs={}, size=10):
+        self.search = search
+        self.source_aggs = source_aggs
+        self.inner_aggs = inner_aggs
+        self.size = size
+        self.num_searches = 0
+
+    def execute(self):
+        """
+        Helper function used to iterate over all possible bucket combinations of
+        ``source_aggs``, returning results of ``inner_aggs`` for each. Uses the
+        ``composite`` aggregation under the hood to perform this.
+        """
+        self.num_searches = 0
+
+        def run_search(**kwargs):
+            s = self.search[:0]
+            s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
+            for agg_name, agg in self.inner_aggs.items():
+                s.aggs["comp"][agg_name] = agg
+            return s.execute()
+
+        response = run_search()
+        self.num_searches += 1
+        while response.aggregations.comp.buckets:
+            num_buckets = 0
+            for b in response.aggregations.comp.buckets:
+                num_buckets += 1
+                yield b
+            if "after_key" in response.aggregations.comp:
+                after = response.aggregations.comp.after_key
+            else:
+                after = response.aggregations.comp.buckets[-1].key
+            # If we got fewer buckets than requested, no reason to ask for more
+            if num_buckets < self.size:
+                break
+            response = run_search(after=after)
+            self.num_searches += 1
+            num_buckets = 0
