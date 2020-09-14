@@ -20,6 +20,7 @@ from tms_datashader_api.helpers.drawing import (
     gen_overlay,
     create_color_key,
     gen_debug_overlay,
+    generate_ellipse_points
 )
 from tms_datashader_api.helpers.elastic import (
     get_search_base,
@@ -188,7 +189,7 @@ def create_datashader_ellipses_from_search(
                 )  # Points per ellipse, NB. this takes semi-maj/min
             else:
                 X, Y = generate_ellipse_points(
-                    x0, y0, major / 2.0, minor / 2.0, tilt=angle, n_points=num
+                    x0, y0, major / 2.0, minor / 2.0, tilt=angle, n_points=16
                 )
             if category_field:
                 if histogram_interval:
