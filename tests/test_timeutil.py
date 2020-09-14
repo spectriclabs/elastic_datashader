@@ -43,7 +43,7 @@ def test_quantize_time_range(start, stop, expected):
 
 
 @pytest.mark.parametrize(
-    "time_string,current_time,expected",
+    "time_string,current_time,round_direction,expected",
     (
         ("now-3d", datetime(2020, 5, 11, 12), "down", datetime(2020, 5, 8, 12, tzinfo=tzutc())),
         (
