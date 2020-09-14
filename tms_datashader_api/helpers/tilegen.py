@@ -5,6 +5,7 @@ import time
 import json
 
 import mercantile
+import pynumeral
 import colorcet as cc
 import datashader as ds
 import pandas as pd
@@ -50,7 +51,7 @@ def create_datashader_ellipses_from_search(
     extend_meters,
     metrics=None,
     histogram_interval=None,
-    basic_ellipse=True,
+    category_format=None
 ):
     """
 
@@ -216,7 +217,10 @@ def create_datashader_ellipses_from_search(
                     #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
                     v = get_nested_field_from_hit(hit, category_field, "None")
                     if category_type == "number" or type(v) in (int, float):
-                        C = [ "%0.1f" % to_32bit_float(v) ]
+                        if category_format:
+                            C = [ pynumeral.format(to_32bit_float(v), category_format)]
+                        else:
+                            C = [ str(to_32bit_float(v)) ]
                     else:
                         # Just use the value
                         if isinstance(v, list):
@@ -248,6 +252,7 @@ def generate_nonaggregated_tile(
     stop_time = params["stop_time"]
     category_field = params["category_field"]
     category_type = params["category_type"]
+    category_format = params["category_format"]
     cmap = params["cmap"]
     spread = params["spread"]
     span_range = params["span_range"]
@@ -377,7 +382,7 @@ def generate_nonaggregated_tile(
                 extend_meters,
                 metrics,
                 histogram_interval,
-                basic_ellipse=basic_ellipse
+                category_format
             )
         )
         s2 = time.time()
