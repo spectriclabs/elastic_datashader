@@ -183,7 +183,7 @@ def provide_legend(idx, field_name):
             else:
                 label = "%s-%s" % (raw, raw + histogram_interval)
             legend[label] = category.doc_count
-    elif category_field and category_histogram == False:
+    elif category_field:
         tiles_iter = mercantile.tiles(
             max(-180.0, extent["minLon"]),
             max(-90.0, extent["minLat"]),
