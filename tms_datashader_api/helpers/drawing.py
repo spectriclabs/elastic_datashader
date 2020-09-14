@@ -9,6 +9,8 @@ from PIL import Image, ImageDraw
 from colorcet import palette
 from numba import njit
 
+def get_unique_color_cnt(cmap):
+    return len(palette[cmap])
 
 def create_color_key(
     categories: Iterable,

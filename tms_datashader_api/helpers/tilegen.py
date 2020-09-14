@@ -2,7 +2,9 @@
 import copy
 import math
 import time
+import json
 
+import mercantile
 import colorcet as cc
 import datashader as ds
 import pandas as pd
@@ -29,7 +31,8 @@ from tms_datashader_api.helpers.elastic import (
     split_fieldname_to_list,
     get_nested_field_from_hit,
     to_32bit_float,
-    ScanAggs
+    ScanAggs,
+    get_tile_categories
 )
 from tms_datashader_api.helpers.pandas_util import simplify_categories
 
@@ -248,6 +251,7 @@ def generate_nonaggregated_tile(
     cmap = params["cmap"]
     spread = params["spread"]
     span_range = params["span_range"]
+    spread = params["spread"]
     lucene_query = params["lucene_query"]
     dsl_query = params["dsl_query"]
     dsl_filter = params["dsl_filter"]
@@ -456,7 +460,8 @@ def generate_nonaggregated_tile(
                     span=span,
                 )
 
-                # NB. No spread on ellipses, could be added here if visibility is an issue
+                if (spread is not None) and (spread > 0):
+                    img = tf.spread(img, spread)
 
                 img = img.to_bytesio().read()
                 if metrics.get("over_max"):
@@ -484,6 +489,7 @@ def generate_tile(idx, x, y, z, params):
     stop_time = params["stop_time"]
     category_field = params["category_field"]
     category_type = params["category_type"]
+    category_format = params["category_format"]
     highlight = params["highlight"]
     cmap = params["cmap"]
     spread = params["spread"]
@@ -556,37 +562,9 @@ def generate_tile(idx, x, y, z, params):
         count_s = copy.copy(base_s)
         count_s = count_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
 
-        category_cnt = 0
-        if category_field:
-            # Also need to calculate the number of categories
-            count_s = count_s.params(size=0)
-            count_s.aggs.metric(
-                "term_count", "cardinality", field=category_field
-            ).metric("point_count", "value_count", field=geopoint_field)
-            resp = count_s.execute()
-            assert len(resp.hits) == 0
-            if resp._shards.failed != 0:
-                current_app.logger.warning("term_count response had shard failures")
-            if hasattr(resp.aggregations, "term_count"):
-                category_cnt = resp.aggregations.term_count.value
-                if category_cnt <= 0:
-                    category_cnt = 1
-            if hasattr(resp.aggregations, "point_count"):
-                doc_cnt = resp.aggregations.point_count.value
-
-            # circuit breaker, if someone wants to color by category and there are
-            # more than 1000, they will only get the first 1000 cateogries
-            category_cnt = min(category_cnt, 1000)
-            current_app.logger.info(
-                "Document Count: %s, Category Count: %s", doc_cnt, category_cnt
-            )
-            metrics['doc_cnt'] = doc_cnt
-            metrics['category_cnt'] = category_cnt
-        else:
-            category_cnt = 1  # Heat mode effectively has one category
-            doc_cnt = count_s.count()
-            current_app.logger.info("Document Count: %s", doc_cnt)
-            metrics['doc_cnt'] = doc_cnt
+        doc_cnt = count_s.count()
+        current_app.logger.info("Document Count: %s", doc_cnt)
+        metrics['doc_cnt'] = doc_cnt
 
         # If count is zero then return a null image
         if doc_cnt == 0:
@@ -644,16 +622,34 @@ def generate_tile(idx, x, y, z, params):
             )
 
             s1 = time.time()
-            
+
             inner_aggs = {}
             # TOOD if we are pixel locked, calcuating a centriod seems unnecessary
-            # TODO should we consider categories as the top level term?
-            # TODO should we consider doing only the top-N categories in one search
-            #      with a second search for "Other"
+            category_filters = None
             if category_field and histogram_interval == None: # Category Mode
-                inner_aggs = {
-                    "categories": A("terms", field=category_field, size=max_bins).metric("centroid", "geo_centroid", field=geopoint_field)
-                }
+                # We calculate the categories to show based on the mapZoom (which is usually
+                # a lower number then the requested tile)
+                category_tile = mercantile.Tile(x, y, z)
+                if category_tile.z > int(params.get("mapZoom")):
+                    category_tile = mercantile.parent(category_tile, zoom=int(params["mapZoom"]))
+                    
+                category_filters, category_legend = get_tile_categories(
+                    base_s,
+                    category_tile.x,
+                    category_tile.y,
+                    category_tile.z,
+                    geopoint_field,
+                    category_field
+                )
+
+                if category_filters:
+                    inner_aggs = {
+                        "categories": A("filters", filters=category_filters).metric("centroid", "geo_centroid", field=geopoint_field)
+                    }
+                else:
+                    inner_aggs = {
+                        "categories": A("terms", field=category_field).metric("centroid", "geo_centroid", field=geopoint_field)
+                    }
             elif category_field and histogram_interval != None: # Histogram Mode
                 inner_aggs = {
                     "categories": A("histogram", field=category_field, interval=histogram_interval, min_doc_count=1).metric("centroid", "geo_centroid", field=geopoint_field)
@@ -666,14 +662,21 @@ def generate_tile(idx, x, y, z, params):
             # a full tile would take one query if size=65536 (i.e. 256*256)
             resp = ScanAggs(
                 tile_s,
-                {"grids": A("geotile_grid", field="location", precision=geotile_precision)},
+                {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
                 inner_aggs,
-                size=min(max_bins, pixels)
+                size=100 #min((max_bins-1), pixels) # leave space for 'after_key' bin
             )
 
             partial_data = False # TODO can we get partial data?
             df = pd.DataFrame(
-                convert_composite(resp.execute(), (category_field != None) )
+                convert_composite(
+                    resp.execute(),
+                    (category_field != None),
+                    bool(category_filters),
+                    histogram_interval,
+                    category_type,
+                    category_format
+                )
             )
             
             s2 = time.time()
@@ -700,8 +703,19 @@ def generate_tile(idx, x, y, z, params):
                 ###############################################################
                 # Category Mode
                 if category_field:
-                    df["t"] = df["t"].astype("category")
+                    # TODO it would be nice if datashader honored the category orders
+                    # in z-order, then we could make "Other" drawn underneath the less
+                    # promenent colors
+                    categories = list( df["t"].unique() )
+                    metrics["categories"] = json.dumps(categories)
+                    try:
+                        categories.insert(0, categories.pop(categories.index("Other")))
+                    except ValueError:
+                        pass
+                    cat_dtype = pd.api.types.CategoricalDtype(categories=categories, ordered=True)
+                    df["t"] = df["t"].astype(cat_dtype)
 
+                    """
                     # When the number of categories exceeds the number of colors, we can simply
                     # replaced the category name with the desired color (i.e. use the color as the category)
                     # field.  This is especially important in highly categorical data where the number of
@@ -712,6 +726,8 @@ def generate_tile(idx, x, y, z, params):
                         create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight),
                         inplace=True,
                     )
+                    """
+                    color_key=create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight)
 
                     agg = ds.Canvas(
                         plot_width=tile_width_px,

@@ -204,9 +204,27 @@ def extract_parameters(request):
         parameter_hash.update(str(p).encode("utf-8"))
     parameter_hash = parameter_hash.hexdigest()
 
+    # Unhashed parameters
+    params["mapZoom"] = arg_params.get("zoom", None)
+    params["extent"] = arg_params.get("extent", None)
+    
     current_app.logger.debug("Parameters: %s (%s)", params, parameter_hash)
     return parameter_hash, params
 
+def update_params(params, updates=None):
+    if updates:
+        params.update(updates)
+    
+    # Calculate a hash value for the specific parameter set
+    parameter_hash = hashlib.md5()
+    for k, p in sorted(params.items()):
+        if isinstance(p, datetime):
+            p = p.isoformat()
+        parameter_hash.update(str(p).encode("utf-8"))
+    parameter_hash = parameter_hash.hexdigest()
+
+    current_app.logger.debug("Parameters: %s (%s)", params, parameter_hash)
+    return parameter_hash, params
 
 def generate_global_params(params, idx):
     geopoint_field = params["geopoint_field"]

@@ -28,3 +28,4 @@ class Config(object):
     ELLIPSE_RENDER_MODE = os.environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "basic")
     PORT = None
     HOSTNAME = socket.getfqdn()
+    MAX_LEGEND_ITEMS = int(os.environ.get("DATASHADER_MAX_LEGEND_ITEMS", 50))

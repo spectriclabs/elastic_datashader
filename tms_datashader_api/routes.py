@@ -5,6 +5,8 @@ import logging
 import shutil
 import os
 import socket
+import time
+import mercantile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -22,15 +24,28 @@ from tms_datashader_api.helpers.cache import (
     check_cache_dir,
     set_cache,
 )
-from tms_datashader_api.helpers.drawing import create_color_key, gen_error
-from tms_datashader_api.helpers.elastic import get_search_base, get_es_headers, to_32bit_float
+from tms_datashader_api.helpers.drawing import (
+    create_color_key,
+    gen_error,
+    get_unique_color_cnt,
+)
+from tms_datashader_api.helpers.elastic import (
+    get_search_base,
+    get_es_headers,
+    to_32bit_float,
+    get_tile_categories
+)
 from tms_datashader_api.helpers.parameters import (
     extract_parameters,
     merge_generated_parameters,
+    update_params,   
 )
 from tms_datashader_api.helpers.tilegen import (
     generate_nonaggregated_tile,
     generate_tile,
+)
+from tms_datashader_api.helpers.mercantile_util import (
+    tiles_bounds
 )
 
 api_blueprints = Blueprint("rest_api", __name__)
@@ -90,6 +105,8 @@ def provide_legend(idx, field_name):
         params = json.loads(params)
         extent = params.get("extent")
 
+    zoom = int(params.get("zoom"))
+
     # Get hash and parameters
     try:
         parameter_hash, params = extract_parameters(request)
@@ -97,10 +114,128 @@ def provide_legend(idx, field_name):
         current_app.logger.exception("Error while extracting parameters")
         return legend_response("[]", e, parameter_hash=parameter_hash, params=params)
 
+    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
+    params = merge_generated_parameters(params, idx, parameter_hash)
+
+    # Assign param value to legacy keyword values
+    geopoint_field = params["geopoint_field"]
+    category_type = params["category_type"]
+    category_histogram = params["category_histogram"]
+    category_format = params["category_format"]
+    cmap = params["cmap"]
+    histogram_interval = params.get("generated_params", {}).get(
+        "histogram_interval", None
+    )
+
     # If not in category mode, just return nothing
     if params["category_field"] is None:
         return legend_response("[]", parameter_hash=parameter_hash, params=params)
 
+    cmap = params["cmap"]
+    category_field = params["category_field"]
+    geopoint_field = params["geopoint_field"]
+
+    base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
+    if extent:
+        legend_bbox = {
+            "top_left": {
+                "lat": min(90.0, extent["maxLat"]),
+                "lon": max(-180.0, extent["minLon"]),
+            },
+            "bottom_right": {
+                "lat": max(-90.0, extent["minLat"]),
+                "lon": min(180.0, extent["maxLon"]),
+            },
+        }
+        current_app.logger.info("legend_bbox: %s", legend_bbox)
+        base_s = base_s.filter("geo_bounding_box", **{geopoint_field: legend_bbox})
+    legend_s = copy.copy(base_s)
+    legend_s = legend_s.params(size=0)
+
+    legend = {}
+    if histogram_interval is not None and category_histogram in (True, None):
+        # Put in the histogram search
+        legend_s.aggs.bucket(
+            "categories",
+            "histogram",
+            field=category_field,
+            interval=histogram_interval,
+            min_doc_count=1,
+        )
+
+        # Perform the execution
+        response = legend_s.execute()
+        print("response", response.to_dict())
+        # If no categories then return blank list
+        if not hasattr(response.aggregations, "categories"):
+            return legend_response("[]", parameter_hash=parameter_hash, params=params)
+
+        # Generate the legend list
+        for category in response.aggregations.categories:
+            # Bin the data
+            raw = float(category.key)
+            # Format with pynumeral if provided
+            if category_format:
+                label = "%s-%s" % (
+                    pynumeral.format(raw, category_format),
+                    pynumeral.format(raw + histogram_interval, category_format),
+                )
+            else:
+                label = "%s-%s" % (raw, raw + histogram_interval)
+            legend[label] = category.doc_count
+    elif category_field and category_histogram == False:
+        tiles_iter = mercantile.tiles(
+            max(-180.0, extent["minLon"]),
+            max(-90.0, extent["minLat"]),
+            min(180.0, extent["maxLon"]),
+            min(90.0, extent["maxLat"]),
+            zoom
+        )
+
+        for tile in tiles_iter:
+            #Query the database to get the categories for this tile
+            _, tile_legend = get_tile_categories(
+                base_s,
+                tile.x,
+                tile.y,
+                tile.z,
+                geopoint_field,
+                category_field,
+            )
+            
+            for k, v in tile_legend.items():
+                if category_type == "number":
+                    try:
+                        k = pynumeral.format(to_32bit_float(k), category_format)
+                    except ValueError:
+                        k = str(k)                        
+                else:
+                    k = str(k)
+                legend[k] = legend.get(k, 0) + v
+
+    color_key_legend = []
+    if not legend:
+        return legend_response("[]", parameter_hash=parameter_hash, params=params)
+    else:
+        # Extract other to put it at the end
+        other = legend.pop("Other", None)
+        for k, count in sorted(legend.items(), key=lambda x: x[1], reverse=True):
+            c = create_color_key([k], cmap=cmap).get(
+                str(k), "#000000"
+            )
+            color_key_legend.append({"key": k, "color": c, "count": count})
+        # Add Other to the end
+        if other:
+            k = "Other"
+            count = other
+            c = create_color_key([k], cmap=cmap).get(
+                str(k), "#000000"
+            )
+            color_key_legend.append({"key": k, "color": c, "count": count})         
+
+        return legend_response(json.dumps(color_key_legend), parameter_hash=parameter_hash, params=params)
+
+    """
     # Get or generate extended parameters
     cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
     params = merge_generated_parameters(params, idx, parameter_hash)
@@ -135,7 +270,7 @@ def provide_legend(idx, field_name):
         current_app.logger.info("legend_bbox: %s", legend_bbox)
         legend_s = legend_s.filter("geo_bounding_box", **{geopoint_field: legend_bbox})
 
-    max_legend_categories = 50
+    max_legend_categories = min(current_app.config["MAX_LEGEND_ITEMS"], get_unique_color_cnt(cmap))
     if histogram_interval is not None and category_histogram in (True, None):
         # Put in the histogram search
         legend_s.aggs.bucket(
@@ -190,9 +325,9 @@ def provide_legend(idx, field_name):
     other_cnt = getattr(response.aggregations.categories, "sum_other_doc_count", 0)
     if other_cnt > 0:
         c = create_color_key(["Other"], cmap=cmap).get("Other", "#000000")
-        color_key_legend.append({"key": "Other", "count": other_cnt})
-
-    return legend_response(json.dumps(color_key_legend), parameter_hash=parameter_hash, params=params)
+        color_key_legend.append({"key": "Other", "count": other_cnt, "color": c})
+    """
+    
 
 
 @api_blueprints.route("/data/<idx>/<lat>/<lon>/<radius>", methods=["GET"])

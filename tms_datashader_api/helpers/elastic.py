@@ -4,6 +4,8 @@ import logging
 import os
 import threading
 import struct
+import mercantile
+import pynumeral
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -15,7 +17,7 @@ from elasticsearch_dsl import Search, AttrDict, Index
 from flask import current_app, request
 
 def to_32bit_float(number):
-    return struct.unpack("f", struct.pack("f", number))[0]
+    return struct.unpack("f", struct.pack("f", float(number)))[0]
 
 def verify_datashader_indices(elasticsearch_uri: str):
     """Verify the ES indices exist
@@ -35,7 +37,6 @@ def verify_datashader_indices(elasticsearch_uri: str):
         Index(".datashader_tiles", using=es).create()
     except RequestError:
         logging.debug("Index .datashader_tiles already exists, continuing")
-
 
 def get_search_base(
     elastic_uri: str,
@@ -244,21 +245,70 @@ def convert(response):
             x, y = lnglat_to_meters(lon, lat)
             yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
 
-def convert_composite(response, categorical):
-    if categorical:
+def convert_composite(response, categorical, filter_buckets, histogram_interval, category_type, category_format):
+    if categorical and filter_buckets == False:
+        # Convert a regular terms aggregation
         for bucket in response:
             for category in bucket.categories:
                 lon = category.centroid.location.lon
                 lat = category.centroid.location.lat
                 x, y = lnglat_to_meters(lon, lat)
+
+                raw = category.key
+                # Bin the data
+                if histogram_interval is not None:
+                    # Format with pynumeral if provided
+                    if category_format:
+                        label = "%s-%s" % (
+                            pynumeral.format(float(raw), category_format),
+                            pynumeral.format(float(raw) + histogram_interval, category_format),
+                        )
+                    else:
+                        label = "%s-%s" % (float(raw), float(raw) + histogram_interval)
+                else:
+                    if category_type == "number":
+                        try:
+                            label = pynumeral.format(to_32bit_float(raw), category_format)
+                        except ValueError:
+                            label = str(raw)                        
+                    else:
+                        label = str(raw)
                 yield {
                     "lon": category.centroid.location.lon,
                     "lat": category.centroid.location.lat,
                     "x": x,
                     "y": y,
                     "c": category.centroid.count,
-                    "t": str(category.key),
+                    "t": label,
                 }
+    elif categorical and filter_buckets == True:
+        # Convert a filter bucket aggregation
+        for bucket in response:
+            for key in bucket.categories.buckets:
+                category = bucket.categories.buckets[key]
+                if category.doc_count > 0:
+                    lon = category.centroid.location.lon
+                    lat = category.centroid.location.lat
+                    x, y = lnglat_to_meters(lon, lat)
+
+                    if category_type == "number":
+                        try:
+                            label = pynumeral.format(to_32bit_float(key), category_format)
+                        except ValueError:
+                            label = str(key)                        
+                    else:
+                        label = str(key)
+
+                    yield {
+                        "lon": category.centroid.location.lon,
+                        "lat": category.centroid.location.lat,
+                        "x": x,
+                        "y": y,
+                        "c": category.centroid.count,
+                        "t": label,
+                    }
+    else:
+        # Non-categorical
         for bucket in response:
             lon = bucket.centroid.location.lon
             lat = bucket.centroid.location.lat
@@ -331,7 +381,11 @@ class ScanAggs(object):
             s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
             for agg_name, agg in self.inner_aggs.items():
                 s.aggs["comp"][agg_name] = agg
-            return s.execute()
+            try:
+                return s.execute()
+            except:
+                print(s.to_dict())
+                raise
 
         response = run_search()
         self.num_searches += 1
@@ -345,8 +399,42 @@ class ScanAggs(object):
             else:
                 after = response.aggregations.comp.buckets[-1].key
             # If we got fewer buckets than requested, no reason to ask for more
-            if num_buckets < self.size:
-                break
+            #if num_buckets < self.size:
+            #    break
             response = run_search(after=after)
             self.num_searches += 1
             num_buckets = 0
+
+def get_tile_categories(base_s, x, y, z, geopoint_field, category_field):
+
+    category_filters = {}
+    category_legend = {}
+
+    bounds = mercantile.bounds(x, y, z)
+    bb_dict = {
+        "top_left": {
+            "lat": min(90, max(-90, bounds.north)),
+            "lon": min(180, max(-180, bounds.west)),
+        },
+        "bottom_right": {
+            "lat": min(90, max(-90, bounds.south)),
+            "lon": min(180, max(-180, bounds.east)),
+        },
+    }
+
+    cat_s = copy.copy(base_s)
+    cat_s = cat_s.params(size=0)
+    cat_s = cat_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
+    cat_s.aggs.bucket("categories", "terms", field=category_field, size=50)
+    response = cat_s.execute()
+    for ii, category in enumerate(response.aggregations.categories):
+        category_filters[str(category.key)] = { "term": {category_field: category.key} }
+        category_legend[str(category.key)] = category.doc_count
+    category_filters["Other"] = {
+        "bool": {
+            "must_not": list( category_filters.values() )
+        }
+    }
+    category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
+
+    return category_filters, category_legend
