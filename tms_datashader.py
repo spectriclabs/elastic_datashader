@@ -4,6 +4,7 @@ import logging
 import os
 import socket
 import ssl
+import logging
 from typing import Optional
 
 import urllib3
@@ -16,6 +17,10 @@ from tms_datashader_api.helpers.elastic import verify_datashader_indices
 from tms_datashader_api.routes import api_blueprints
 from tms_datashader_api.views import view_blueprints
 
+# the elasticsearch module will log warnings
+# for expected things (i.e. a 404 when checking if a document exsits)
+logger = logging.getLogger("elasticsearch")
+logger.setLevel(logging.ERROR)
 
 def create_app(
     app_args: Optional[argparse.Namespace] = None,
