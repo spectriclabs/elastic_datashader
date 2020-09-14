@@ -415,6 +415,9 @@ def generate_nonaggregated_tile(
             if metrics.get("over_max"):
                 img = gen_overlay(img)
         else:
+            categories = list( df["c"].unique() )
+            metrics["categories"] = json.dumps(categories)
+
             # Generate the image
             df["c"] = df["c"].astype("category")
             # prevent memory explosion in datashader _colorize
