@@ -55,6 +55,7 @@ def extract_parameters(request):
         "max_bins": int(current_app.config["MAX_BINS"]),
         "max_batch": int(current_app.config["MAX_BATCH"]),
         "max_ellipses_per_tile": int(current_app.config["MAX_ELLIPSES_PER_TILE"]),
+        "basic_ellipse": True,
     }
 
     # Extract user from headers
@@ -106,6 +107,12 @@ def extract_parameters(request):
         params["ellipse_max_cep"] = 10.0
     elif request.args.get("ellipse_search", default="") == "wide":
         params["ellipse_max_cep"] = 50.0
+
+    params["basic_ellipse"] = request.args.get("basic_ellipse", default=params["basic_ellipse"])
+    if params["basic_ellipse"] == "false" or params["basic_ellipse"] == "False":
+        params["basic_ellipse"] = False
+    else:
+        params["basic_ellipse"] = True
 
     params["category_field"] = request.args.get(
         "category_field", default=params["category_field"]

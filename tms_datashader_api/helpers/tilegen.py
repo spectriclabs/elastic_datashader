@@ -44,6 +44,7 @@ def create_datashader_ellipses_from_search(
     extend_meters,
     metrics=None,
     histogram_interval=None,
+    basic_ellipse=True,
 ):
     """
 
@@ -179,10 +180,16 @@ def create_datashader_ellipses_from_search(
             # expel above CEP limit
             if major > extend_meters or minor > extend_meters:
                 continue
-            angle_rad = angle * ((2.0 * pi) / 360.0)  # Convert degrees to radians
-            Y, X = ellipse(
-                major / 2.0, minor / 2.0, angle_rad, y0, x0, num_points=16
-            )  # Points per ellipse, NB. this takes semi-maj/min
+
+            if basic_ellipse:
+                angle_rad = angle * ((2.0 * pi) / 360.0)  # Convert degrees to radians
+                Y, X = ellipse(
+                    major / 2.0, minor / 2.0, angle_rad, y0, x0, num_points=16
+                )
+            else:
+                X, Y = generate_ellipse_points(
+                    x0, y0, major / 2.0, minor / 2.0, tilt=angle, n_points=num
+                )
             if category_field:
                 if histogram_interval:
                     # Do quantization
@@ -241,6 +248,7 @@ def generate_nonaggregated_tile(
     max_batch = params["max_batch"]
     max_bins = params["max_bins"]
     max_ellipses_per_tile = params["max_ellipses_per_tile"]
+    basic_ellipse = params["basic_ellipse"]
     histogram_interval = params.get("generated_params", {}).get(
         "histogram_interval", None
     )
@@ -354,6 +362,7 @@ def generate_nonaggregated_tile(
                 extend_meters,
                 metrics,
                 histogram_interval,
+                basic_ellipse=basic_ellipse
             )
         )
         s2 = time.time()
