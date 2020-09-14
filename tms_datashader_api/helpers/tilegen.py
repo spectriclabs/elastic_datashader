@@ -639,7 +639,8 @@ def generate_tile(idx, x, y, z, params):
                     category_tile.y,
                     category_tile.z,
                     geopoint_field,
-                    category_field
+                    category_field,
+                    int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]),
                 )
 
                 if category_filters:

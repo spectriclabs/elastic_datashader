@@ -405,7 +405,7 @@ class ScanAggs(object):
             self.num_searches += 1
             num_buckets = 0
 
-def get_tile_categories(base_s, x, y, z, geopoint_field, category_field):
+def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
 
     category_filters = {}
     category_legend = {}
@@ -425,7 +425,7 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field):
     cat_s = copy.copy(base_s)
     cat_s = cat_s.params(size=0)
     cat_s = cat_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
-    cat_s.aggs.bucket("categories", "terms", field=category_field, size=50)
+    cat_s.aggs.bucket("categories", "terms", field=category_field, size=size)
     response = cat_s.execute()
     for ii, category in enumerate(response.aggregations.categories):
         category_filters[str(category.key)] = { "term": {category_field: category.key} }

@@ -201,6 +201,7 @@ def provide_legend(idx, field_name):
                 tile.z,
                 geopoint_field,
                 category_field,
+                int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]),
             )
             
             for k, v in tile_legend.items():
