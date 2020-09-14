@@ -49,12 +49,14 @@ def test_quantize_time_range(start, stop, expected):
         (
             "now+3d",
             datetime(2020, 5, 11, 12),
+            "down",
             datetime(2020, 5, 14, 12, tzinfo=tzutc()),
         ),
         ("now-3d", datetime(2020, 5, 11, 12), "up", datetime(2020, 5, 8, 12, tzinfo=tzutc())),
         (
             "now+3d",
             datetime(2020, 5, 11, 12),
+            "up",
             datetime(2020, 5, 14, 12, tzinfo=tzutc()),
         ),
     ),
