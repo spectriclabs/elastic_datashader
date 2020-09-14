@@ -45,7 +45,13 @@ def test_quantize_time_range(start, stop, expected):
 @pytest.mark.parametrize(
     "time_string,current_time,expected",
     (
-        ("now-3d", datetime(2020, 5, 11, 12), datetime(2020, 5, 8, 12, tzinfo=tzutc())),
+        ("now-3d", datetime(2020, 5, 11, 12), "down", datetime(2020, 5, 8, 12, tzinfo=tzutc())),
+        (
+            "now+3d",
+            datetime(2020, 5, 11, 12),
+            datetime(2020, 5, 14, 12, tzinfo=tzutc()),
+        ),
+        ("now-3d", datetime(2020, 5, 11, 12), "up", datetime(2020, 5, 8, 12, tzinfo=tzutc())),
         (
             "now+3d",
             datetime(2020, 5, 11, 12),
@@ -53,8 +59,8 @@ def test_quantize_time_range(start, stop, expected):
         ),
     ),
 )
-def test_convert_kibana_time(time_string, current_time, expected):
-    assert expected == timeutil.convert_kibana_time(time_string, current_time)
+def test_convert_kibana_time(time_string, current_time, round_direction, expected):
+    assert expected == timeutil.convert_kibana_time(time_string, current_time, round_direction)
 
 
 @pytest.mark.parametrize(
