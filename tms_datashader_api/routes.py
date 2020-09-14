@@ -229,107 +229,17 @@ def provide_legend(idx, field_name):
         if other:
             k = "Other"
             count = other
-            c = create_color_key([k], cmap=cmap).get(
-                str(k), "#000000"
-            )
+            if not params.get("ellipses"):
+                c = create_color_key([k], cmap=cmap).get(
+                    str(k), "#000000"
+                )
+            else:
+                # In ellipse mode everything gets it's own color
+                # so there is never a color for Other
+                c = None
             color_key_legend.append({"key": k, "color": c, "count": count})         
 
         return legend_response(json.dumps(color_key_legend), parameter_hash=parameter_hash, params=params)
-
-    """
-    # Get or generate extended parameters
-    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
-    params = merge_generated_parameters(params, idx, parameter_hash)
-
-    # Assign param value to legacy keyword values
-    geopoint_field = params["geopoint_field"]
-    category_type = params["category_type"]
-    category_histogram = params["category_histogram"]
-    category_format = params["category_format"]
-    cmap = params["cmap"]
-    histogram_interval = params.get("generated_params", {}).get(
-        "histogram_interval", None
-    )
-
-    # Get search object
-    base_s = get_search_base(current_app.config["ELASTIC"], params, idx)
-    legend_s = copy.copy(base_s)
-    legend_s = legend_s.params(size=0)
-
-    # if an extent was provided use it for the filter
-    if extent:
-        legend_bbox = {
-            "top_left": {
-                "lat": min(90.0, extent["maxLat"]),
-                "lon": max(-180.0, extent["minLon"]),
-            },
-            "bottom_right": {
-                "lat": max(-90.0, extent["minLat"]),
-                "lon": min(180.0, extent["maxLon"]),
-            },
-        }
-        current_app.logger.info("legend_bbox: %s", legend_bbox)
-        legend_s = legend_s.filter("geo_bounding_box", **{geopoint_field: legend_bbox})
-
-    max_legend_categories = min(current_app.config["MAX_LEGEND_ITEMS"], get_unique_color_cnt(cmap))
-    if histogram_interval is not None and category_histogram in (True, None):
-        # Put in the histogram search
-        legend_s.aggs.bucket(
-            "categories",
-            "histogram",
-            field=field_name,
-            interval=histogram_interval,
-            min_doc_count=1,
-        )
-    else:
-        # Non-histogram legend
-        legend_s.aggs.bucket(
-            "categories", "terms", field=field_name, size=max_legend_categories
-        )
-    # Perform the execution
-    response = legend_s.execute()
-    # If no categories then return blank list
-    if not hasattr(response.aggregations, "categories"):
-        return legend_response("[]", parameter_hash=parameter_hash, params=params)
-
-    # Generate the legend list
-    color_key_legend = []
-    for category in response.aggregations.categories:
-        if (
-            histogram_interval
-            and category_type == "number"
-            and category_histogram in (True, None)
-        ):
-            # Bin the data
-            raw = float(category.key)
-            # Format with pynumeral if provided
-            if category_format:
-                label = "%s-%s" % (
-                    pynumeral.format(raw, category_format),
-                    pynumeral.format(raw + histogram_interval, category_format),
-                )
-            else:
-                label = "%s-%s" % (raw, raw + histogram_interval)
-            k = str(to_32bit_float(category.key))
-        elif category_type == "number":
-            k = str(to_32bit_float(category.key))
-            label = k
-        else:
-            k = str(category.key)
-            label = k
-
-        c = create_color_key([k], cmap=cmap).get(
-            str(k), "#000000"
-        )
-        color_key_legend.append({"key": label, "color": c, "count": category.doc_count})
-
-    other_cnt = getattr(response.aggregations.categories, "sum_other_doc_count", 0)
-    if other_cnt > 0:
-        c = create_color_key(["Other"], cmap=cmap).get("Other", "#000000")
-        color_key_legend.append({"key": "Other", "count": other_cnt, "color": c})
-    """
-    
-
 
 @api_blueprints.route("/data/<idx>/<lat>/<lon>/<radius>", methods=["GET"])
 def get_data(idx, lat, lon, radius):
