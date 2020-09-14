@@ -44,6 +44,7 @@ def create_datashader_ellipses_from_search(
     extend_meters,
     metrics=None,
     histogram_interval=None,
+    basic_ellipse=True,
 ):
     """
 
@@ -165,7 +166,6 @@ def create_datashader_ellipses_from_search(
 
             # Handle deg->Meters conversion and everything else
             x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
-            angle = (angle + 90.0) * ((2.0 * pi) / 360.0)  # Convert degrees to radians
             if ellipse_units == "majmin_nm":
                 major = major * 1852  # nm to meters
                 minor = minor * 1852  # nm to meters
@@ -181,9 +181,15 @@ def create_datashader_ellipses_from_search(
             if major > extend_meters or minor > extend_meters:
                 continue
 
-            X, Y = ellipse(
-                minor / 2.0, major / 2.0, angle, x0, y0, num_points=16
-            )  # Points per ellipse, NB. this takes semi-maj/min
+            if basic_ellipse:
+                angle = (angle + 90.0) * (pi / 180.0)  # Convert degrees to radians
+                X, Y = ellipse(
+                    minor / 2.0, major / 2.0, angle, x0, y0, num_points=16
+                )  # Points per ellipse, NB. this takes semi-maj/min
+            else:
+                X, Y = generate_ellipse_points(
+                    x0, y0, major / 2.0, minor / 2.0, tilt=angle, n_points=num
+                )
             if category_field:
                 if histogram_interval:
                     # Do quantization
@@ -242,6 +248,7 @@ def generate_nonaggregated_tile(
     max_batch = params["max_batch"]
     max_bins = params["max_bins"]
     max_ellipses_per_tile = params["max_ellipses_per_tile"]
+    basic_ellipse = params["basic_ellipse"]
     histogram_interval = params.get("generated_params", {}).get(
         "histogram_interval", None
     )
@@ -355,6 +362,7 @@ def generate_nonaggregated_tile(
                 extend_meters,
                 metrics,
                 histogram_interval,
+                basic_ellipse=basic_ellipse
             )
         )
         s2 = time.time()
