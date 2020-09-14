@@ -352,7 +352,7 @@ def merge_generated_parameters(params, idx, hash):
 
     #See if the hash exists
     try:
-        doc = Document.get(id=hash, using=es, index=".datashader_layers")
+        doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
     except NotFoundError:
         doc = None
 
