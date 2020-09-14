@@ -43,7 +43,7 @@ def quantize_time_range(
         return truncated_start_time, truncated_stop_time
 
 
-def convert_kibana_time(time_string, current_time, round_direction):
+def convert_kibana_time(time_string, current_time, round_direction='down'):
     """Convert Kibana/ES date math into Python datetimes
 
     :param time_string: Time-string following
