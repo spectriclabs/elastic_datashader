@@ -22,7 +22,6 @@ Running in virtualenv is recommended.
 $ virtualenv -p python3 env
 $ . env/bin/activate
 $ pip install -r requirements.txt
-$ patch -d env/lib/python3.7/site-packages/datashader/transfer_functions -p1 < data_shader.patch
 ```
 
 Locally
@@ -94,6 +93,12 @@ Run datashader as normal and use the following NGINX configuration snippet:
     proxy_set_header X-Forwarded-Port $server_port;
     proxy_set_header X-Forwarded-Proto $scheme;
   }
+```
+
+Testing
+--------------------
+```
+python -m pytest
 ```
 
 Tweaks
