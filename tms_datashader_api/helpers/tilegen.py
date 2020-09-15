@@ -188,9 +188,11 @@ def create_datashader_ellipses_from_search(
                     major / 2.0, minor / 2.0, angle_rad, y0, x0, num_points=16
                 )
             else:
-                X, Y = generate_ellipse_points(
-                    x0, y0, major / 2.0, minor / 2.0, tilt=angle, n_points=16
+                angle = (angle + 90.0)
+                LAT, LON = generate_ellipse_points(
+                    loc["lat"], loc["lon"], major / 2.0, minor / 2.0, tilt=angle, n_points=16
                 )
+                X, Y = lnglat_to_meters(LON, LAT)
             if category_field:
                 if histogram_interval:
                     # Do quantization
