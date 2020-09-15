@@ -182,15 +182,26 @@ def create_datashader_ellipses_from_search(
             if major > extend_meters or minor > extend_meters:
                 continue
 
-            if basic_ellipse:
+            ellipse_render_mode = current_app.config["ELLIPSE_RENDER_MODE"]
+            if ellipse_render_mode == "basic":
                 angle = angle * (pi / 180.0)  # Convert degrees to radians
                 Y, X = ellipse(
-                    minor / 2.0, major / 2.0, angle, y0, x0, num_points=16
-                )  # Points per ellipse, NB. this takes semi-maj/min
+                    minor / 2.0,
+                    major / 2.0,
+                    angle,
+                    y0,
+                    x0,
+                    num_points=current_app.config["NUM_ELLIPSE_POINTS"]
+                )
             else:
                 angle = (angle + 90.0)
                 LAT, LON = generate_ellipse_points(
-                    loc["lat"], loc["lon"], major / 2.0, minor / 2.0, tilt=angle, n_points=16
+                    loc["lat"],
+                    loc["lon"],
+                    major / 2.0,
+                    minor / 2.0,
+                    tilt=angle,
+                    n_points=current_app.config["NUM_ELLIPSE_POINTS"]
                 )
                 X, Y = lnglat_to_meters(LON, LAT)
             if category_field:
