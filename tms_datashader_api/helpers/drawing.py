@@ -146,26 +146,26 @@ def ellipse(
     radm: float,
     radn: float,
     tilt: float,
-    xpos: float,
     ypos: float,
+    xpos: float,
     num_points: int = 16,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Accelerated helper function for generating ellipses from point data
 
     :param radm: Semimajor axis
     :param radn: Semiminor axis
-    :param tilt: Ellipse tilt in radians (0 deg is East)
-    :param xpos: Cartesian coordinate x position
+    :param tilt: Ellipse tilt in radians (0 deg is North)
     :param ypos: Cartesian coordinate y position
+    :param xpos: Cartesian coordinate x position
     :param num_points: Number of points with which to draw ellipse
     :return: Tuple containing X points and corresponding Y points for ellipse
     """
     co = np.cos(tilt)
     si = np.sin(tilt)
     the = np.linspace(0, 2 * np.pi, num_points)
-    xarr = radm * np.cos(the) * co - si * radn * np.sin(the) + xpos
-    yarr = radm * np.cos(the) * si + co * radn * np.sin(the) + ypos
-    return xarr, yarr
+    yarr = radm * np.cos(the) * co - si * radn * np.sin(the) + ypos
+    xarr = radm * np.cos(the) * si + co * radn * np.sin(the) + xpos
+    return yarr, xarr
 
 
 @njit(fastmath=True)
@@ -199,7 +199,7 @@ def generate_ellipse_points(
         Semi-minor axis in meters
 
     tilt : float (defaults to 0)
-        Tilt angle in degrees, clockwise positive from North = 0
+        Tilt angle in degrees, clockwise positive from East = 0
 
     n_points : int (defaults to 12)
         Number of points for the ellipse
@@ -210,8 +210,7 @@ def generate_ellipse_points(
 
     Returns
     -------
-    point_values : array of shape (n_points, 3)
-        Array of (lat, lon, alt) denoting the ellipse polygon
+    [lat], [lon]
 
     Example
     -------
@@ -281,7 +280,4 @@ def generate_ellipse_points(
     points[0] += lon
     points[1] += lat
 
-    # extract the points into the required container shape [(lat, lon)] <decimils>
-    point_values = np.fliplr(points.transpose())
-
-    return point_values[:, 0], point_values[:, 1]
+    return points[1], points[0]
