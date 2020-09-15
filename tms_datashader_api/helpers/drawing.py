@@ -146,8 +146,8 @@ def ellipse(
     radm: float,
     radn: float,
     tilt: float,
-    xpos: float,
     ypos: float,
+    xpos: float,
     num_points: int = 16,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Accelerated helper function for generating ellipses from point data
@@ -162,7 +162,7 @@ def ellipse(
     """
     co = np.cos(tilt)
     si = np.sin(tilt)
-    the = np.linspace(0, 2 * np.pi, num_points)
-    xarr = radm * np.cos(the) * co - si * radn * np.sin(the) + xpos
-    yarr = radm * np.cos(the) * si + co * radn * np.sin(the) + ypos
-    return xarr, yarr
+    the = np.linspace(0, 2 * np.pi, num_points+1)
+    yarr = radm * np.cos(the) * co - si * radn * np.sin(the) + ypos
+    xarr = radm * np.cos(the) * si + co * radn * np.sin(the) + xpos
+    return yarr, xarr

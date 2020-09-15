@@ -165,7 +165,6 @@ def create_datashader_ellipses_from_search(
 
             # Handle deg->Meters conversion and everything else
             x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
-            angle = (angle + 90.0) * ((2.0 * pi) / 360.0)  # Convert degrees to radians
             if ellipse_units == "majmin_nm":
                 major = major * 1852  # nm to meters
                 minor = minor * 1852  # nm to meters
@@ -180,9 +179,9 @@ def create_datashader_ellipses_from_search(
             # expel above CEP limit
             if major > extend_meters or minor > extend_meters:
                 continue
-
-            X, Y = ellipse(
-                minor / 2.0, major / 2.0, angle, x0, y0, num_points=16
+            angle_rad = angle * ((2.0 * pi) / 360.0)  # Convert degrees to radians
+            Y, X = ellipse(
+                major / 2.0, minor / 2.0, angle_rad, y0, x0, num_points=16
             )  # Points per ellipse, NB. this takes semi-maj/min
             if category_field:
                 if histogram_interval:
