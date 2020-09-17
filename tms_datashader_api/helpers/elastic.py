@@ -82,7 +82,6 @@ def get_search_base(
             time_range[timestamp_field]["lte"] = stop_time
 
     if time_range and time_range[timestamp_field]:
-        current_app.logger.info("TIME RANGE: %s", time_range)
         base_s = base_s.filter("range", **time_range)
 
     # Add lucene query
