@@ -15,6 +15,8 @@ from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import RequestError
 from elasticsearch_dsl import Search, AttrDict, Index
 from flask import current_app, request
+import tms_datashader_api.helpers.mercantile_util as mu
+
 
 def to_32bit_float(number):
     return struct.unpack("f", struct.pack("f", float(number)))[0]
@@ -249,8 +251,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
         # Convert a regular terms aggregation
         for bucket in response:
             for category in bucket.categories:
-                lon = category.centroid.location.lon
-                lat = category.centroid.location.lat
+                lon, lat = geotile_bucket_to_lonlat(category)
                 x, y = lnglat_to_meters(lon, lat)
 
                 raw = category.key
@@ -273,11 +274,11 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                     else:
                         label = str(raw)
                 yield {
-                    "lon": category.centroid.location.lon,
-                    "lat": category.centroid.location.lat,
+                    "lon": lon,
+                    "lat": lat,
                     "x": x,
                     "y": y,
-                    "c": category.centroid.count,
+                    "c": category.doc_count,
                     "t": label,
                 }
     elif categorical and filter_buckets == True:
@@ -286,8 +287,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
             for key in bucket.categories.buckets:
                 category = bucket.categories.buckets[key]
                 if category.doc_count > 0:
-                    lon = category.centroid.location.lon
-                    lat = category.centroid.location.lat
+                    lon, lat = geotile_bucket_to_lonlat(category)
                     x, y = lnglat_to_meters(lon, lat)
 
                     if category_type == "number":
@@ -299,20 +299,28 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                         label = str(key)
 
                     yield {
-                        "lon": category.centroid.location.lon,
-                        "lat": category.centroid.location.lat,
+                        "lon": lon,
+                        "lat": lat,
                         "x": x,
                         "y": y,
-                        "c": category.centroid.count,
+                        "c": category.doc_count,
                         "t": label,
                     }
     else:
         # Non-categorical
         for bucket in response:
-            lon = bucket.centroid.location.lon
-            lat = bucket.centroid.location.lat
+            lon, lat = geotile_bucket_to_lonlat(bucket)
             x, y = lnglat_to_meters(lon, lat)
-            yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
+            yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.doc_count}
+
+def geotile_bucket_to_lonlat(bucket):
+    if hasattr(bucket, "centroid"):
+        lon = bucket.centroid.location.lon
+        lat = bucket.centroid.location.lat
+    else:
+        z, x, y = [ int(x) for x in bucket.key.grids.split("/") ]
+        lon, lat = mu.center(x, y, z)
+    return lon, lat
 
 def split_fieldname_to_list(field: str) -> List[str]:
     """Remove .raw and .keyword from ``field``

@@ -587,7 +587,8 @@ def generate_tile(idx, x, y, z, params):
             # calculate the geo precision that ensure we have at most one bin per 'pixel'
             # every zoom level halves the number of pixels per bin
             # assuming a square tile
-            agg_zooms = math.ceil(math.log(pixels, 4))
+            max_agg_zooms = math.ceil(math.log(pixels, 4))
+            agg_zooms = max_agg_zooms
 
             # TODO consider adding 'grid resolution' coarse, fine, finest (pixel-lock)
             # In category-mode, zoom out if max_bins has not been increased
@@ -656,39 +657,44 @@ def generate_tile(idx, x, y, z, params):
                 # additional buckets (one for Other and one for something else
                 # internal to Elastic)
                 inner_agg_size = len(category_filters) + 2
-                inner_aggs = {
-                    "categories": A(
-                        "filters",
-                        filters=category_filters,
-                        other_bucket_key="Other"
-                    ).metric(
+                inner_agg = A(
+                    "filters",
+                    filters=category_filters,
+                    other_bucket_key="Other"
+                )
+                if max_agg_zooms > agg_zooms:
+                    inner_agg = inner_agg.metric(
                         "centroid",
                         "geo_centroid",
                         field=geopoint_field
                     )
-                }
+                inner_aggs = { "categories": inner_agg }
             elif category_field and histogram_interval != None: # Histogram Mode
                 inner_agg_size = histogram_cnt
-                inner_aggs = {
-                    "categories": A(
-                        "histogram",
-                        field=category_field,
-                        interval=histogram_interval,
-                        min_doc_count=1
-                    ).metric(
+
+                inner_agg = A(
+                    "histogram",
+                    field=category_field,
+                    interval=histogram_interval,
+                    min_doc_count=1
+                )
+
+                if max_agg_zooms > agg_zooms:
+                    inner_agg = inner_agg.metric(
                         "centroid",
                         "geo_centroid",
                         field=geopoint_field
                     )
-                }
+                inner_aggs = { "categories": inner_agg }
             else:
                 inner_agg_size = 1
-                inner_aggs = {
-                    "centroid": A(
-                        "geo_centroid",
-                        field=geopoint_field
-                    )
-                }
+                if max_agg_zooms > agg_zooms:
+                    inner_aggs = {
+                        "centroid": A(
+                            "geo_centroid",
+                            field=geopoint_field
+                        )
+                    }
 
             # the composite needs one bin for 'after_key'
             composite_agg_size = int(max_bins / inner_agg_size) - 1

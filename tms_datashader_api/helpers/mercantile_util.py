@@ -69,6 +69,11 @@ def bounds(xtile, ytile, zoom):
     b = ul(xtile + 1, ytile + 1, zoom)
     return a[0], b[1], b[0], a[1]  # west, south, east, north
 
+@numba.njit(fastmath=True)
+def center(xtile, ytile, zoom):
+    a = ul(xtile, ytile, zoom)
+    b = ul(xtile + 1, ytile + 1, zoom)
+    return ((a[0] + b[0]) / 2), ((b[1] + a[1]) / 2)  # lon, lat
 
 @numba.njit(fastmath=True)
 def _xy(lng, lat):
