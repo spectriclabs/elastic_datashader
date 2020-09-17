@@ -242,6 +242,7 @@ def generate_global_params(params, idx):
 
     histogram_range = 0
     histogram_interval = None
+    histogram_cnt = None
     global_doc_cnt = None
 
     # Create base search
@@ -294,9 +295,9 @@ def generate_global_params(params, idx):
                 # documents given the current parameters, reduce the number of histogram
                 # bins.  Note this is kinda a wag...maybe something smarter can be done
                 if global_doc_cnt > 100000:
-                    category_cnt = 200
+                    histogram_cnt = 200
                 else:
-                    category_cnt = 500
+                    histogram_cnt = 500
                 # determine the range of category values
                 if bounds_resp.aggregations.field_stats.count > 0:
                     if bounds_resp.aggregations.field_stats.max is None:
@@ -313,11 +314,11 @@ def generate_global_params(params, idx):
                             histogram_range = math.pow(
                                 10, math.ceil(math.log10(histogram_range))
                             )
-                            histogram_interval = histogram_range / category_cnt
+                            histogram_interval = histogram_range / histogram_cnt
                             current_app.logger.info(
                                 "histogram interval %s, category_cnt: %s ",
                                 histogram_interval,
-                                category_cnt,
+                                histogram_cnt,
                             )
                         else:
                             histogram_range = 0
@@ -327,6 +328,7 @@ def generate_global_params(params, idx):
     # Return generated params dict
     generated_params = {
         "histogram_interval": histogram_interval,
+        "histogram_cnt": histogram_cnt,
         "global_doc_cnt": global_doc_cnt,
         "global_bounds": global_bounds,
     }
