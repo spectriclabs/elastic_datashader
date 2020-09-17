@@ -430,11 +430,6 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
     for ii, category in enumerate(response.aggregations.categories):
         category_filters[str(category.key)] = { "term": {category_field: category.key} }
         category_legend[str(category.key)] = category.doc_count
-    category_filters["Other"] = {
-        "bool": {
-            "must_not": list( category_filters.values() )
-        }
-    }
     category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
 
     return category_filters, category_legend

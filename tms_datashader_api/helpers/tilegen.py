@@ -508,6 +508,7 @@ def generate_tile(idx, x, y, z, params):
     dsl_filter = params["dsl_filter"]
     max_bins = params["max_bins"]
     histogram_interval = params.get("generated_params", {}).get("histogram_interval")
+    histogram_cnt = params.get("generated_params", {}).get("histogram_cnt")
     global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt")
     global_bounds = params.get("generated_params", {}).get("global_bounds")
 
@@ -634,6 +635,7 @@ def generate_tile(idx, x, y, z, params):
             inner_aggs = {}
             # TOOD if we are pixel locked, calcuating a centriod seems unnecessary
             category_filters = None
+            inner_agg_size = None
             if category_field and histogram_interval == None: # Category Mode
                 # We calculate the categories to show based on the mapZoom (which is usually
                 # a lower number then the requested tile)
@@ -651,29 +653,52 @@ def generate_tile(idx, x, y, z, params):
                     int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]),
                 )
 
-                if category_filters:
-                    inner_aggs = {
-                        "categories": A("filters", filters=category_filters).metric("centroid", "geo_centroid", field=geopoint_field)
-                    }
-                else:
-                    inner_aggs = {
-                        "categories": A("terms", field=category_field).metric("centroid", "geo_centroid", field=geopoint_field)
-                    }
-            elif category_field and histogram_interval != None: # Histogram Mode
+                # to avoid max bucket errors we need space for two
+                # additional buckets (one for Other and one for something else
+                # internal to Elastic)
+                inner_agg_size = len(category_filters) + 2
                 inner_aggs = {
-                    "categories": A("histogram", field=category_field, interval=histogram_interval, min_doc_count=1).metric("centroid", "geo_centroid", field=geopoint_field)
+                    "categories": A(
+                        "filters",
+                        filters=category_filters,
+                        other_bucket_key="Other"
+                    ).metric(
+                        "centroid",
+                        "geo_centroid",
+                        field=geopoint_field
+                    )
+                }
+            elif category_field and histogram_interval != None: # Histogram Mode
+                inner_agg_size = histogram_cnt
+                inner_aggs = {
+                    "categories": A(
+                        "histogram",
+                        field=category_field,
+                        interval=histogram_interval,
+                        min_doc_count=1
+                    ).metric(
+                        "centroid",
+                        "geo_centroid",
+                        field=geopoint_field
+                    )
                 }
             else:
+                inner_agg_size = 1
                 inner_aggs = {
-                    "centroid": A("geo_centroid", field=geopoint_field)
+                    "centroid": A(
+                        "geo_centroid",
+                        field=geopoint_field
+                    )
                 }
 
-            # a full tile would take one query if size=65536 (i.e. 256*256)
+            # the composite needs one bin for 'after_key'
+            composite_agg_size = int(max_bins / inner_agg_size) - 1
+
             resp = ScanAggs(
                 tile_s,
                 {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
                 inner_aggs,
-                size=100 #min((max_bins-1), pixels) # leave space for 'after_key' bin
+                size=composite_agg_size
             )
 
             partial_data = False # TODO can we get partial data?
