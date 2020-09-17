@@ -68,50 +68,72 @@ def test_gen_empty():
 
 
 def test_ellipse():
+    # Verify tilt of 0 means North
+    radm = 100
+    radn = 50
+    tilt = 0
+    xpos = 0
+    ypos = 0
+    actual_y, actual_x = drawing.ellipse(radm, radn, tilt, xpos, ypos)
+    np.testing.assert_almost_equal(actual_y[0], 100)
+    np.testing.assert_almost_equal(actual_y[4], 0)
+    np.testing.assert_almost_equal(actual_y[8], -100)
+    np.testing.assert_almost_equal(actual_y[12], 0)
+    np.testing.assert_almost_equal(actual_x[0], 0)
+    np.testing.assert_almost_equal(actual_x[4], 50)
+    np.testing.assert_almost_equal(actual_x[8], 0)
+    np.testing.assert_almost_equal(actual_x[12], -50)
+
+    
+
     radm = 100
     radn = 30
     tilt = 10
     xpos = 0
     ypos = 5
-    actual_x, actual_y = drawing.ellipse(radm, radn, tilt, xpos, ypos)
+    actual_y, actual_x = drawing.ellipse(radm, radn, tilt, xpos, ypos)
+    print(actual_y)
+    print(actual_x)
     expected_x = np.array(
         [
-            -83.90715291,
-            -70.01479879,
-            -44.0162499,
-            -10.40689152,
-            25.00191294,
-            56.08765952,
-            77.47534023,
-            85.46683077,
-            78.68032983,
-            58.28928507,
-            27.81949339,
-            -7.46054144,
-            -41.45058087,
-            -68.27343831,
-            -83.29119801,
-            -83.90715291,
+            -49.40211109,
+            -54.89396014,
+            -51.26749671,
+            -39.07481696,
+            -20.17214587,
+              2.56275624,
+             25.66870662,
+             45.62803378,
+             59.40211109,
+             64.89396014,
+             61.26749671,
+             49.07481696,
+             30.17214587,
+              7.43724376,
+            -15.66870662,
+            -35.62803378,
+            -49.40211109
         ]
     )
     expected_y = np.array(
         [
-            -49.40211109,
-            -54.93723558,
-            -50.10866753,
-            -35.75131022,
-            -14.34768115,
-            10.40133775,
-            34.21641629,
-            52.97971103,
-            63.44687785,
-            63.80804851,
-            54.00077334,
-            35.72081929,
-            12.1289565,
-            -12.69556763,
-            -34.46036736,
-            -49.40211109,
+            -83.90715291,
+            -71.27446522,
+            -47.79088631,
+            -17.03157819,
+             16.32063333,
+             47.18817636,
+             70.87174731,
+             83.76573718,
+             83.90715291,
+             71.27446522,
+             47.79088631,
+             17.03157819,
+            -16.32063333,
+            -47.18817636,
+            -70.87174731,
+            -83.76573718,
+            -83.90715291
         ]
     )
 
