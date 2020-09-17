@@ -21,6 +21,8 @@ from tms_datashader_api.views import view_blueprints
 # for expected things (i.e. a 404 when checking if a document exsits)
 logger = logging.getLogger("elasticsearch")
 logger.setLevel(logging.ERROR)
+# the urllib module is noisy about SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def create_app(
     app_args: Optional[argparse.Namespace] = None,
