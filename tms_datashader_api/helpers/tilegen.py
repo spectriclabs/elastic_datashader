@@ -194,7 +194,7 @@ def create_datashader_ellipses_from_search(
                 Y, X = ellipse(
                     major / 2.0, minor / 2.0, angle_rad, y0, x0, num_points=16
                 )
-            else:
+            elif ellipse_render_mode == "matrix":
                 angle = (angle + 90.0)
                 LAT, LON = generate_ellipse_points(
                     loc["lat"],
@@ -205,6 +205,9 @@ def create_datashader_ellipses_from_search(
                     n_points=current_app.config["NUM_ELLIPSE_POINTS"]
                 )
                 X, Y = lnglat_to_meters(LON, LAT)
+            else:
+                raise ValueError("invalid ellipse render mode %s", ellipse_render_mode)
+
             if category_field:
                 if histogram_interval:
                     # Do quantization

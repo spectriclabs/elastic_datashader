@@ -24,8 +24,8 @@ class Config(object):
     HEADER_FILE = os.environ.get("DATASHADER_HEADER_FILE", "./headers.yaml")
     WHITELIST_HEADERS = os.environ.get("DATASHADER_WHITELIST_HEADERS", None)
     DEBUG_TILES = os.environ.get("DATASHADER_DEBUG_TILES", False)
-    NUM_ELLIPSE_POINTS = os.environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 16)
-    ELLIPSE_RENDER_MODE = os.environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "basic")
+    NUM_ELLIPSE_POINTS = os.environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)
+    ELLIPSE_RENDER_MODE = os.environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix")
     PORT = None
     HOSTNAME = socket.getfqdn()
     MAX_LEGEND_ITEMS_PER_TILE = int(os.environ.get("MAX_LEGEND_ITEMS_PER_TILE", 50))
