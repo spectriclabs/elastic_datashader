@@ -368,6 +368,7 @@ def get_tms(idx, x: int, y: int, z: int):
 
     cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
     tile_name = f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
+    tile_id = "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y)
     force = request.args.get("force")
 
     # Check if the cached image already exists
@@ -378,7 +379,7 @@ def get_tms(idx, x: int, y: int, z: int):
         img = c
         try:
             body = {"script" : {"source": "ctx._source.cache_hits++"}}
-            es.update(".datashader_tiles", "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y), body=body, retry_on_conflict=5)            
+            es.update(".datashader_tiles", tile_id, body=body, retry_on_conflict=5)
         except NotFoundError:
             current_app.logger.warn("Unable to find cached tile entry in .datashader_tiles")
     else:
@@ -430,6 +431,7 @@ def get_tms(idx, x: int, y: int, z: int):
         et = (datetime.now() - t1).total_seconds()
         # Make entry into .datashader_tiles
         doc = Document(
+            _id=tile_id,
             hash=parameter_hash,
             idx=idx,
             x=x,
