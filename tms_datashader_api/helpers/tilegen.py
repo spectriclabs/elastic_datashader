@@ -268,7 +268,6 @@ def generate_nonaggregated_tile(
     max_batch = params["max_batch"]
     max_bins = params["max_bins"]
     max_ellipses_per_tile = params["max_ellipses_per_tile"]
-    basic_ellipse = params["basic_ellipse"]
     histogram_interval = params.get("generated_params", {}).get(
         "histogram_interval", None
     )
