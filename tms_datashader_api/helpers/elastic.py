@@ -367,6 +367,19 @@ def get_nested_field_from_hit(hit, field, default=None):
                     return default
         return v
 
+def chunk_iter(iterable, chunk_size):
+    chunks = [ None ] * chunk_size
+    for i, v in enumerate(iterable):
+        idx = (i % chunk_size)
+        if idx == 0 and i > 0:
+            i = -1
+            yield (True, chunks)
+        chunks[idx] = v
+    
+    if i >= 0:
+        last_written_idx =( i % chunk_size)
+        yield (False, chunks[0:last_written_idx+1])
+
 class ScanAggs(object):
     def __init__(self, search, source_aggs, inner_aggs={}, size=10):
         self.search = search
