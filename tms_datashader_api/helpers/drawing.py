@@ -200,7 +200,7 @@ def generate_ellipse_points(
         Semi-minor axis in meters
 
     tilt : float (defaults to 0)
-        Tilt angle in degrees, clockwise positive from East = 0
+        Tilt angle in degrees, clockwise positive from North = 0
 
     n_points : int (defaults to 12)
         Number of points for the ellipse

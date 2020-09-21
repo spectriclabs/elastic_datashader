@@ -195,7 +195,6 @@ def create_datashader_ellipses_from_search(
                     major / 2.0, minor / 2.0, angle_rad, y0, x0, num_points=16
                 )
             elif ellipse_render_mode == "matrix":
-                angle = (angle + 90.0)
                 LAT, LON = generate_ellipse_points(
                     loc["lat"],
                     loc["lon"],
