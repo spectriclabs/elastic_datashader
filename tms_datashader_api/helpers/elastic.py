@@ -251,7 +251,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
         # Convert a regular terms aggregation
         for bucket in response:
             for category in bucket.categories:
-                lon, lat = geotile_bucket_to_lonlat(category)
+                lon, lat = geotile_bucket_to_lonlat(bucket)
                 x, y = lnglat_to_meters(lon, lat)
 
                 raw = category.key
@@ -287,7 +287,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
             for key in bucket.categories.buckets:
                 category = bucket.categories.buckets[key]
                 if category.doc_count > 0:
-                    lon, lat = geotile_bucket_to_lonlat(category)
+                    lon, lat = geotile_bucket_to_lonlat(bucket)
                     x, y = lnglat_to_meters(lon, lat)
 
                     if category_type == "number":
