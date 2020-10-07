@@ -52,6 +52,7 @@ def extract_parameters(request):
         "spread": None,
         "span_range": None,
         "resolution": "finest",
+        "use_centroid": False,
         "max_bins": int(current_app.config["MAX_BINS"]),
         "max_batch": int(current_app.config["MAX_BATCH"]),
         "max_ellipses_per_tile": int(current_app.config["MAX_ELLIPSES_PER_TILE"]),
@@ -143,7 +144,8 @@ def extract_parameters(request):
         except (TypeError, ValueError):
             params["spread"] = None
     params["resolution"] = request.args.get("resolution", default=params["resolution"])
-
+    params["use_centroid"] = request.args.get("use_centroid", default=params["use_centroid"])
+    
     params["cmap"] = request.args.get("cmap", default=params["cmap"])
     if params["cmap"] is None:
         if params["category_field"] is None:

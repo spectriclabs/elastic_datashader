@@ -508,6 +508,7 @@ def generate_tile(idx, x, y, z, params):
     dsl_query = params["dsl_query"]
     dsl_filter = params["dsl_filter"]
     max_bins = params["max_bins"]
+    use_centroid = params["use_centroid"]
     histogram_interval = params.get("generated_params", {}).get("histogram_interval")
     histogram_cnt = params.get("generated_params", {}).get("histogram_cnt")
     global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt")
@@ -677,7 +678,7 @@ def generate_tile(idx, x, y, z, params):
                     filters=category_filters,
                     other_bucket_key="Other"
                 )
-                if max_agg_zooms > agg_zooms:
+                if use_centroid:
                     inner_agg = inner_agg.metric(
                         "centroid",
                         "geo_centroid",
@@ -694,7 +695,7 @@ def generate_tile(idx, x, y, z, params):
                     min_doc_count=1
                 )
 
-                if max_agg_zooms > agg_zooms:
+                if use_centroid:
                     inner_agg = inner_agg.metric(
                         "centroid",
                         "geo_centroid",
@@ -703,7 +704,7 @@ def generate_tile(idx, x, y, z, params):
                 inner_aggs = { "categories": inner_agg }
             else:
                 inner_agg_size = 1
-                if max_agg_zooms > agg_zooms:
+                if use_centroid:
                     inner_aggs = {
                         "centroid": A(
                             "geo_centroid",
