@@ -608,7 +608,16 @@ def generate_tile(idx, x, y, z, params):
                 agg_zooms -= 1
                 min_auto_spread += 2
             elif resolution == "finest":
-                pass  # finest needs to do nothing
+                if category_field:
+                    if doc_cnt > 5e3:
+                        agg_zooms -= 2
+                        min_auto_spread += 1
+                    elif doc_cnt > 1e6:
+                        agg_zooms -= 3
+                        min_auto_spread += 2
+                    elif doc_cnt > 5e6:
+                        agg_zooms -= 4
+                        min_auto_spread += 3
             else:
                 raise ValueError("invalid resolution value")
 
@@ -654,6 +663,10 @@ def generate_tile(idx, x, y, z, params):
                     category_field,
                     int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]),
                 )
+
+                if len(category_filters) >= int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]):
+                    agg_zooms -= 1
+                    min_auto_spread += 1
 
                 # to avoid max bucket errors we need space for two
                 # additional buckets (one for Other and one for something else
