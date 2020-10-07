@@ -28,4 +28,4 @@ class Config(object):
     ELLIPSE_RENDER_MODE = os.environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix")
     PORT = None
     HOSTNAME = socket.getfqdn()
-    MAX_LEGEND_ITEMS_PER_TILE = int(os.environ.get("MAX_LEGEND_ITEMS_PER_TILE", 50))
+    MAX_LEGEND_ITEMS_PER_TILE = int(os.environ.get("MAX_LEGEND_ITEMS_PER_TILE", 20))
