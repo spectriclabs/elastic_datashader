@@ -50,18 +50,17 @@ def patched_get_format(self, numeralfmt, value):
         ret = ret[0 : ii + 1]
     return ret
 
+pynumeral.pynumeral.BaseFormatter.get_python_format = patched_get_python_format
+pynumeral.pynumeral.BaseFormatter.format = patched_get_format
+pynumeral.pynumeral.default_formatter = pynumeral.pynumeral.BaseFormatter()
 
-pynumeral.BaseFormatter.get_python_format = patched_get_python_format
-pynumeral.BaseFormatter.format = patched_get_format
-pynumeral.default_formatter = pynumeral.BaseFormatter()
-
-pynumeral.formatters = [
-    pynumeral.NoneFormatter(),
-    pynumeral.DurationWithSecondsFormatter(),
-    pynumeral.DurationWithoutSecondsFormatter(),
-    pynumeral.OrderFormatter(),
-    pynumeral.BinaryBytesFormatter(),
-    pynumeral.DecimalBytesFormatter(),
-    pynumeral.PercentageFormatter(),
-    pynumeral.HumanFormatter(),
+pynumeral.pynumeral.formatters = [
+    pynumeral.pynumeral.NoneFormatter(),
+    pynumeral.pynumeral.DurationWithSecondsFormatter(),
+    pynumeral.pynumeral.DurationWithoutSecondsFormatter(),
+    pynumeral.pynumeral.OrderFormatter(),
+    pynumeral.pynumeral.BinaryBytesFormatter(),
+    pynumeral.pynumeral.DecimalBytesFormatter(),
+    pynumeral.pynumeral.PercentageFormatter(),
+    pynumeral.pynumeral.HumanFormatter(),
 ]
