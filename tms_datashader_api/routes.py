@@ -112,7 +112,7 @@ def provide_legend(idx, field_name):
         parameter_hash, params = extract_parameters(request)
     except Exception as e:
         current_app.logger.exception("Error while extracting parameters")
-        return legend_response("[]", e, parameter_hash=parameter_hash, params=params)
+        return legend_response("[]", e)
 
     cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
     params = merge_generated_parameters(params, idx, parameter_hash)
@@ -350,7 +350,6 @@ def get_tms(idx, x: int, y: int, z: int):
         current_app.logger.exception("Error while extracting parameters")
         #Create an error entry in .datashader_tiles
         doc = Document(
-            hash=parameter_hash,
             idx=idx,
             x=x,
             y=x,
@@ -359,7 +358,6 @@ def get_tms(idx, x: int, y: int, z: int):
             host=socket.gethostname(),
             pid=os.getpid(),
             timestamp=datetime.now(),
-            params=params,
             error=str(e)
         )
         doc.save(using=es, index=".datashader_tiles")
