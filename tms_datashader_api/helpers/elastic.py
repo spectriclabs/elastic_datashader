@@ -185,6 +185,8 @@ def get_es_headers(header_file=None, request_headers=None, user=None):
 
     with header_lock:
         if HEADERS is None:
+            if header_file is None:
+                header_file = current_app.config.get("HEADER_FILE")
             # Load HEADERS from the file if requested
             if header_file and os.path.exists(header_file):
                 try:
