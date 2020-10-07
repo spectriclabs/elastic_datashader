@@ -163,6 +163,18 @@ def build_dsl_filter(filter_inputs):
                 filter_dict["must_not"].append(exists_dict)
             else:
                 filter_dict["filter"].append(exists_dict)
+        elif f.get("meta", {}).get("type") == "custom" and f.get("meta", {}).get("key") is not None:
+            filter_key = f.get("meta", {}).get("key")
+            if f.get("meta", {}).get("negate"):
+                if filter_key == "query":
+                    filter_dict["must_not"].append( { "bool": f.get(filter_key).get("bool") } )
+                else:
+                    filter_dict["must_not"].append( { filter_key: f.get(filter_key) } )
+            else:
+                if filter_key == "query":
+                    filter_dict["filter"].append( { "bool": f.get(filter_key).get("bool") } )
+                else:
+                    filter_dict["filter"].append( { filter_key: f.get(filter_key) } )
         else:
             raise ValueError("unsupported filter type %s" % f.get("meta").get("type"))
     current_app.logger.info("Filter output %s", filter_dict)
