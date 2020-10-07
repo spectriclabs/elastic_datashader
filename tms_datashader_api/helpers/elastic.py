@@ -387,6 +387,7 @@ class ScanAggs(object):
         self.inner_aggs = inner_aggs
         self.size = size
         self.num_searches = 0
+        self.total_took = 0
 
     def execute(self):
         """
@@ -395,6 +396,7 @@ class ScanAggs(object):
         ``composite`` aggregation under the hood to perform this.
         """
         self.num_searches = 0
+        self.total_took = 0
 
         def run_search(**kwargs):
             s = self.search[:0]
@@ -423,6 +425,7 @@ class ScanAggs(object):
             #    break
             response = run_search(after=after)
             self.num_searches += 1
+            self.total_took += response.took
             num_buckets = 0
 
 def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):

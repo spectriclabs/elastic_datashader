@@ -721,7 +721,7 @@ def generate_tile(idx, x, y, z, params):
             )
             
             s2 = time.time()
-            current_app.logger.info("ES took %s for %s with %s searches" % ((s2 - s1), len(df), resp.num_searches))
+            current_app.logger.info("ES took %s (%s) for %s with %s searches" % ((s2 - s1), resp.total_took, len(df), resp.num_searches))
             metrics["query_time"] = (s2 - s1)
             metrics["num_searches"] = resp.num_searches
 
