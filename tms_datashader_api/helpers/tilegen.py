@@ -217,7 +217,7 @@ def create_datashader_ellipses_from_search(
                     C = [ str(to_32bit_float(quantized)) ]
                 else:
                     #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
-                    v = get_nested_field_from_hit(hit, category_field, "None")
+                    v = get_nested_field_from_hit(hit, category_field, "N/A")
                     if category_type == "number" or type(v) in (int, float):
                         if category_format:
                             C = [ pynumeral.format(to_32bit_float(v), category_format)]
