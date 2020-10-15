@@ -65,7 +65,7 @@ def create_datashader_ellipses_from_search(
     """
     if metrics is None:
         metrics = {}
-    metrics.update({"over_max": False, "hits": 0, "ellipses": 0})
+    metrics.update({"over_max": False, "hits": 0, "locations": 0})
 
     geopoint_center = geopoint_fields["geopoint_center"]
     ellipse_major = geopoint_fields["ellipse_major"]
@@ -229,7 +229,6 @@ def create_datashader_ellipses_from_search(
                             C = v
                         else:
                             C = [ v ]
-                        c = str(v)
             else:
                 C = [ "None" ]
 
@@ -241,8 +240,154 @@ def create_datashader_ellipses_from_search(
                 for p in zip(X, Y, len(X) * [c]):
                     yield {"x": p[0], "y": p[1], "c": p[2]}
             yield NAN_LINE  # Break between ellipses
-            metrics["ellipses"] += 1
+            metrics["locations"] += 1
 
+
+def create_datashader_tracks_from_search(
+    search,
+    geopoint_fields,
+    maximum_hits_per_tile,
+    metrics=None,
+    histogram_interval=None,
+    category_format=None
+):
+    """
+
+    :param search:
+    :param geopoint_fields:
+    :param maximum_hits_per_tile:
+    :param metrics:
+    :param histogram_interval:
+    :return:
+    """
+    if metrics is None:
+        metrics = {}
+    metrics.update({"over_max": False, "hits": 0, "locations": 0})
+
+    geopoint_center = geopoint_fields["geopoint_center"]
+    category_field = geopoint_fields.get("category_field")
+    track_connection = geopoint_fields.get("track_connection")
+    category_type = geopoint_fields.get("category_type")
+
+    category_set = set()
+
+    _geopoint_center = split_fieldname_to_list(geopoint_center)
+
+    if category_field:
+        category_field = split_fieldname_to_list(category_field)
+    if track_connection:
+        track_connection = split_fieldname_to_list(track_connection)
+
+    for i, hit in enumerate(search.scan()):
+        metrics["hits"] += 1
+        # NB. this actually isn't maximum ellipses per tile, but rather
+        # maximum number of records iterated.  We might want to keep this behavior
+        # because if you ask for ellipses on a index where none of the records have ellipse
+        # point fields you could end up iterating over the entire index
+        if i >= maximum_hits_per_tile:
+            metrics["over_max"] = True
+            break
+
+        # Get all the ellipse fields
+        locs = get_nested_field_from_hit(hit, _geopoint_center, None)
+
+        # Check that we have all the fields
+        if locs is None:
+            current_app.logger.debug("hit field %s has no values", geopoint_center)
+            continue
+
+        # If its a list determine if there are multiple geos or just a single geo in list format
+        if isinstance(locs, list) or isinstance(locs, AttrList):
+            if (
+                len(locs) == 2
+                and isinstance(locs[0], float)
+                and isinstance(locs[1], float)
+            ):
+                locs = [locs]
+        else:
+            # All other cases are single ellipses
+            locs = [locs]
+
+        # process each ellipse
+        for ii in range(len(locs)):
+            loc = locs[ii]
+            if isinstance(loc, str):
+                if "," not in loc:
+                    current_app.logger.warning(
+                        "skipping loc with invalid str format %s", loc
+                    )
+                    continue
+                lat, lon = loc.split(",", 1)
+                loc = dict(lat=float(lat), lon=float(lon))
+            elif isinstance(loc, list) or isinstance(loc, AttrList):
+                if len(loc) != 2:
+                    current_app.logger.warning(
+                        "skipping loc with invalid list format %s", loc
+                    )
+                    continue
+                lon, lat = loc
+                loc = dict(lat=float(lat), lon=float(lon))
+            elif not (isinstance(loc, dict) or isinstance(loc, AttrDict)):
+                current_app.logger.warning(
+                    "skipping loc with invalid format %s %s %s",
+                    loc,
+                    isinstance(loc, list),
+                    type(loc),
+                )
+                continue
+
+            # Handle deg->Meters conversion and everything else
+            x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
+
+            if category_field:
+                if histogram_interval:
+                    # Do quantization
+                    raw = get_nested_field_from_hit(hit, category_field, 0.0)
+                    quantized = (
+                        math.floor(raw / histogram_interval) * histogram_interval
+                    )
+                    C = [ str(to_32bit_float(quantized)) ]
+                else:
+                    #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
+                    v = get_nested_field_from_hit(hit, category_field, "N/A")
+                    if category_type == "number" or type(v) in (int, float):
+                        if category_format:
+                            C = [ pynumeral.format(to_32bit_float(v), category_format)]
+                        else:
+                            C = [ str(to_32bit_float(v)) ]
+                    else:
+                        # Just use the value
+                        if isinstance(v, list):
+                            C = v
+                        else:
+                            C = [ v ]
+            else:
+                C = [ "None" ]
+            if len(C) > 100:
+                current_app.logger.warning("truncating category list of size %s to first 100 categories", len(C))
+                C = C[0:100]
+
+            #Handle tracking field
+            if track_connection:
+                v = get_nested_field_from_hit(hit, track_connection, "N/A")
+                # Just use the value
+                if isinstance(v, list):
+                    T = v
+                else:
+                    T = [ v ]
+            else:
+                T = [ "None" ]
+
+            category_set.update(C)
+            for c in C:
+                category_set.update(C)
+                for t in T:
+                    yield {"x": x0, "y": y0, "c": c, "t": t}
+            #yield NAN_LINE  # Break between ellipses
+            metrics["locations"] += 1
+
+    for c in category_set:
+        yield {"x": None, "y": None, "c": c, "t": None}
 
 def generate_nonaggregated_tile(
     idx, x, y, z, params, tile_height_px=256, tile_width_px=256
@@ -266,7 +411,8 @@ def generate_nonaggregated_tile(
     ellipse_minor = params["ellipse_minor"]
     ellipse_tilt = params["ellipse_tilt"]
     ellipse_units = params["ellipse_units"]
-    ellipse_max_cep = params["ellipse_max_cep"]
+    search_distance = params["search_distance"]
+    track_connection = params["track_connection"]
     max_batch = params["max_batch"]
     max_bins = params["max_bins"]
     max_ellipses_per_tile = params["max_ellipses_per_tile"]
@@ -275,10 +421,12 @@ def generate_nonaggregated_tile(
     )
     global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt", None)
     global_bounds = params.get("generated_params", {}).get("global_bounds", None)
+    render_mode = params["render_mode"]
 
     current_app.logger.info(
-        "Generating ellipse tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"
+        "Generating non-aggegated (%s) tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"
         % (
+            render_mode,
             idx,
             z,
             x,
@@ -302,8 +450,8 @@ def generate_nonaggregated_tile(
         if y_range[0] > y_range[1]:
             y_range = y_range[1], y_range[0]
 
-        # Expand this by maximum CEP value to get adjacent geos that overlap into our tile
-        extend_meters = ellipse_max_cep * 1852
+        # Expand this by search_distance value to get adjacent geos that overlap into our tile
+        extend_meters = search_distance * 1852
 
         # Get the top_left/bot_rght for the tile
         top_left = mu.lnglat(
@@ -349,49 +497,81 @@ def generate_nonaggregated_tile(
             elif category_field.endswith(".raw"):
                 category_field = category_field[: -len(".raw")]
 
-        # Handle the limiting to only the fields required for processing
-        geopoint_fields = {
-            "geopoint_center": geopoint_field,
-            "ellipse_major": ellipse_major,
-            "ellipse_minor": ellipse_minor,
-            "ellipse_tilt": ellipse_tilt,
-            "ellipse_units": ellipse_units,
-            "category_field": category_field,
-        }
-        includes_fields = list(
-            filter(
-                lambda x: x is not None,
-                [
-                    geopoint_field,
-                    ellipse_major,
-                    ellipse_minor,
-                    ellipse_tilt,
-                    category_field,
-                ],
-            )
-        )
-        count_s = count_s.source(includes=includes_fields)
-
         # Process the hits (geos) into a list of points
         s1 = time.time()
         metrics = dict(over_max=False)
-        df = pd.DataFrame.from_dict(
-            create_datashader_ellipses_from_search(
-                count_s,
-                geopoint_fields,
-                max_ellipses_per_tile,
-                extend_meters,
-                metrics,
-                histogram_interval,
-                category_format
+        if render_mode == "ellipses":
+            geopoint_fields = {
+                "geopoint_center": geopoint_field,
+                "ellipse_major": ellipse_major,
+                "ellipse_minor": ellipse_minor,
+                "ellipse_tilt": ellipse_tilt,
+                "ellipse_units": ellipse_units,
+                "category_field": category_field,
+            }
+            includes_fields = list(
+                filter(
+                    lambda x: x is not None,
+                    [
+                        geopoint_field,
+                        ellipse_major,
+                        ellipse_minor,
+                        ellipse_tilt,
+                        category_field,
+                    ],
+                )
             )
-        )
+            count_s = count_s.source(includes=includes_fields)
+            df = pd.DataFrame.from_dict(
+                create_datashader_ellipses_from_search(
+                    count_s,
+                    geopoint_fields,
+                    max_ellipses_per_tile,
+                    extend_meters,
+                    metrics,
+                    histogram_interval,
+                    category_format
+                )
+            )
+        else:
+            geopoint_fields = {
+                "geopoint_center": geopoint_field,
+                "track_connection": track_connection,
+                "category_field": category_field
+            }
+            includes_fields = list(
+                filter(
+                    lambda x: x is not None,
+                    [
+                        geopoint_field,
+                        track_connection,
+                        category_field,
+                    ],
+                )
+            )
+            df = pd.DataFrame.from_dict(
+                create_datashader_tracks_from_search(
+                    count_s,
+                    geopoint_fields,
+                    max_ellipses_per_tile,
+                    metrics,
+                    histogram_interval,
+                    category_format
+                )
+            )
+
+            #Sort by category (if used) and then tracking value
+            if len(df) != 0:
+                if category_field:
+                    df.sort_values(["c","t"], inplace=True)
+                else:
+                    df.sort_values(["t"], inplace=True)
         s2 = time.time()
 
         current_app.logger.debug(
-            "ES took %s for ellipses: %s   hits: %s",
+            "ES took %s for locations: %s   hits: %s",
             (s2 - s1),
-            metrics.get("ellipses", 0),
+            metrics.get("locations", 0),
             metrics.get("hits", 0),
         )
         metrics["query_time"] = (s2 - s1)
@@ -487,7 +667,6 @@ def generate_nonaggregated_tile(
             "An exception occured while attempting to generate a tile:"
         )
         raise
-
 
 def generate_tile(idx, x, y, z, params):
 

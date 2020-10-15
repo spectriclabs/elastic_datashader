@@ -403,7 +403,7 @@ def get_tms(idx, x: int, y: int, z: int):
         # Separate call for ellipse
         t1 = datetime.now()
         try:
-            if params["ellipses"]:
+            if params["render_mode"] in ["ellipses", "tracks"]:
                 img, metrics = generate_nonaggregated_tile(idx, x, y, z, params)
             else:
                 img, metrics = generate_tile(idx, x, y, z, params)

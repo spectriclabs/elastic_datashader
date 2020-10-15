@@ -43,12 +43,13 @@ def extract_parameters(request):
         "category_format": None,
         "category_histogram": None,
         "highlight": None,
-        "ellipses": False,
+        "render_mode": "points",
         "ellipse_major": "",
         "ellipse_minor": "",
         "ellipse_tilt": "",
         "ellipse_units": "",
-        "ellipse_max_cep": 50,
+        "search_distance": 50,
+        "track_connection": None,
         "spread": None,
         "span_range": None,
         "resolution": "finest",
@@ -86,10 +87,8 @@ def extract_parameters(request):
         return resp
 
     # Custom parameters can be provided by the URL
-    params["ellipses"] = request.args.get("ellipses", default=params["ellipses"])
-    if params["ellipses"] == "false" or params["ellipses"] == "False":
-        params["ellipses"] = False
-    else:
+    params["render_mode"] = request.args.get("render_mode", default=params["render_mode"])
+    if params["render_mode"] == "ellipses":
         # Handle the other fields
         params["ellipse_major"] = request.args.get("ellipse_major", default="")
         params["ellipse_minor"] = request.args.get("ellipse_minor", default="")
@@ -97,16 +96,26 @@ def extract_parameters(request):
         params["ellipse_units"] = request.args.get("ellipse_units", default="")
         if (
             params["ellipse_major"] == ""
-            or params["ellipse_major"] == ""
-            or params["ellipse_major"] == ""
+            or params["ellipse_minor"] == ""
+            or params["ellipse_tilt"] == ""
         ):
-            params["ellipses"] = False
+            params["render_mode"] = "points"
+    
+    #Reduce this to just "search" -> "search_distance" once Kibana is changed
     if request.args.get("ellipse_search", default="") == "narrow":
-        params["ellipse_max_cep"] = 1.0
+        params["search_distance"] = 1.0
     elif request.args.get("ellipse_search", default="") == "normal":
-        params["ellipse_max_cep"] = 10.0
+        params["search_distance"] = 10.0
     elif request.args.get("ellipse_search", default="") == "wide":
-        params["ellipse_max_cep"] = 50.0
+        params["search_distance"] = 50.0
+    if request.args.get("track_search", default="") == "narrow":
+        params["search_distance"] = 1.0
+    elif request.args.get("track_search", default="") == "normal":
+        params["search_distance"] = 10.0
+    elif request.args.get("track_search", default="") == "wide":
+        params["search_distance"] = 50.0
+
+    params["track_connection"] = request.args.get("track_connection", default=params["track_connection"])
 
     params["category_field"] = request.args.get(
         "category_field", default=params["category_field"]
