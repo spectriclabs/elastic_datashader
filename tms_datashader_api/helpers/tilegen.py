@@ -415,7 +415,7 @@ def generate_nonaggregated_tile(
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("over_max"):
                 img = gen_overlay(img)
-            if current_app.config.get("DEBUG_TILES"):
+            if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         else:
             categories = list( df["c"].unique() )
@@ -436,7 +436,7 @@ def generate_nonaggregated_tile(
 
             if len(df.index) == 0:
                 img = gen_empty(tile_width_px, tile_height_px)
-                if current_app.config.get("DEBUG_TILES"):
+                if params.get("debug"):
                     img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
             else:
                 agg = ds.Canvas(
@@ -482,7 +482,7 @@ def generate_nonaggregated_tile(
                     current_app.logger.info("Generating overlay for tile")
                     img = gen_overlay(img)
 
-        if current_app.config.get("DEBUG_TILES"):
+        if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         # Set headers and return data
         return img, metrics
@@ -585,7 +585,7 @@ def generate_tile(idx, x, y, z, params):
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
             img = gen_empty(tile_width_px, tile_height_px)
-            if current_app.config.get("DEBUG_TILES"):
+            if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
             return img, metrics
         else:
@@ -762,7 +762,7 @@ def generate_tile(idx, x, y, z, params):
 
             if len(df.index) == 0:
                 img = gen_empty(tile_width_px, tile_height_px)
-                if current_app.config.get("DEBUG_TILES"):
+                if params.get("debug"):
                     img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
                 return img, metrics
             else:
@@ -891,7 +891,7 @@ def generate_tile(idx, x, y, z, params):
                     )
                     img = gen_overlay(img)
 
-        if current_app.config.get("DEBUG_TILES"):
+        if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
 
         # Set headers and return data

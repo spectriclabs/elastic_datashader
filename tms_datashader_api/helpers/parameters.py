@@ -56,6 +56,7 @@ def extract_parameters(request):
         "max_bins": int(current_app.config["MAX_BINS"]),
         "max_batch": int(current_app.config["MAX_BATCH"]),
         "max_ellipses_per_tile": int(current_app.config["MAX_ELLIPSES_PER_TILE"]),
+        "debug": False,
     }
 
     # Extract user from headers
@@ -190,6 +191,8 @@ def extract_parameters(request):
     if params["geopoint_field"] is None:
         current_app.logger.error("missing geopoint_field")
         raise Exception("missing geopoint_field")
+
+    params["debug"] = ( request.args.get("debug", default=False) == 'true' )
 
     # Calculate a hash value for the specific parameter set
     parameter_hash = hashlib.md5()
