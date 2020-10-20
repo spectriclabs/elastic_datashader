@@ -64,10 +64,10 @@ def xy_bounds(xtile, ytile, zoom):
 
 
 @numba.njit(fastmath=True)
-def bounds(xtile, ytile, zoom):
+def bounds(xtile, ytile, zoom, epsilon=1.0e-9):
     a = ul(xtile, ytile, zoom)
     b = ul(xtile + 1, ytile + 1, zoom)
-    return a[0], b[1], b[0], a[1]  # west, south, east, north
+    return a[0], b[1] + epsilon, b[0] - epsilon, a[1]  # west, south, east, north
 
 @numba.njit(fastmath=True)
 def center(xtile, ytile, zoom):
