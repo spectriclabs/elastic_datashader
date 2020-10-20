@@ -415,6 +415,8 @@ def generate_nonaggregated_tile(
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("over_max"):
                 img = gen_overlay(img)
+            if current_app.config.get("DEBUG_TILES"):
+                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         else:
             categories = list( df["c"].unique() )
             metrics["categories"] = json.dumps(categories)
@@ -434,6 +436,8 @@ def generate_nonaggregated_tile(
 
             if len(df.index) == 0:
                 img = gen_empty(tile_width_px, tile_height_px)
+                if current_app.config.get("DEBUG_TILES"):
+                    img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
             else:
                 agg = ds.Canvas(
                     plot_width=tile_width_px,
@@ -580,7 +584,10 @@ def generate_tile(idx, x, y, z, params):
         # If count is zero then return a null image
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
-            return gen_empty(tile_width_px, tile_height_px), metrics
+            img = gen_empty(tile_width_px, tile_height_px)
+            if current_app.config.get("DEBUG_TILES"):
+                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+            return img, metrics
         else:
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
@@ -754,7 +761,10 @@ def generate_tile(idx, x, y, z, params):
                 )
 
             if len(df.index) == 0:
-                return gen_empty(tile_width_px, tile_height_px), metrics
+                img = gen_empty(tile_width_px, tile_height_px)
+                if current_app.config.get("DEBUG_TILES"):
+                    img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+                return img, metrics
             else:
                 ###############################################################
                 # Category Mode
