@@ -49,7 +49,7 @@ def create_datashader_ellipses_from_search(
     search,
     geopoint_fields,
     maximum_ellipses_per_tile,
-    extend_meters,
+    search_meters,
     metrics=None,
     histogram_interval=None,
     category_format=None
@@ -59,7 +59,7 @@ def create_datashader_ellipses_from_search(
     :param search:
     :param geopoint_fields:
     :param maximum_ellipses_per_tile:
-    :param extend_meters:
+    :param search_meters:
     :param metrics:
     :param histogram_interval:
     :return:
@@ -186,7 +186,7 @@ def create_datashader_ellipses_from_search(
             # NB. assume "majmin_m" if any others
 
             # expel above CEP limit
-            if major > extend_meters or minor > extend_meters:
+            if major > search_meters or minor > search_meters:
                 continue
 
             ellipse_render_mode = current_app.config["ELLIPSE_RENDER_MODE"]
@@ -387,8 +387,8 @@ def create_datashader_tracks_from_search(
             #yield NAN_LINE  # Break between ellipses
             metrics["locations"] += 1
 
-    for c in category_set:
-        yield {"x": None, "y": None, "c": c, "t": None}
+    #for c in category_set:
+    #    yield {"x": None, "y": None, "c": c, "t": None}
 
 def generate_nonaggregated_tile(
     idx, x, y, z, params, tile_height_px=256, tile_width_px=256
@@ -452,14 +452,15 @@ def generate_nonaggregated_tile(
             y_range = y_range[1], y_range[0]
 
         # Expand this by search_distance value to get adjacent geos that overlap into our tile
-        extend_meters = search_distance * 1852
+        search_meters = search_distance * 1852
+        boundary_extension = search_meters*1.5 #Search slightly beyond to reduce literal corner cases
 
         # Get the top_left/bot_rght for the tile
         top_left = mu.lnglat(
-            x_range[0] - extend_meters, y_range[1] + extend_meters
+            x_range[0] - boundary_extension, y_range[1] + boundary_extension
         )
         bot_rght = mu.lnglat(
-            x_range[1] + extend_meters, y_range[0] - extend_meters
+            x_range[1] + boundary_extension, y_range[0] - boundary_extension
         )
 
         bb_dict = {
@@ -528,7 +529,7 @@ def generate_nonaggregated_tile(
                     count_s,
                     geopoint_fields,
                     max_ellipses_per_tile,
-                    extend_meters,
+                    search_meters,
                     metrics,
                     histogram_interval,
                     category_format
@@ -577,22 +578,22 @@ def generate_nonaggregated_tile(
                 if old_row.get("c") != row.get("c"):
                     #new category, so insert space in the tracks dicts and add to the start dicts
                     split_dicts.append(blank_row)
-                    start_points_dicts.append(row)
+                    start_points_dicts.append(old_row)
                 elif not np.isnan(row.get("x")) and \
                         not np.isnan(row.get("y")) and \
                         not np.isnan(old_row.get("x")) and \
                         not np.isnan(old_row.get("y")) :
                     distance = np.sqrt(np.power(row.get("x")-old_row.get("x"), 2)+np.power(row.get("y")-old_row.get("y"), 2))
-                    if distance > extend_meters:
+                    if distance > search_meters:
                         #These points are too far apart, split them as different tracks
                         split_dicts.append(blank_row)
                         split_dicts.append(row)
-                        start_points_dicts.append(row)
                 split_dicts.append(row)
                 old_row = row
+            #last one is always an end-point
+            start_points_dicts.append(old_row)
 
             df = pd.DataFrame.from_dict(split_dicts)
-            #TODO: Utilize these to mark start points
             df_points = pd.DataFrame.from_dict(start_points_dicts)
         s2 = time.time()
 
@@ -636,6 +637,16 @@ def generate_nonaggregated_tile(
                 create_color_key(df["c"].cat.categories, cmap=cmap),
                 inplace=True,
             )
+            #now for the points as well
+            df_points["c"] = df_points["c"].astype("category")
+            # prevent memory explosion in datashader _colorize
+            _, points_color_key = simplify_categories(
+                df_points,
+                "c",
+                create_color_key(df_points["c"].cat.categories, cmap=cmap),
+                inplace=True,
+            )
+
 
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
@@ -646,6 +657,13 @@ def generate_nonaggregated_tile(
                 x_range=x_range,
                 y_range=y_range,
             ).line(df, "x", "y", agg=rd.count_cat("c"))
+            points_agg = ds.Canvas(
+                plot_width=tile_width_px,
+                plot_height=tile_height_px,
+                x_range=x_range,
+                y_range=y_range,
+            ).points(df_points, "x", "y", agg=rd.count_cat("c"))
+
 
             span = None
             if span_range == "flat":
@@ -673,9 +691,23 @@ def generate_nonaggregated_tile(
                 how="log",
                 span=span,
             )
+            points_img = tf.shade(
+                points_agg,
+                cmap=cc.palette[cmap],
+                color_key=points_color_key,
+                min_alpha=min_alpha,
+                how="log",
+                span=span,
+            )
 
             if (spread is not None) and (spread > 0):
                 img = tf.spread(img, spread)
+            
+            #Spread to squares
+            points_img = tf.spread(points_img, 4, shape='square')
+
+            #Stack end markers onto the tracks
+            img = tf.stack(img, points_img)
 
             img = img.to_bytesio().read()
             if metrics.get("over_max"):
@@ -849,7 +881,7 @@ def generate_tile(idx, x, y, z, params):
             s1 = time.time()
 
             inner_aggs = {}
-            # TOOD if we are pixel locked, calcuating a centriod seems unnecessary
+            # TODO if we are pixel locked, calcuating a centriod seems unnecessary
             category_filters = None
             inner_agg_size = None
             if category_field and histogram_interval == None: # Category Mode
