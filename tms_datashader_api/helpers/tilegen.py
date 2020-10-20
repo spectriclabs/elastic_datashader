@@ -725,17 +725,16 @@ def generate_tile(idx, x, y, z, params):
         if y_range[0] > y_range[1]:
             y_range = y_range[1], y_range[0]
         # Get the top_left/bot_rght for the tile
-        top_left = mu.lnglat(x_range[0], y_range[1])
-        bot_rght = mu.lnglat(x_range[1], y_range[0])
+        west, south, east, north = mu.bounds(x, y, z)
         # Constrain exactly to map boundaries
         bb_dict = {
             "top_left": {
-                "lat": min(90, max(-90, top_left[1])),
-                "lon": min(180, max(-180, top_left[0])),
+                "lat": min(90, max(-90, north)),
+                "lon": min(180, max(-180, west)),
             },
             "bottom_right": {
-                "lat": min(90, max(-90, bot_rght[1])),
-                "lon": min(180, max(-180, bot_rght[0])),
+                "lat": min(90, max(-90, south)),
+                "lon": min(180, max(-180, east)),
             },
         }
 

@@ -447,26 +447,29 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
     category_filters = {}
     category_legend = {}
 
-    bounds = mercantile.bounds(x, y, z)
+    west, south, east, north = mu.bounds(x, y, z)
     bb_dict = {
         "top_left": {
-            "lat": min(90, max(-90, bounds.north)),
-            "lon": min(180, max(-180, bounds.west)),
+            "lat": min(90, max(-90, north)),
+            "lon": min(180, max(-180, west)),
         },
         "bottom_right": {
-            "lat": min(90, max(-90, bounds.south)),
-            "lon": min(180, max(-180, bounds.east)),
+            "lat": min(90, max(-90, south)),
+            "lon": min(180, max(-180, east)),
         },
     }
-
     cat_s = copy.copy(base_s)
     cat_s = cat_s.params(size=0)
     cat_s = cat_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
-    cat_s.aggs.bucket("categories", "terms", field=category_field, size=size)
+    cat_s.aggs.bucket("categories", "terms", field=category_field, size=size, missing="N/A")
     response = cat_s.execute()
     for ii, category in enumerate(response.aggregations.categories):
-        category_filters[str(category.key)] = { "term": {category_field: category.key} }
-        category_legend[str(category.key)] = category.doc_count
+        if category.key != "N/A":
+            category_filters[str(category.key)] = { "term": {category_field: category.key} }
+            category_legend[str(category.key)] = category.doc_count
+        else:
+            category_filters["N/A"] = { "bool": {"must_not": { "exists": { "field" : category_field} } } }
+            category_legend[str(category.key)] = category.doc_count
     category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
 
     return category_filters, category_legend
