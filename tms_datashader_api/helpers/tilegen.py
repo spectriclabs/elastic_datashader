@@ -15,6 +15,7 @@ from elasticsearch_dsl.aggs import Bucket
 from flask import current_app, request
 from numpy import pi
 from datashader.utils import lnglat_to_meters
+import numpy as np
 
 import tms_datashader_api.helpers.mercantile_util as mu
 from tms_datashader_api.helpers.drawing import (
@@ -566,6 +567,33 @@ def generate_nonaggregated_tile(
                     df.sort_values(["c","t"], inplace=True)
                 else:
                     df.sort_values(["t"], inplace=True)
+
+            #Now we need to iterate through the list so far and separate by different colors/distances
+            split_dicts = []
+            start_points_dicts = []
+            blank_row = {"x": np.nan, "y": np.nan, "c": None, "t": None}
+            old_row = blank_row
+            for index, row in df.iterrows():
+                if old_row.get("c") != row.get("c"):
+                    #new category, so insert space in the tracks dicts and add to the start dicts
+                    split_dicts.append(blank_row)
+                    start_points_dicts.append(row)
+                elif not np.isnan(row.get("x")) and \
+                        not np.isnan(row.get("y")) and \
+                        not np.isnan(old_row.get("x")) and \
+                        not np.isnan(old_row.get("y")) :
+                    distance = np.sqrt(np.power(row.get("x")-old_row.get("x"), 2)+np.power(row.get("y")-old_row.get("y"), 2))
+                    if distance > extend_meters:
+                        #These points are too far apart, split them as different tracks
+                        split_dicts.append(blank_row)
+                        split_dicts.append(row)
+                        start_points_dicts.append(row)
+                split_dicts.append(row)
+                old_row = row
+
+            df = pd.DataFrame.from_dict(split_dicts)
+            #TODO: Utilize these to mark start points
+            df_points = pd.DataFrame.from_dict(start_points_dicts)
         s2 = time.time()
 
         current_app.logger.debug(
@@ -612,51 +640,48 @@ def generate_nonaggregated_tile(
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
 
-            if len(df.index) == 0:
-                img = gen_empty(tile_width_px, tile_height_px)
+            agg = ds.Canvas(
+                plot_width=tile_width_px,
+                plot_height=tile_height_px,
+                x_range=x_range,
+                y_range=y_range,
+            ).line(df, "x", "y", agg=rd.count_cat("c"))
+
+            span = None
+            if span_range == "flat":
+                min_alpha = 255
+            elif span_range == "narrow":
+                span = [0, math.log(1e3)]
+                min_alpha = 200
+            elif span_range == "normal":
+                span = [0, math.log(1e6)]
+                min_alpha = 100
+            elif span_range == "wide":
+                span = [0, math.log(1e9)]
+                min_alpha = 50
             else:
-                agg = ds.Canvas(
-                    plot_width=tile_width_px,
-                    plot_height=tile_height_px,
-                    x_range=x_range,
-                    y_range=y_range,
-                ).line(df, "x", "y", agg=rd.count_cat("c"))
+                assert estimated_points_per_tile is not None
+                span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
+                alpha_span = int(span[1]) * 25
+                min_alpha = 255 - min(alpha_span, 225)
 
-                span = None
-                if span_range == "flat":
-                    min_alpha = 255
-                elif span_range == "narrow":
-                    span = [0, math.log(1e3)]
-                    min_alpha = 200
-                elif span_range == "normal":
-                    span = [0, math.log(1e6)]
-                    min_alpha = 100
-                elif span_range == "wide":
-                    span = [0, math.log(1e9)]
-                    min_alpha = 50
-                else:
-                    assert estimated_points_per_tile is not None
-                    span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
-                    alpha_span = int(span[1]) * 25
-                    min_alpha = 255 - min(alpha_span, 225)
+            img = tf.shade(
+                agg,
+                cmap=cc.palette[cmap],
+                color_key=color_key,
+                min_alpha=min_alpha,
+                how="log",
+                span=span,
+            )
 
-                img = tf.shade(
-                    agg,
-                    cmap=cc.palette[cmap],
-                    color_key=color_key,
-                    min_alpha=min_alpha,
-                    how="log",
-                    span=span,
-                )
+            if (spread is not None) and (spread > 0):
+                img = tf.spread(img, spread)
 
-                if (spread is not None) and (spread > 0):
-                    img = tf.spread(img, spread)
-
-                img = img.to_bytesio().read()
-                if metrics.get("over_max"):
-                    # Put hashing on image to indicate that it is over maximum
-                    current_app.logger.info("Generating overlay for tile")
-                    img = gen_overlay(img)
+            img = img.to_bytesio().read()
+            if metrics.get("over_max"):
+                # Put hashing on image to indicate that it is over maximum
+                current_app.logger.info("Generating overlay for tile")
+                img = gen_overlay(img)
 
         if current_app.config.get("DEBUG_TILES"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
