@@ -702,9 +702,10 @@ def generate_nonaggregated_tile(
 
             if (spread is not None) and (spread > 0):
                 img = tf.spread(img, spread)
-            
-            #Spread to squares
-            points_img = tf.spread(points_img, 4, shape='square')
+                #Spread squares x3
+                points_img = tf.spread(points_img, spread*3, shape='square')
+            else:
+                points_img = tf.spread(points_img, 2, shape='square')
 
             #Stack end markers onto the tracks
             img = tf.stack(img, points_img)
