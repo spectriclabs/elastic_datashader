@@ -465,10 +465,15 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
     cat_s = cat_s.params(size=0)
     cat_s = cat_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
     cat_s.aggs.bucket("categories", "terms", field=category_field, size=size)
+    cat_s.aggs.bucket("missing", "filter", bool={ "must_not" : { "exists": { "field": category_field } } })
     response = cat_s.execute()
-    for ii, category in enumerate(response.aggregations.categories):
-        category_filters[str(category.key)] = { "term": {category_field: category.key} }
-        category_legend[str(category.key)] = category.doc_count
+    if hasattr(response.aggregations, "categories"):
+        for ii, category in enumerate(response.aggregations.categories):
+            category_filters[str(category.key)] = { "term": {category_field: category.key} }
+            category_legend[str(category.key)] = category.doc_count
+    if hasattr(response.aggregations, "missing") and response.aggregations.missing.doc_count > 0:
+        category_filters["N/A"] = { "bool": { "must_not" : { "exists": { "field": category_field } } } }
+        category_legend["N/A"] = response.aggregations.missing.doc_count
     category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
 
     return category_filters, category_legend
