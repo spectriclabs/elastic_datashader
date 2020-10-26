@@ -104,8 +104,19 @@ def provide_legend(idx, field_name):
     if params and params != "{params}":
         params = json.loads(params)
         extent = params.get("extent")
+    
+    zoom = params.get("zoom")
+    if (zoom is None) and extent:
+        zoom = mercantile.bounding_tile(
+            max(-180.0, extent["minLon"]),
+            max(-90.0, extent["minLat"]),
+            max(180.0, extent["maxLon"]),
+            max(90.0, extent["maxLat"]),
+        ).z - 1
+    elif (zoom is None) and not extent:
+        return legend_response("[]", "no zoom")
 
-    zoom = int(params.get("zoom"))
+    zoom = int(zoom)
 
     # Get hash and parameters
     try:
