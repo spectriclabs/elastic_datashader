@@ -23,9 +23,10 @@ class Config(object):
     MAX_ELLIPSES_PER_TILE = int(os.environ.get("DATASHADER_MAX_BATCH", 100000))
     HEADER_FILE = os.environ.get("DATASHADER_HEADER_FILE", "./headers.yaml")
     WHITELIST_HEADERS = os.environ.get("DATASHADER_WHITELIST_HEADERS", None)
-    DEBUG_TILES = os.environ.get("DATASHADER_DEBUG_TILES", False)
     NUM_ELLIPSE_POINTS = os.environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)
     ELLIPSE_RENDER_MODE = os.environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix")
     PORT = None
     HOSTNAME = socket.getfqdn()
     MAX_LEGEND_ITEMS_PER_TILE = int(os.environ.get("MAX_LEGEND_ITEMS_PER_TILE", 20))
+    QUERY_TIMEOUT = int(os.environ.get("DATASHADER_QUERY_TIMEOUT", 0))
+

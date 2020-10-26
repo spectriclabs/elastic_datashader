@@ -19,7 +19,7 @@ def test_config_defaults():
     assert config.Config.MAX_ELLIPSES_PER_TILE == 100000
     assert config.Config.HEADER_FILE == "./headers.yaml"
     assert config.Config.WHITELIST_HEADERS is None
-    assert not config.Config.DEBUG_TILES
+    assert config.Config.QUERY_TIMEOUT == 0
     assert config.Config.PORT is None
     assert config.Config.HOSTNAME == socket.getfqdn()
 
@@ -39,6 +39,7 @@ def test_config_env():
             "DATASHADER_HEADER_FILE": "./headers-foo.yaml",
             "DATASHADER_WHITELIST_HEADERS": "blah",
             "DATASHADER_DEBUG_TILES": "True",
+            "DATASHADER_QUERY_TIMEOUT": "1",
         }
     )
     from tms_datashader_api.helpers import config
@@ -57,6 +58,6 @@ def test_config_env():
     assert config.Config.MAX_ELLIPSES_PER_TILE == 1000
     assert config.Config.HEADER_FILE == "./headers-foo.yaml"
     assert config.Config.WHITELIST_HEADERS == "blah"
-    assert config.Config.DEBUG_TILES
+    assert config.Config.QUERY_TIMEOUT == 1
     assert config.Config.PORT is None
     assert config.Config.HOSTNAME == socket.getfqdn()

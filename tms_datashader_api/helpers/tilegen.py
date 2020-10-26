@@ -84,7 +84,17 @@ def create_datashader_ellipses_from_search(
     if category_field:
         category_field = split_fieldname_to_list(category_field)
 
+    timeout_at = None
+    if current_app.config["QUERY_TIMEOUT"]:
+        timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
+        search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
+
     for i, hit in enumerate(search.scan()):
+        if timeout_at and (time.time() > timeout_at):
+            current_app.logger.warning("ellipse generation hit query timeout")
+            metrics["aborted"] = True
+            break
+
         metrics["hits"] += 1
         # NB. this actually isn't maximum ellipses per tile, but rather
         # maximum number of records iterated.  We might want to keep this behavior
@@ -623,7 +633,7 @@ def generate_nonaggregated_tile(
 
         # Estimate the number of points per tile assuming uniform density
         estimated_points_per_tile = None
-        if span_range == "auto" or span_range is None:
+        if (span_range == "auto" or span_range is None) and global_bounds:
             num_tiles_at_level = mu.num_tiles(*global_bounds, z)
             estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
             current_app.logger.debug(
@@ -640,6 +650,10 @@ def generate_nonaggregated_tile(
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("over_max"):
                 img = gen_overlay(img)
+            elif metrics.get("aborted"):
+                img = gen_overlay(img, color=(128, 128, 128, 64))
+            if params.get("debug"):
+                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         else:
             categories = list( df["c"].unique() )
             metrics["categories"] = json.dumps(categories)
@@ -731,8 +745,10 @@ def generate_nonaggregated_tile(
                 # Put hashing on image to indicate that it is over maximum
                 current_app.logger.info("Generating overlay for tile")
                 img = gen_overlay(img)
+            elif metrics.get("aborted"):
+                img = gen_overlay(img, color=(128, 128, 128, 64))
 
-        if current_app.config.get("DEBUG_TILES"):
+        if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         # Set headers and return data
         return img, metrics
@@ -790,6 +806,7 @@ def generate_tile(idx, x, y, z, params):
 
         # Get the web mercador bounds for the tile
         xy_bounds = mu.xy_bounds(x, y, z)
+        west, south, east, north = mu.bounds(x, y, z)
         # Calculate the x/y range in meters
         x_range = xy_bounds[0], xy_bounds[2]
         y_range = xy_bounds[1], xy_bounds[3]
@@ -804,12 +821,12 @@ def generate_tile(idx, x, y, z, params):
         # Constrain exactly to map boundaries
         bb_dict = {
             "top_left": {
-                "lat": min(90, max(-90, top_left[1])),
-                "lon": min(180, max(-180, top_left[0])),
+                "lat": min(90, max(-90, north)),
+                "lon": min(180, max(-180, west)),
             },
             "bottom_right": {
-                "lat": min(90, max(-90, bot_rght[1])),
-                "lon": min(180, max(-180, bot_rght[0])),
+                "lat": min(90, max(-90, south)),
+                "lon": min(180, max(-180, east)),
             },
         }
 
@@ -833,7 +850,12 @@ def generate_tile(idx, x, y, z, params):
         # If count is zero then return a null image
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
-            return gen_empty(tile_width_px, tile_height_px), metrics
+            img = gen_empty(tile_width_px, tile_height_px)
+            if metrics.get("aborted"):
+                img = gen_overlay(img, color=(128, 128, 128, 64))
+            if params.get("debug"):
+                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+            return img, metrics
         else:
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
@@ -972,7 +994,8 @@ def generate_tile(idx, x, y, z, params):
                 tile_s,
                 {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
                 inner_aggs,
-                size=composite_agg_size
+                size=composite_agg_size,
+                timeout=current_app.config["QUERY_TIMEOUT"]
             )
 
             partial_data = False # TODO can we get partial data?
@@ -992,10 +1015,11 @@ def generate_tile(idx, x, y, z, params):
             metrics["query_time"] = (s2 - s1)
             metrics["query_took"] = resp.total_took
             metrics["num_searches"] = resp.num_searches
+            metrics["aborted"] = resp.aborted
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
-            if span_range == "auto" or span_range is None:
+            if (span_range == "auto" or span_range is None) and global_bounds:
                 num_tiles_at_level = mu.num_tiles(*global_bounds, z)
                 estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
                 current_app.logger.debug(
@@ -1007,7 +1031,12 @@ def generate_tile(idx, x, y, z, params):
                 )
 
             if len(df.index) == 0:
-                return gen_empty(tile_width_px, tile_height_px), metrics
+                img = gen_empty(tile_width_px, tile_height_px)
+                if metrics.get("aborted"):
+                    img = gen_overlay(img, color=(128, 128, 128, 64))
+                if params.get("debug"):
+                    img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+                return img, metrics
             else:
                 ###############################################################
                 # Category Mode
@@ -1133,8 +1162,10 @@ def generate_tile(idx, x, y, z, params):
                         "Generating overlay for tile due to partial category data"
                     )
                     img = gen_overlay(img)
+                elif metrics.get("aborted"):
+                    img = gen_overlay(img, color=(128, 128, 128, 64))
 
-        if current_app.config.get("DEBUG_TILES"):
+        if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
 
         # Set headers and return data

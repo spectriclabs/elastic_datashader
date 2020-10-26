@@ -41,7 +41,7 @@ def create_color_key(
 
 
 @lru_cache(10)
-def gen_overlay_img(width: int, height: int, thickness: int) -> Image:
+def gen_overlay_img(width: int, height: int, thickness: int, color: tuple = (255, 0, 0, 64)) -> Image:
     """Create an overlay hash image, using an lru_cache since the same
     overlay can be generated once and then reused indefinitely
 
@@ -52,7 +52,6 @@ def gen_overlay_img(width: int, height: int, thickness: int) -> Image:
     """
     overlay = Image.new("RGBA", (width, height))
     draw = ImageDraw.Draw(overlay)
-    color = (255, 0, 0, 64)
     for s in range(0, max(height, width), thickness * 2):
         draw.line([(s - width, s + height), (s + width, s - height)], color, thickness)
     return overlay
@@ -77,7 +76,7 @@ def gen_debug_img(width: int, height: int, text: str, thickness: int = 2) -> Ima
     return overlay
 
 
-def gen_overlay(img, thickness: int = 8) -> bytes:
+def gen_overlay(img, thickness: int = 8, color: tuple = (255, 0, 0, 64)) -> bytes:
     """Generate and overlay to image
 
     :param img: Image over which to add an overlay
@@ -85,7 +84,7 @@ def gen_overlay(img, thickness: int = 8) -> bytes:
     :return: Image bytes
     """
     base = Image.open(io.BytesIO(img))
-    overlay = gen_overlay_img(*base.size, thickness=thickness)
+    overlay = gen_overlay_img(*base.size, thickness=thickness, color=color)
     out = Image.alpha_composite(base, overlay)
     with io.BytesIO() as output:
         out.save(output, format="PNG")
@@ -108,7 +107,7 @@ def gen_debug_overlay(img: bytes, text: str) -> bytes:
 
 
 @lru_cache(10)
-def gen_error(width: int, height: int, thickness: int = 8) -> bytes:
+def gen_error(width: int, height: int, thickness: int = 8, color: tuple = (255, 0, 0, 255)) -> bytes:
     """Generate error image
 
     :param width: Width of image
@@ -120,7 +119,6 @@ def gen_error(width: int, height: int, thickness: int = 8) -> bytes:
     draw = ImageDraw.Draw(overlay)
 
     # Draw a red border
-    color = (255, 0, 0, 255)
     draw.line([(0, 0), (width, height)], color, thickness)
     draw.line([(width, 0), (0, height)], color, thickness)
 
