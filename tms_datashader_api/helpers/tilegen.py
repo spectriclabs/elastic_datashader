@@ -83,7 +83,17 @@ def create_datashader_ellipses_from_search(
     if category_field:
         category_field = split_fieldname_to_list(category_field)
 
+    timeout_at = None
+    if current_app.config["QUERY_TIMEOUT"]:
+        timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
+        search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
+
     for i, hit in enumerate(search.scan()):
+        if timeout_at and (time.time() > timeout_at):
+            current_app.logger.warning("ellipse generation hit query timeout")
+            metrics["aborted"] = True
+            break
+
         metrics["hits"] += 1
         # NB. this actually isn't maximum ellipses per tile, but rather
         # maximum number of records iterated.  We might want to keep this behavior
@@ -415,6 +425,8 @@ def generate_nonaggregated_tile(
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("over_max"):
                 img = gen_overlay(img)
+            elif metrics.get("aborted"):
+                img = gen_overlay(img, color=(128, 128, 128, 64))
             if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         else:
@@ -481,6 +493,8 @@ def generate_nonaggregated_tile(
                     # Put hashing on image to indicate that it is over maximum
                     current_app.logger.info("Generating overlay for tile")
                     img = gen_overlay(img)
+                elif metrics.get("aborted"):
+                    img = gen_overlay(img, color=(128, 128, 128, 64))
 
         if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
@@ -586,6 +600,8 @@ def generate_tile(idx, x, y, z, params):
         if doc_cnt == 0:
             current_app.logger.debug("No points in bounding box")
             img = gen_empty(tile_width_px, tile_height_px)
+            if metrics.get("aborted"):
+                img = gen_overlay(img, color=(128, 128, 128, 64))
             if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
             return img, metrics
@@ -727,7 +743,8 @@ def generate_tile(idx, x, y, z, params):
                 tile_s,
                 {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
                 inner_aggs,
-                size=composite_agg_size
+                size=composite_agg_size,
+                timeout=current_app.config["QUERY_TIMEOUT"]
             )
 
             partial_data = False # TODO can we get partial data?
@@ -747,6 +764,7 @@ def generate_tile(idx, x, y, z, params):
             metrics["query_time"] = (s2 - s1)
             metrics["query_took"] = resp.total_took
             metrics["num_searches"] = resp.num_searches
+            metrics["aborted"] = resp.aborted
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
@@ -763,6 +781,8 @@ def generate_tile(idx, x, y, z, params):
 
             if len(df.index) == 0:
                 img = gen_empty(tile_width_px, tile_height_px)
+                if metrics.get("aborted"):
+                    img = gen_overlay(img, color=(128, 128, 128, 64))
                 if params.get("debug"):
                     img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
                 return img, metrics
@@ -891,6 +911,8 @@ def generate_tile(idx, x, y, z, params):
                         "Generating overlay for tile due to partial category data"
                     )
                     img = gen_overlay(img)
+                elif metrics.get("aborted"):
+                    img = gen_overlay(img, color=(128, 128, 128, 64))
 
         if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))

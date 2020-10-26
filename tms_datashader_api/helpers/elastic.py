@@ -397,13 +397,15 @@ def chunk_iter(iterable, chunk_size):
         yield (False, chunks[0:last_written_idx+1])
 
 class ScanAggs(object):
-    def __init__(self, search, source_aggs, inner_aggs={}, size=10):
+    def __init__(self, search, source_aggs, inner_aggs={}, size=10, timeout=None):
         self.search = search
         self.source_aggs = source_aggs
         self.inner_aggs = inner_aggs
         self.size = size
         self.num_searches = 0
         self.total_took = 0
+        self.timeout = timeout
+        self.aborted = False
 
     def execute(self):
         """
@@ -413,8 +415,13 @@ class ScanAggs(object):
         """
         self.num_searches = 0
         self.total_took = 0
+        self.aborted = False
 
         def run_search(**kwargs):
+            _timeout_at = kwargs.pop("timeout_at", None)
+            if _timeout_at:
+                _time_remaining = _timeout_at - time.time()
+                s = s.params(timeout="%ds" % _time_remaining)
             s = self.search[:0]
             s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
             for agg_name, agg in self.inner_aggs.items():
@@ -422,27 +429,31 @@ class ScanAggs(object):
             try:
                 return s.execute()
             except:
-                print(s.to_dict())
                 raise
 
-        response = run_search()
+        timeout_at = None
+        if self.timeout:
+            timeout_at = time.time() + self.timeout
+
+        response = run_search(timeout_at=timeout_at)
         self.num_searches += 1
+        self.total_took += response.took
+        
         while response.aggregations.comp.buckets:
-            num_buckets = 0
             for b in response.aggregations.comp.buckets:
-                num_buckets += 1
                 yield b
             if "after_key" in response.aggregations.comp:
                 after = response.aggregations.comp.after_key
             else:
                 after = response.aggregations.comp.buckets[-1].key
-            # If we got fewer buckets than requested, no reason to ask for more
-            #if num_buckets < self.size:
-            #    break
-            response = run_search(after=after)
+            
+            if timeout_at and time.time() > timeout_at:
+                self.aborted = True
+                break
+
+            response = run_search(after=after, timeout_at=timeout_at)
             self.num_searches += 1
             self.total_took += response.took
-            num_buckets = 0
 
 def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
 
