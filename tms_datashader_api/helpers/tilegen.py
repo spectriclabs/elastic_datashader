@@ -555,6 +555,7 @@ def generate_nonaggregated_tile(
                     category_format
                 )
             )
+            df_points = None
         else:
             geopoint_fields = {
                 "geopoint_center": geopoint_field,
@@ -665,6 +666,9 @@ def generate_nonaggregated_tile(
             if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         else:
+            # Find number of pixels in required image
+            pixels = tile_height_px * tile_width_px
+
             categories = list( df["c"].unique() )
             metrics["categories"] = json.dumps(categories)
 
@@ -677,33 +681,30 @@ def generate_nonaggregated_tile(
                 create_color_key(df["c"].cat.categories, cmap=cmap),
                 inplace=True,
             )
-            #now for the points as well
-            df_points["c"] = df_points["c"].astype("category")
-            # prevent memory explosion in datashader _colorize
-            _, points_color_key = simplify_categories(
-                df_points,
-                "c",
-                create_color_key(df_points["c"].cat.categories, cmap=cmap),
-                inplace=True,
-            )
-
-
-            # Find number of pixels in required image
-            pixels = tile_height_px * tile_width_px
-
             agg = ds.Canvas(
                 plot_width=tile_width_px,
                 plot_height=tile_height_px,
                 x_range=x_range,
                 y_range=y_range,
             ).line(df, "x", "y", agg=rd.count_cat("c"))
-            points_agg = ds.Canvas(
-                plot_width=tile_width_px,
-                plot_height=tile_height_px,
-                x_range=x_range,
-                y_range=y_range,
-            ).points(df_points, "x", "y", agg=rd.count_cat("c"))
 
+            #now for the points as well
+            points_agg = None
+            if df_points is not None:
+                df_points["c"] = df_points["c"].astype("category")
+                # prevent memory explosion in datashader _colorize
+                _, points_color_key = simplify_categories(
+                    df_points,
+                    "c",
+                    create_color_key(df_points["c"].cat.categories, cmap=cmap),
+                    inplace=True,
+                )
+                points_agg = ds.Canvas(
+                    plot_width=tile_width_px,
+                    plot_height=tile_height_px,
+                    x_range=x_range,
+                    y_range=y_range,
+                ).points(df_points, "x", "y", agg=rd.count_cat("c"))
 
             span = None
             if span_range == "flat":
@@ -731,24 +732,25 @@ def generate_nonaggregated_tile(
                 how="log",
                 span=span,
             )
-            points_img = tf.shade(
-                points_agg,
-                cmap=cc.palette[cmap],
-                color_key=points_color_key,
-                min_alpha=min_alpha,
-                how="log",
-                span=span,
-            )
+            if points_agg is not None:
+                points_img = tf.shade(
+                    points_agg,
+                    cmap=cc.palette[cmap],
+                    color_key=points_color_key,
+                    min_alpha=min_alpha,
+                    how="log",
+                    span=span,
+                )
 
-            if (spread is not None) and (spread > 0):
-                img = tf.spread(img, spread)
-                #Spread squares x3
-                points_img = tf.spread(points_img, spread*3, shape='square')
-            else:
-                points_img = tf.spread(points_img, 2, shape='square')
+                if (spread is not None) and (spread > 0):
+                    img = tf.spread(img, spread)
+                    #Spread squares x3
+                    points_img = tf.spread(points_img, spread*3, shape='square')
+                else:
+                    points_img = tf.spread(points_img, 2, shape='square')
 
-            #Stack end markers onto the tracks
-            img = tf.stack(img, points_img)
+                #Stack end markers onto the tracks
+                img = tf.stack(img, points_img)
 
             img = img.to_bytesio().read()
             if metrics.get("over_max"):
