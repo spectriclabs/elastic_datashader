@@ -6,6 +6,7 @@ import threading
 import struct
 import mercantile
 import pynumeral
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -383,6 +384,7 @@ def get_nested_field_from_hit(hit, field, default=None):
 
 def chunk_iter(iterable, chunk_size):
     chunks = [ None ] * chunk_size
+    i = -1
     for i, v in enumerate(iterable):
         idx = (i % chunk_size)
         if idx == 0 and i > 0:
