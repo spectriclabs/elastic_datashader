@@ -433,6 +433,7 @@ def generate_nonaggregated_tile(
     ellipse_tilt = params["ellipse_tilt"]
     ellipse_units = params["ellipse_units"]
     search_distance = params["search_distance"]
+    filter_distance = params["filter_distance"]
     track_connection = params["track_connection"]
     max_batch = params["max_batch"]
     max_bins = params["max_bins"]
@@ -473,6 +474,11 @@ def generate_nonaggregated_tile(
 
         # Expand this by search_distance value to get adjacent geos that overlap into our tile
         search_meters = search_distance * 1852
+        if filter_distance is not None:
+            filter_meters = filter_distance * 1852
+        else:
+            filter_meters = search_meters
+
         boundary_extension = search_meters*1.5 #Search slightly beyond to reduce literal corner cases
 
         # Get the top_left/bot_rght for the tile
@@ -600,7 +606,7 @@ def generate_nonaggregated_tile(
             for index, row in df.iterrows():
                 if old_row.get("c") != row.get("c"):
                     #new category, so insert space in the tracks dicts and add to the start dicts
-                    if track_distance > search_meters:
+                    if track_distance > filter_meters:
                         split_dicts = split_dicts + current_track
                         split_dicts.append(blank_row)
                         start_points_dicts.append(old_row)
@@ -613,7 +619,7 @@ def generate_nonaggregated_tile(
                     distance = np.sqrt(np.power(row.get("x")-old_row.get("x"), 2)+np.power(row.get("y")-old_row.get("y"), 2))
                     if distance > search_meters:
                         #These points are too far apart, split them as different tracks if total track length is acceptable
-                        if track_distance > search_meters:
+                        if track_distance > filter_meters:
                             split_dicts = split_dicts + current_track
                             split_dicts.append(blank_row)
                             start_points_dicts.append(old_row)

@@ -49,6 +49,7 @@ def extract_parameters(request):
         "ellipse_tilt": "",
         "ellipse_units": "",
         "search_distance": 50,
+        "filter_distance": None,
         "track_connection": None,
         "spread": None,
         "span_range": None,
@@ -117,6 +118,20 @@ def extract_parameters(request):
         params["search_distance"] = 50.0
 
     params["track_connection"] = request.args.get("track_connection", default=params["track_connection"])
+    
+    params["filter_distance"] = request.args.get("track_filter", default=params["filter_distance"])
+    if params["filter_distance"] == "none":
+        params["filter_distance"] = 0.0
+    elif params["filter_distance"] == "short":
+        params["filter_distance"] = 1.0
+    elif params["filter_distance"] == "normal":
+        params["filter_distance"] = 10.0
+    elif params["filter_distance"] == "long":
+        params["filter_distance"] = 50.0
+    elif params["filter_distance"] == "default":
+        params["filter_distance"] = None
+    else:
+        params["filter_distance"] = float(params["filter_distance"])
 
     params["category_field"] = request.args.get(
         "category_field", default=params["category_field"]
