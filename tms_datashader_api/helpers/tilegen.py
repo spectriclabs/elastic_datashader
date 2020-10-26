@@ -289,7 +289,17 @@ def create_datashader_tracks_from_search(
     if track_connection:
         track_connection = split_fieldname_to_list(track_connection)
 
+    timeout_at = None
+    if current_app.config["QUERY_TIMEOUT"]:
+        timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
+        search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
+
     for i, hit in enumerate(search.scan()):
+        if timeout_at and (time.time() > timeout_at):
+            current_app.logger.warning("track generation hit query timeout")
+            metrics["aborted"] = True
+            break
+
         metrics["hits"] += 1
         # NB. this actually isn't maximum ellipses per tile, but rather
         # maximum number of records iterated.  We might want to keep this behavior
