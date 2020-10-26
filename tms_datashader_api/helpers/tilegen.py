@@ -572,26 +572,42 @@ def generate_nonaggregated_tile(
             #Now we need to iterate through the list so far and separate by different colors/distances
             split_dicts = []
             start_points_dicts = []
+            current_track = []
+            track_distance = 0.0
             blank_row = {"x": np.nan, "y": np.nan, "c": None, "t": None}
             old_row = blank_row
             for index, row in df.iterrows():
                 if old_row.get("c") != row.get("c"):
                     #new category, so insert space in the tracks dicts and add to the start dicts
-                    split_dicts.append(blank_row)
-                    start_points_dicts.append(old_row)
+                    if track_distance > search_meters:
+                        split_dicts = split_dicts + current_track
+                        split_dicts.append(blank_row)
+                        start_points_dicts.append(old_row)
+                    current_track = []
+                    track_distance = 0
                 elif not np.isnan(row.get("x")) and \
                         not np.isnan(row.get("y")) and \
                         not np.isnan(old_row.get("x")) and \
                         not np.isnan(old_row.get("y")) :
                     distance = np.sqrt(np.power(row.get("x")-old_row.get("x"), 2)+np.power(row.get("y")-old_row.get("y"), 2))
                     if distance > search_meters:
-                        #These points are too far apart, split them as different tracks
-                        split_dicts.append(blank_row)
-                        split_dicts.append(row)
-                split_dicts.append(row)
+                        #These points are too far apart, split them as different tracks if total track length is acceptable
+                        if track_distance > search_meters:
+                            split_dicts = split_dicts + current_track
+                            split_dicts.append(blank_row)
+                            start_points_dicts.append(old_row)
+                        current_track = []
+                        track_distance = 0
+                    else:
+                        track_distance += distance
+                current_track.append(dict(row))
                 old_row = row
-            #last one is always an end-point
-            start_points_dicts.append(old_row)
+            
+            #last one is always an end-point if the track was long enough
+            if track_distance > search_meters:
+                split_dicts = split_dicts + current_track
+                split_dicts.append(blank_row)
+                start_points_dicts.append(old_row)
 
             df = pd.DataFrame.from_dict(split_dicts)
             df_points = pd.DataFrame.from_dict(start_points_dicts)
