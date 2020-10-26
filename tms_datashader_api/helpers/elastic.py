@@ -449,15 +449,15 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
     category_filters = {}
     category_legend = {}
 
-    bounds = mercantile.bounds(x, y, z)
+    west, south, east, north = mu.bounds(x, y, z)
     bb_dict = {
         "top_left": {
-            "lat": min(90, max(-90, bounds.north)),
-            "lon": min(180, max(-180, bounds.west)),
+            "lat": min(90, max(-90, north)),
+            "lon": min(180, max(-180, west)),
         },
         "bottom_right": {
-            "lat": min(90, max(-90, bounds.south)),
-            "lon": min(180, max(-180, bounds.east)),
+            "lat": min(90, max(-90, south)),
+            "lon": min(180, max(-180, east)),
         },
     }
 

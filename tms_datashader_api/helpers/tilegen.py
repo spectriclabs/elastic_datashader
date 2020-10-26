@@ -541,6 +541,7 @@ def generate_tile(idx, x, y, z, params):
 
         # Get the web mercador bounds for the tile
         xy_bounds = mu.xy_bounds(x, y, z)
+        west, south, east, north = mu.bounds(x, y, z)
         # Calculate the x/y range in meters
         x_range = xy_bounds[0], xy_bounds[2]
         y_range = xy_bounds[1], xy_bounds[3]
@@ -555,12 +556,12 @@ def generate_tile(idx, x, y, z, params):
         # Constrain exactly to map boundaries
         bb_dict = {
             "top_left": {
-                "lat": min(90, max(-90, top_left[1])),
-                "lon": min(180, max(-180, top_left[0])),
+                "lat": min(90, max(-90, north)),
+                "lon": min(180, max(-180, west)),
             },
             "bottom_right": {
-                "lat": min(90, max(-90, bot_rght[1])),
-                "lon": min(180, max(-180, bot_rght[0])),
+                "lat": min(90, max(-90, south)),
+                "lon": min(180, max(-180, east)),
             },
         }
 
