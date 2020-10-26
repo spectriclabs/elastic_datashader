@@ -233,7 +233,7 @@ def get_es_headers(header_file=None, request_headers=None, user=None):
     return result
 
 
-def convert(response):
+def convert(response, category_formatter=str):
     """
 
     :param response:
@@ -251,7 +251,7 @@ def convert(response):
                     "x": x,
                     "y": y,
                     "c": bucket.centroid.count,
-                    "t": str(category.key),
+                    "t": category_formatter(category.key),
                 }
     else:
         for bucket in response.aggregations.grids:
