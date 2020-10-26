@@ -419,10 +419,10 @@ class ScanAggs(object):
 
         def run_search(**kwargs):
             _timeout_at = kwargs.pop("timeout_at", None)
+            s = self.search[:0]
             if _timeout_at:
                 _time_remaining = _timeout_at - time.time()
                 s = s.params(timeout="%ds" % _time_remaining)
-            s = self.search[:0]
             s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
             for agg_name, agg in self.inner_aggs.items():
                 s.aggs["comp"][agg_name] = agg
