@@ -43,7 +43,7 @@ def extract_parameters(request):
         "category_format": None,
         "category_histogram": None,
         "highlight": None,
-        "render_mode": "points",
+        "render_mode": None,
         "ellipse_major": "",
         "ellipse_minor": "",
         "ellipse_tilt": "",
@@ -90,6 +90,14 @@ def extract_parameters(request):
 
     # Custom parameters can be provided by the URL
     params["render_mode"] = request.args.get("render_mode", default=params["render_mode"])
+    
+    # ensure backwards compatibility with older API
+    if params["render_mode"] == None:
+        if request.args.get("ellipses", default=None) == "true":
+            params["render_mode"] = "ellipses"
+        else:
+            params["render_mode"] = "points"
+
     if params["render_mode"] == "ellipses":
         # Handle the other fields
         params["ellipse_major"] = request.args.get("ellipse_major", default="")
@@ -128,7 +136,7 @@ def extract_parameters(request):
         params["filter_distance"] = 10.0
     elif params["filter_distance"] == "long":
         params["filter_distance"] = 50.0
-    elif params["filter_distance"] == "default":
+    elif params["filter_distance"] in ("default", None):
         params["filter_distance"] = None
     else:
         params["filter_distance"] = float(params["filter_distance"])
