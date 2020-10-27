@@ -631,7 +631,7 @@ def generate_nonaggregated_tile(
                 old_row = row
             
             #last one is always an end-point if the track was long enough
-            if track_distance > search_meters:
+            if track_distance > filter_meters:
                 split_dicts = split_dicts + current_track
                 split_dicts.append(blank_row)
                 start_points_dicts.append(old_row)
