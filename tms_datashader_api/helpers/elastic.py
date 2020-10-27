@@ -482,9 +482,9 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
         for ii, category in enumerate(response.aggregations.categories):
             category_filters[str(category.key)] = { "term": {category_field: category.key} }
             category_legend[str(category.key)] = category.doc_count
+        category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
     if hasattr(response.aggregations, "missing") and response.aggregations.missing.doc_count > 0:
         category_filters["N/A"] = { "bool": { "must_not" : { "exists": { "field": category_field } } } }
         category_legend["N/A"] = response.aggregations.missing.doc_count
-    category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
 
     return category_filters, category_legend
