@@ -738,6 +738,10 @@ def generate_nonaggregated_tile(
                 how="log",
                 span=span,
             )
+            # spread ellipse/tracks (i.e. make lines thicker)
+            if (spread is not None) and (spread > 0):
+                img = tf.spread(img, spread)
+
             if points_agg is not None:
                 points_img = tf.shade(
                     points_agg,
@@ -749,7 +753,6 @@ def generate_nonaggregated_tile(
                 )
 
                 if (spread is not None) and (spread > 0):
-                    img = tf.spread(img, spread)
                     #Spread squares x3
                     points_img = tf.spread(points_img, spread*3, shape='square')
                 else:
