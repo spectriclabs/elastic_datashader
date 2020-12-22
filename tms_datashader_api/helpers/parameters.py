@@ -9,6 +9,7 @@ import threading
 import os
 import socket
 import time
+from urllib.parse import unquote
 from datetime import datetime, timedelta
 
 from flask import current_app, Response
@@ -66,7 +67,8 @@ def extract_parameters(request):
     # Argument Parameters
     arg_params = request.args.get("params")
     if arg_params and arg_params != "{params}":
-        arg_params = json.loads(request.args.get("params"))
+        arg_params = unquote(arg_params)
+        arg_params = json.loads(arg_params)
         if arg_params.get("timeFilters", {}).get("from"):
             from_time = arg_params.get("timeFilters", {}).get("from")
         if arg_params.get("timeFilters", {}).get("to"):
