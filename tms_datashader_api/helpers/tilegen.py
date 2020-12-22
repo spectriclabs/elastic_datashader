@@ -222,10 +222,18 @@ def create_datashader_ellipses_from_search(
                 if histogram_interval:
                     # Do quantization
                     raw = get_nested_field_from_hit(hit, category_field, 0.0)
-                    quantized = (
-                        math.floor(raw / histogram_interval) * histogram_interval
-                    )
-                    C = [ str(to_32bit_float(quantized)) ]
+                    if isinstance(raw, list):
+                        C = []
+                        for v in raw:
+                            quantized = (
+                                math.floor(float(v) / histogram_interval) * histogram_interval
+                            )
+                            C.append( str(to_32bit_float(quantized)) )
+                    else:
+                        quantized = (
+                            math.floor(raw / histogram_interval) * histogram_interval
+                        )
+                        C = [ str(to_32bit_float(quantized)) ]
                 else:
                     #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
                     v = get_nested_field_from_hit(hit, category_field, "N/A")
@@ -236,10 +244,10 @@ def create_datashader_ellipses_from_search(
                             C = [ str(to_32bit_float(v)) ]
                     else:
                         # Just use the value
-                        if isinstance(v, list):
-                            C = v
+                        if not isinstance(v, list):
+                            C = [ str(v) ]
                         else:
-                            C = [ v ]
+                            C = [ str(vv) for vv in v ]
             else:
                 C = [ "None" ]
 
