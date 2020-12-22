@@ -359,6 +359,7 @@ def get_tms(idx, x: int, y: int, z: int):
         parameter_hash, params = extract_parameters(request)
     except Exception as e:
         current_app.logger.exception("Error while extracting parameters")
+        params = {"user": request.headers.get("es-security-runas-user", None)}
         #Create an error entry in .datashader_tiles
         doc = Document(
             idx=idx,
@@ -369,7 +370,8 @@ def get_tms(idx, x: int, y: int, z: int):
             host=socket.gethostname(),
             pid=os.getpid(),
             timestamp=datetime.now(),
-            error=str(e)
+            params=params,
+            error=repr(e)
         )
         doc.save(using=es, index=".datashader_tiles")
         #Generate and return an error tile
@@ -432,7 +434,7 @@ def get_tms(idx, x: int, y: int, z: int):
                 pid=os.getpid(),
                 timestamp=datetime.now(),
                 params=params,
-                error=str(e)
+                error=repr(e)
             )
             doc.save(using=es, index=".datashader_tiles")
             # generate an error tile/don't cache cache it
