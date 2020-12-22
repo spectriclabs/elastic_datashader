@@ -661,16 +661,22 @@ def generate_nonaggregated_tile(
 
         # Estimate the number of points per tile assuming uniform density
         estimated_points_per_tile = None
-        if (span_range == "auto" or span_range is None) and global_bounds:
-            num_tiles_at_level = mu.num_tiles(*global_bounds, z)
-            estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-            current_app.logger.debug(
-                "Doc Bounds %s %s %s %s",
-                global_bounds,
-                z,
-                num_tiles_at_level,
-                estimated_points_per_tile,
-            )
+        if (span_range == "auto" or span_range is None):
+            if global_bounds:
+                num_tiles_at_level = mu.num_tiles(*global_bounds, z)
+                estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+                current_app.logger.debug(
+                    "Doc Bounds %s %s %s %s",
+                    global_bounds,
+                    z,
+                    num_tiles_at_level,
+                    estimated_points_per_tile,
+                )
+            else:
+                current_app.logger.warning(
+                    "Cannot estimate points per tile because bounds are missing"
+                )
+                estimated_points_per_tile = 100000
 
         # If count is zero then return a null image
         if len(df) == 0:
@@ -1051,16 +1057,22 @@ def generate_tile(idx, x, y, z, params):
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
-            if (span_range == "auto" or span_range is None) and global_bounds:
-                num_tiles_at_level = mu.num_tiles(*global_bounds, z)
-                estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-                current_app.logger.debug(
-                    "Doc Bounds %s %s %s %s",
-                    global_bounds,
-                    z,
-                    num_tiles_at_level,
-                    estimated_points_per_tile,
-                )
+            if (span_range == "auto" or span_range is None):
+                if global_bounds:
+                    num_tiles_at_level = mu.num_tiles(*global_bounds, z)
+                    estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+                    current_app.logger.debug(
+                        "Doc Bounds %s %s %s %s",
+                        global_bounds,
+                        z,
+                        num_tiles_at_level,
+                        estimated_points_per_tile,
+                    )
+                else:
+                    current_app.logger.warning(
+                        "Cannot estimate poins per tile because bounds ar missing"
+                    )
+                    estimated_points_per_tile = 100000
 
             if len(df.index) == 0:
                 img = gen_empty(tile_width_px, tile_height_px)
