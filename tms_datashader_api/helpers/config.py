@@ -20,7 +20,7 @@ class Config(object):
     TMS_KEY = os.environ.get("DATASHADER_TMS_KEY", None)
     MAX_BINS = int(os.environ.get("DATASHADER_MAX_BINS", 10000))
     MAX_BATCH = int(os.environ.get("DATASHADER_MAX_BATCH", 10000))
-    MAX_ELLIPSES_PER_TILE = int(os.environ.get("DATASHADER_MAX_BATCH", 100000))
+    MAX_ELLIPSES_PER_TILE = int(os.environ.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100000))
     HEADER_FILE = os.environ.get("DATASHADER_HEADER_FILE", "./headers.yaml")
     WHITELIST_HEADERS = os.environ.get("DATASHADER_WHITELIST_HEADERS", None)
     NUM_ELLIPSE_POINTS = os.environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)
