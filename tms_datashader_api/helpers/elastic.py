@@ -208,7 +208,7 @@ def build_dsl_filter(filter_inputs):
             continue
 
         # Handle spatial filters
-        if f.get("meta").get("type") == "spatial_filter":
+        if f.get("meta").get("type") == "spatial_filter" or f.get("geo_polygon") or f.get("geo_bounding_box"):
             if f.get("geo_polygon"):
                 geo_polygon_dict = {"geo_polygon": f.get("geo_polygon")}
                 if f.get("meta").get("negate"):
