@@ -146,6 +146,8 @@ def get_search_base(
 
     # Create base search
     base_s = Search(index=idx).using(es)
+    if user:
+        base_s = base_s.params(preference=user)
 
     # Add time bounds
     # Handle time calculations
