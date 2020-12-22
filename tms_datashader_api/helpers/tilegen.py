@@ -683,9 +683,9 @@ def generate_nonaggregated_tile(
             current_app.logger.debug("No points in bounding box")
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("over_max"):
-                img = gen_overlay(img)
+                img = gen_overlay(img, color=(128, 128, 128, 128))
             elif metrics.get("aborted"):
-                img = gen_overlay(img, color=(128, 128, 128, 64))
+                img = gen_overlay(img, color=(128, 128, 128, 128))
             if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         else:
@@ -782,9 +782,9 @@ def generate_nonaggregated_tile(
             if metrics.get("over_max"):
                 # Put hashing on image to indicate that it is over maximum
                 current_app.logger.info("Generating overlay for tile")
-                img = gen_overlay(img)
+                img = gen_overlay(img, color=(128, 128, 128, 128))
             elif metrics.get("aborted"):
-                img = gen_overlay(img, color=(128, 128, 128, 64))
+                img = gen_overlay(img, color=(128, 128, 128, 128))
 
         if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
@@ -890,7 +890,7 @@ def generate_tile(idx, x, y, z, params):
             current_app.logger.debug("No points in bounding box")
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("aborted"):
-                img = gen_overlay(img, color=(128, 128, 128, 64))
+                img = gen_overlay(img, color=(128, 128, 128, 128))
             if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
             return img, metrics
@@ -1077,7 +1077,7 @@ def generate_tile(idx, x, y, z, params):
             if len(df.index) == 0:
                 img = gen_empty(tile_width_px, tile_height_px)
                 if metrics.get("aborted"):
-                    img = gen_overlay(img, color=(128, 128, 128, 64))
+                    img = gen_overlay(img, color=(128, 128, 128, 128))
                 if params.get("debug"):
                     img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
                 return img, metrics
@@ -1205,12 +1205,14 @@ def generate_tile(idx, x, y, z, params):
                     current_app.logger.info(
                         "Generating overlay for tile due to partial category data"
                     )
-                    img = gen_overlay(img)
+                    img = gen_overlay(img, color=(128, 128, 128, 128))
                 elif metrics.get("aborted"):
-                    img = gen_overlay(img, color=(128, 128, 128, 64))
+                    img = gen_overlay(img, color=(128, 128, 128, 128))
 
         if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+        elif metrics.get("aborted"):
+            img = gen_overlay(img, color=(128, 128, 128, 128))
 
         # Set headers and return data
         return img, metrics
