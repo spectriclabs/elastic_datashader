@@ -32,14 +32,87 @@ def verify_datashader_indices(elasticsearch_uri: str):
         verify_certs=False,
         timeout=120
     )
-    try:
-        Index(".datashader_layers", using=es).create()
-    except RequestError:
-        logging.debug("Index .datashader_layers already exists, continuing")
-    try:
-        Index(".datashader_tiles", using=es).create()
-    except RequestError:
-        logging.debug("Index .datashader_tiles already exists, continuing")
+
+    layer_mapping = {
+        "mappings": {
+            "properties": {
+                "creating_host": {
+                    "type": "keyword"
+                },
+                "creating_pid": {
+                    "type": "long"
+                },
+                "creating_timestamp": {
+                    "type": "date"
+                },
+                "generated_params": {
+                    "properties": {
+                        "complete": {
+                            "type": "boolean"
+                        },
+                        "generating_host": {
+                            "type": "keyword"
+                        },
+                        "generation_pid": {
+                            "type": "long"
+                        },
+                        "generation_complete_time": {
+                            "type": "date"
+                        },
+                        "generation_start_time": {
+                            "type": "date"
+                        },
+                        "global_bounds": {
+                            "type": "long"
+                        },
+                        "global_doc_cnt": {
+                            "type": "long"
+                        },
+                        "histogram_cnt": {
+                            "type": "long"
+                        },
+                        "histogram_interval": {
+                            "type": "float"
+                        }
+                    }
+                },
+                "params": {
+                    "properties": {
+                        "dsl_filter": {
+                            "type": "object",
+                            "enabled": False
+                        },
+                        "dsl_query": {
+                            "type": "object",
+                            "enabled": False
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    tile_mapping = {
+        "mappings": {
+            "properties": {
+                "params": {
+                    "properties": {
+                        "dsl_filter": {
+                            "type": "object",
+                            "enabled": False
+                        },
+                        "dsl_query": {
+                            "type": "object",
+                            "enabled": False
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    es.indices.create(index=".datashader_layers", body=layer_mapping, ignore=400)
+    es.indices.create(index=".datashader_tiles", body=tile_mapping, ignore=400)
 
 def get_search_base(
     elastic_uri: str,
