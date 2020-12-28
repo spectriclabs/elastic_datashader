@@ -57,11 +57,11 @@ def test_replace_low_freq_inplace_errors(threshold, last, exception):
 @pytest.mark.parametrize(
     "threshold,last,expected",
     (
-        (2, None, pd.Series([3, "Other", "Other", 3, "Other"]).astype("category")),
-        (None, 2, pd.Series([3, "Other", "Other", 3, 4]).astype("category")),
+        (2, None, pd.Series([3, "Other", "Other", 3, 4, 4, 3]).astype("category")),
+        (None, 2, pd.Series([3, "Other", "Other", 3, 4, 4, 3]).astype("category")),
     ),
 )
 def test_replace_low_freq_inplace(threshold, last, expected):
-    s = pd.Series([3, 1, 2, 3, 4]).astype("category")
+    s = pd.Series([3, 1, 2, 3, 4, 4, 3]).astype("category")
     pandas_util.replace_low_freq_inplace(s, threshold=threshold, last=last)
     assert expected.equals(s)

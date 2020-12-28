@@ -74,7 +74,7 @@ def replace_low_freq_inplace(
     if (threshold is not None) and (last is None):
         s.cat.remove_categories(c.index[c < threshold], inplace=True)
     elif (threshold is None) and (last is not None):
-        s.cat.remove_categories(c.index[last:], inplace=True)
+        s.cat.remove_categories(c.index[-1*last:], inplace=True)
     elif (threshold is None) and (last is None):
         raise ValueError("either threshold or last can be provided")
     else:
