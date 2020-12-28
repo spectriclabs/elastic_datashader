@@ -55,7 +55,7 @@ def test_config_env():
     assert config.Config.TMS_KEY == "bar"
     assert config.Config.MAX_BINS == 10
     assert config.Config.MAX_BATCH == 1000
-    assert config.Config.MAX_ELLIPSES_PER_TILE == 1000
+    assert config.Config.MAX_ELLIPSES_PER_TILE == 100000
     assert config.Config.HEADER_FILE == "./headers-foo.yaml"
     assert config.Config.WHITELIST_HEADERS == "blah"
     assert config.Config.QUERY_TIMEOUT == 1
