@@ -165,12 +165,6 @@ def setup_cli_parser() -> argparse.Namespace:
         default=Config.WHITELIST_HEADERS,
         help="whitelist headers to pass along",
     )
-    parser.add_argument(
-        "--debug-tiles",
-        default=Config.DEBUG_TILES,
-        action="store_true",
-        help="render tiles with debug overlay",
-    )
     # Development server arguments
     parser.add_argument(
         "--debug",
