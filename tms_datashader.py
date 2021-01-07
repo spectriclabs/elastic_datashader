@@ -15,6 +15,7 @@ from flask_apscheduler import APScheduler
 from tms_datashader_api.helpers.cache import scheduled_cache_check_task
 from tms_datashader_api.helpers.config import Config
 from tms_datashader_api.helpers.elastic import verify_datashader_indices
+from tms_datashader_api.helpers.drawing import initialize_custom_color_maps
 from tms_datashader_api.routes import api_blueprints
 from tms_datashader_api.views import view_blueprints
 
@@ -61,6 +62,9 @@ def create_app(
     # Verify indices exist
     if verify_indices:
         verify_datashader_indices(flask_app.config.get("ELASTIC"))
+
+    # Register colors
+    initialize_custom_color_maps()
 
     # Register the API
     flask_app.logger.info("Registering API")

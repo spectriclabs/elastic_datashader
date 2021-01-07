@@ -137,6 +137,12 @@ def provide_legend(idx, field_name):
     histogram_interval = params.get("generated_params", {}).get(
         "histogram_interval", None
     )
+    field_min = params.get("generated_params", {}).get(
+        "field_min", None
+    )
+    field_max = params.get("generated_params", {}).get(
+        "field_max", None
+    )
 
     # If not in category mode, just return nothing
     if params["category_field"] is None:
@@ -232,7 +238,7 @@ def provide_legend(idx, field_name):
         # Extract other to put it at the end
         other = legend.pop("Other", None)
         for k, count in sorted(legend.items(), key=lambda x: x[1], reverse=True):
-            c = create_color_key([k], cmap=cmap).get(
+            c = create_color_key([k], cmap=cmap, field_min=field_min, field_max=field_max, histogram_interval=histogram_interval).get(
                 str(k), "#000000"
             )
             color_key_legend.append({"key": k, "color": c, "count": count})
@@ -241,7 +247,7 @@ def provide_legend(idx, field_name):
             k = "Other"
             count = other
             if not params.get("ellipses"):
-                c = create_color_key([k], cmap=cmap).get(
+                c = create_color_key([k], cmap=cmap, field_min=field_min, field_max=field_max, histogram_interval=histogram_interval).get(
                     str(k), "#000000"
                 )
             else:

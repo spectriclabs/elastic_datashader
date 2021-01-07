@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from colorcet import palette
 from numba import njit
+import colorcet as cc
 
 def get_unique_color_cnt(cmap):
     return len(palette[cmap])
@@ -15,7 +16,10 @@ def get_unique_color_cnt(cmap):
 def create_color_key(
     categories: Iterable,
     cmap: str = "glasbey_category10",
-    highlight: str = None
+    highlight: str = None,
+    field_min: float = None,
+    field_max: float = None,
+    histogram_interval: float = None,
 ) -> Dict[str, str]:
     """Create a mapping from category to color
 
@@ -30,13 +34,27 @@ def create_color_key(
     """
     mapping = {}
     for k in categories:
+        if (k == "Other"):
+            ii = 0
+        elif (k == "N/A"):
+            ii = len(palette[cmap])
+        elif (field_min is None) or (field_max is None):
+            ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+        else:
+            if (histogram_interval is None):
+                ii = int(((float(k) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+            else:
+                lower_val = float(k.rsplit("-", 1)[0])
+                ii = int(((float(lower_val) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+            ii = max(0, min(ii, len(palette[cmap])-1))
+
         if highlight:
             if k == highlight:
-                mapping[k] = palette[cmap][int(md5(k.encode("utf-8")).hexdigest()[0:2], 16)]
+                mapping[k] = palette[cmap][ii]
             else:
                 mapping[k] = '#D3D3D3' # Light Grey
         else:
-            mapping[k] = palette[cmap][int(md5(k.encode("utf-8")).hexdigest()[0:2], 16)]
+            mapping[k] = palette[cmap][ii]
     return mapping
 
 
@@ -280,3 +298,17 @@ def generate_ellipse_points(
     points[1] += lat
 
     return points[1], points[0]
+
+def initialize_custom_color_maps():
+    cc.palette['kibana5'] = [
+        '#6eadc1',
+        '#57c17b',
+        '#6f87d8',
+        '#663db8',
+        '#bc52bc',
+        '#9e3533',
+        '#daa05d'
+    ]
+
+    cc.palette['hv'] = cc.palette['glasbey_hv'][0:10]
+    cc.palette['category10'] = cc.palette['glasbey_category10'][0:10]

@@ -276,6 +276,8 @@ def generate_global_params(params, idx):
     histogram_interval = None
     histogram_cnt = None
     global_doc_cnt = None
+    field_min = None
+    field_max = None
 
     # Create base search
     base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
@@ -297,7 +299,7 @@ def generate_global_params(params, idx):
             "point_count", "value_count", field=geopoint_field
         )
     # If the field is a number, we need to figure out it's min/max globally
-    if category_type == "number" and category_histogram in (True, None):
+    if category_type == "number":
         bounds_s.aggs.metric("field_stats", "stats", field=category_field)
 
     # Execute and process search
@@ -315,6 +317,18 @@ def generate_global_params(params, idx):
                 ]
         if hasattr(bounds_resp.aggregations, "point_count"):
             global_doc_cnt = bounds_resp.aggregations.point_count.value
+
+        if hasattr(bounds_resp.aggregations, "field_stats") and bounds_resp.aggregations.field_stats.count > 0:
+
+            if bounds_resp.aggregations.field_stats.max is None:
+                field_max = 0
+            else:
+                field_max = bounds_resp.aggregations.field_stats.max
+
+            if bounds_resp.aggregations.field_stats.min is None:
+                field_min = 0
+            else:
+                field_min = bounds_resp.aggregations.field_stats.min
 
         # In a numeric field, we can fall back to histogram mode if there are too many unique values
         if category_type == "number" and category_histogram in (True, None):
@@ -363,6 +377,8 @@ def generate_global_params(params, idx):
         "histogram_cnt": histogram_cnt,
         "global_doc_cnt": global_doc_cnt,
         "global_bounds": global_bounds,
+        "field_max": field_max,
+        "field_min": field_min
     }
 
     return generated_params

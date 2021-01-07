@@ -820,6 +820,8 @@ def generate_tile(idx, x, y, z, params):
     histogram_cnt = params.get("generated_params", {}).get("histogram_cnt")
     global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt")
     global_bounds = params.get("generated_params", {}).get("global_bounds")
+    field_max = params.get("generated_params", {}).get("field_max", None)
+    field_min = params.get("generated_params", {}).get("field_min", None)
 
     metrics = dict()
 
@@ -1108,7 +1110,14 @@ def generate_tile(idx, x, y, z, params):
                         inplace=True,
                     )
                     """
-                    color_key=create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight)
+                    color_key=create_color_key(
+                        df["t"].cat.categories,
+                        cmap=cmap,
+                        highlight=highlight,
+                        field_min=field_min,
+                        field_max=field_max,
+                        histogram_interval=histogram_interval
+                    )
 
                     agg = ds.Canvas(
                         plot_width=tile_width_px,
