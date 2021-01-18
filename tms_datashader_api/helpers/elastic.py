@@ -146,9 +146,6 @@ def get_search_base(
 
     # Create base search
     base_s = Search(index=idx).using(es)
-    if user:
-        base_s = base_s.params(preference=user)
-
     # Add time bounds
     # Handle time calculations
     time_range = None
@@ -187,6 +184,10 @@ def get_search_base(
 
         # convert back
         base_s = Search.from_dict(base_dict).index(idx).using(es)
+
+    base_s = base_s.params(ignore_unavailable=True)
+    if user:
+        base_s = base_s.params(preference=user)
 
     return base_s
 
