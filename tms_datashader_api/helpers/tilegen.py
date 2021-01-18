@@ -89,6 +89,9 @@ def create_datashader_ellipses_from_search(
         timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
         search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
 
+    # Scroll searches sorted by _doc are faster
+    search = search.sort("_doc")
+
     for i, hit in enumerate(search.scan()):
         if timeout_at and (time.time() > timeout_at):
             current_app.logger.warning("ellipse generation hit query timeout")
