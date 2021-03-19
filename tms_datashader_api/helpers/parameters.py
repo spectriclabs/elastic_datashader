@@ -218,9 +218,10 @@ def extract_parameters(request):
             current_app.logger.exception("invalid from_time parameter")
             raise Exception("invalid from_time parameter")
 
-    params["start_time"], params["stop_time"] = quantize_time_range(
-        params["start_time"], params["stop_time"]
-    )
+    if params.get("start_time") and params.get("stop_time"):
+        params["start_time"], params["stop_time"] = quantize_time_range(
+            params["start_time"], params["stop_time"]
+        )
 
     if params["geopoint_field"] is None:
         current_app.logger.error("missing geopoint_field")
