@@ -35,26 +35,36 @@ def create_color_key(
     mapping = {}
     for k in categories:
         if (k == "Other"):
-            ii = 0
+            mapping[k] = '#AAAAAA' # Light Grey
         elif (k == "N/A"):
-            ii = len(palette[cmap])
-        elif (field_min is None) or (field_max is None):
-            ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+            mapping[k] = '#666666' # Dark Grey
         else:
-            if (histogram_interval is None):
-                ii = int(((float(k) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+            ii = None
+            if (field_min is None) or (field_max is None):
+                ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
             else:
-                lower_val = float(k.rsplit("-", 1)[0])
-                ii = int(((float(lower_val) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
-            ii = max(0, min(ii, len(palette[cmap])-1))
+                if float(field_max - field_min) <= 0.0:
+                    ii = len(palette[cmap])-1
+                else:
+                    try:
+                        if (histogram_interval is None):
+                            ii = int(((float(i.replace(",", "")) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+                        else:
+                            lower_val = float(k.rsplit("-", 1)[0].replace(",", ""))
+                            ii = int(((float(lower_val) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+                        ii = max(0, min(ii, len(palette[cmap])-1))
+                    except ValueError:
+                        ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
 
-        if highlight:
-            if k == highlight:
+            if highlight:
+                if k == highlight:
+                    mapping[k] = palette[cmap][ii]
+                else:
+                    mapping[k] = '#D3D3D3' # Light Grey
+            elif ii is not None:
                 mapping[k] = palette[cmap][ii]
             else:
                 mapping[k] = '#D3D3D3' # Light Grey
-        else:
-            mapping[k] = palette[cmap][ii]
     return mapping
 
 
