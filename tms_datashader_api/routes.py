@@ -182,7 +182,6 @@ def provide_legend(idx, field_name):
 
         # Perform the execution
         response = legend_s.execute()
-        print("response", response.to_dict())
         # If no categories then return blank list
         if not hasattr(response.aggregations, "categories"):
             return legend_response("[]", parameter_hash=parameter_hash, params=params)
