@@ -228,15 +228,21 @@ def create_datashader_ellipses_from_search(
                     if isinstance(raw, list):
                         C = []
                         for v in raw:
-                            quantized = (
-                                math.floor(float(v) / histogram_interval) * histogram_interval
-                            )
-                            C.append( str(to_32bit_float(quantized)) )
+                            if category_type == "number" or type(v) in (int, float):                                
+                                quantized = (
+                                    math.floor(float(v) / histogram_interval) * histogram_interval
+                                )
+                                C.append( str(to_32bit_float(quantized)) )
+                            else:
+                                C.append( str(v) )
                     else:
-                        quantized = (
-                            math.floor(raw / histogram_interval) * histogram_interval
-                        )
-                        C = [ str(to_32bit_float(quantized)) ]
+                        if category_type == "number" or type(v) in (int, float):                             
+                            quantized = (
+                                math.floor(raw / histogram_interval) * histogram_interval
+                            )
+                            C = [ str(to_32bit_float(quantized)) ]
+                        else:
+                            C = [ str(raw) ]
                 else:
                     #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
                     v = get_nested_field_from_hit(hit, category_field, "N/A")
@@ -435,6 +441,7 @@ def generate_nonaggregated_tile(
     category_field = params["category_field"]
     category_type = params["category_type"]
     category_format = params["category_format"]
+    highlight = params["highlight"]
     cmap = params["cmap"]
     spread = params["spread"]
     span_range = params["span_range"]
@@ -457,6 +464,8 @@ def generate_nonaggregated_tile(
     )
     global_doc_cnt = params.get("generated_params", {}).get("global_doc_cnt", None)
     global_bounds = params.get("generated_params", {}).get("global_bounds", None)
+    field_max = params.get("generated_params", {}).get("field_max", None)
+    field_min = params.get("generated_params", {}).get("field_min", None)
     render_mode = params["render_mode"]
 
     current_app.logger.info(
@@ -695,16 +704,24 @@ def generate_nonaggregated_tile(
             # Find number of pixels in required image
             pixels = tile_height_px * tile_width_px
 
-            categories = list( df["c"].unique() )
+            categories = [ x for x in df["c"].unique() if x != None ]
             metrics["categories"] = json.dumps(categories)
 
             # Generate the image
             df["c"] = df["c"].astype("category")
+            color_key=create_color_key(
+                categories,
+                cmap=cmap,
+                highlight=highlight,
+                field_min=field_min,
+                field_max=field_max,
+                histogram_interval=histogram_interval
+            )
             # prevent memory explosion in datashader _colorize
             _, color_key = simplify_categories(
                 df,
                 "c",
-                create_color_key(df["c"].cat.categories, cmap=cmap),
+                color_key,
                 inplace=True,
             )
             agg = ds.Canvas(
@@ -722,7 +739,7 @@ def generate_nonaggregated_tile(
                 _, points_color_key = simplify_categories(
                     df_points,
                     "c",
-                    create_color_key(df_points["c"].cat.categories, cmap=cmap),
+                    color_key,
                     inplace=True,
                 )
                 points_agg = ds.Canvas(
