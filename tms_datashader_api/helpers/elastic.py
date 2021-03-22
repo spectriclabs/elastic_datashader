@@ -208,8 +208,15 @@ def build_dsl_filter(filter_inputs):
         if f.get("meta").get("disabled") in ("true", True):
             continue
 
+        is_spatial_filter = (
+            f.get("meta").get("type") == "spatial_filter" or 
+            f.get("geo_polygon") or 
+            f.get("geo_bounding_box") or 
+            f.get("geo_shape") or
+            f.get("geo_distance")
+        )
         # Handle spatial filters
-        if f.get("meta").get("type") == "spatial_filter" or f.get("geo_polygon") or f.get("geo_bounding_box"):
+        if is_spatial_filter:
             if f.get("geo_polygon"):
                 geo_polygon_dict = {"geo_polygon": f.get("geo_polygon")}
                 if f.get("meta").get("negate"):
@@ -218,6 +225,18 @@ def build_dsl_filter(filter_inputs):
                     filter_dict["filter"].append(geo_polygon_dict)
             elif f.get("geo_bounding_box"):
                 geo_bbox_dict = {"geo_bounding_box": f.get("geo_bounding_box")}
+                if f.get("meta").get("negate"):
+                    filter_dict["must_not"].append(geo_bbox_dict)
+                else:
+                    filter_dict["filter"].append(geo_bbox_dict)
+            elif f.get("geo_shape"):
+                geo_bbox_dict = {"geo_shape": f.get("geo_shape")}
+                if f.get("meta").get("negate"):
+                    filter_dict["must_not"].append(geo_bbox_dict)
+                else:
+                    filter_dict["filter"].append(geo_bbox_dict)
+            elif f.get("geo_distance"):
+                geo_bbox_dict = {"geo_distance": f.get("geo_distance")}
                 if f.get("meta").get("negate"):
                     filter_dict["must_not"].append(geo_bbox_dict)
                 else:
