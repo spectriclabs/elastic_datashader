@@ -1058,6 +1058,11 @@ def generate_tile(idx, x, y, z, params):
             metrics["query_took"] = resp.total_took
             metrics["num_searches"] = resp.num_searches
             metrics["aborted"] = resp.aborted
+            metrics["shards_total"] = resp.total_shards
+            metrics["shards_skipped"] = resp.total_skipped
+            metrics["shards_successful"] = resp.total_successful
+            metrics["shards_failed"] = resp.total_failed
+            current_app.logger.info("%s", metrics)
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None

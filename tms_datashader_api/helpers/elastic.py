@@ -499,6 +499,10 @@ class ScanAggs(object):
         self.size = size
         self.num_searches = 0
         self.total_took = 0
+        self.total_shards = 0
+        self.total_skipped = 0
+        self.total_successful = 0
+        self.total_failed = 0
         self.timeout = timeout
         self.aborted = False
 
@@ -533,6 +537,10 @@ class ScanAggs(object):
         response = run_search(timeout_at=timeout_at)
         self.num_searches += 1
         self.total_took += response.took
+        self.total_shards += response._shards.total
+        self.total_skipped += response._shards.skipped
+        self.total_successful += response._shards.successful
+        self.total_failed += response._shards.failed
         
         while response.aggregations.comp.buckets:
             for b in response.aggregations.comp.buckets:
@@ -549,6 +557,10 @@ class ScanAggs(object):
             response = run_search(after=after, timeout_at=timeout_at)
             self.num_searches += 1
             self.total_took += response.took
+            self.total_shards += response._shards.total
+            self.total_skipped += response._shards.skipped
+            self.total_successful += response._shards.successful
+            self.total_failed += response._shards.failed
 
 def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
 
