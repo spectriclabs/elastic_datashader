@@ -34,7 +34,8 @@ from tms_datashader_api.helpers.elastic import (
     get_nested_field_from_hit,
     to_32bit_float,
     ScanAggs,
-    get_tile_categories
+    get_tile_categories,
+    scan
 )
 from tms_datashader_api.helpers.pandas_util import simplify_categories
 
@@ -89,10 +90,7 @@ def create_datashader_ellipses_from_search(
         timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
         search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
 
-    # Scroll searches sorted by _doc are faster
-    search = search.sort("_doc")
-
-    for i, hit in enumerate(search.scan()):
+    for i, hit in enumerate(scan(search, use_scroll=current_app.config.get("USE_SCROLL", False))):
         if timeout_at and (time.time() > timeout_at):
             current_app.logger.warning("ellipse generation hit query timeout")
             metrics["aborted"] = True
@@ -311,10 +309,7 @@ def create_datashader_tracks_from_search(
         timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
         search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
 
-    # Scroll searches sorted by _doc are faster
-    search = search.sort('_doc')
-
-    for i, hit in enumerate(search.scan()):
+    for i, hit in enumerate(scan(search, use_scroll=current_app.config.get("USE_SCROLL", False))):
         if timeout_at and (time.time() > timeout_at):
             current_app.logger.warning("track generation hit query timeout")
             metrics["aborted"] = True
@@ -537,9 +532,6 @@ def generate_nonaggregated_tile(
         # Add expanded bounding box
         count_s = copy.copy(base_s)
         count_s = count_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
-
-        # Per ES documentation, sorting by _doc improves scroll speed
-        count_s.sort("_doc")
 
         # trim category field postfixes
         if category_field:

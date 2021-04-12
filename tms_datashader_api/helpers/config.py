@@ -29,4 +29,4 @@ class Config(object):
     HOSTNAME = socket.getfqdn()
     MAX_LEGEND_ITEMS_PER_TILE = int(os.environ.get("MAX_LEGEND_ITEMS_PER_TILE", 20))
     QUERY_TIMEOUT = int(os.environ.get("DATASHADER_QUERY_TIMEOUT", 0))
-
+    USE_SCROLL = int(os.environ.get("DATASHADER_USE_SCROLL", None) is not None)
