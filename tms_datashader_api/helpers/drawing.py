@@ -41,15 +41,26 @@ def create_color_key(
         else:
             ii = None
             if (field_min is None) or (field_max is None):
+                # If the field doesn't have a min/max range we simply take the hash
+                # and then map it to a color-index.  This ensures colors are consistent
+                # across independent tile generations, but can result in situations where
+                # colors are reused before exhausting the color palette.
                 ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
             else:
                 if float(field_max - field_min) <= 0.0:
+                    # If there is a range but it's zero or less, simply map to the last color
                     ii = len(palette[cmap])-1
                 else:
                     try:
                         if (histogram_interval is None):
-                            ii = int(((float(i.replace(",", "")) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+                            if is_categorical_cmap(cmap):
+                                # for categorical color maps, we want nearby colors to not map to the same index
+                                ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+                            else:
+                                # For ramp cmaps, we map the field range across the palette
+                                ii = int(((float(k.replace(",", "")) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
                         else:
+                            # If there is a histogram internal, map the color based off the histogram bin
                             lower_val = float(k.rsplit("-", 1)[0].replace(",", ""))
                             ii = int(((float(lower_val) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
                         ii = max(0, min(ii, len(palette[cmap])-1))
@@ -322,3 +333,19 @@ def initialize_custom_color_maps():
 
     cc.palette['hv'] = cc.palette['glasbey_hv'][0:10]
     cc.palette['category10'] = cc.palette['glasbey_category10'][0:10]
+
+CATEGORICAL_CMAPS = set((
+  'glasbey_light',
+  'glasbey_bw',
+  'glasbey',
+  'glasbey_cool',
+  'glasbey_warm',
+  'glasbey_dark',
+  'glasbey_category10',
+  'glasbey_hv',
+  'hv',
+  'category10',
+  'kibana5'
+))
+def is_categorical_cmap(cmap):
+    return ( cmap in CATEGORICAL_CMAPS )
