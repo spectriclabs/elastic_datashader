@@ -39,8 +39,11 @@ To run in quasi-production mode:
 $ python tms_datashader.py -p 6002 -e http://user:password@host:9200
 ```
 
-When running locally you will need patches to be applied against datashader 0.10.0.  These can be applied
-into
+To run in gunicorn:
+
+```
+gunicorn -c deployment/gunicorn_config.py -b 0.0.0.0:6002 -w 24 -t 120 -e DATASHADER_ELASTIC=http://user:password@host:9200 "tms_datashader:create_app()"
+```
 
 Docker
 --------------------
