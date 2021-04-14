@@ -7,12 +7,12 @@ import os
 import socket
 import time
 import mercantile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 import pynumeral
-from flask import Blueprint, current_app, request, redirect, Response
+from flask import Blueprint, current_app, request, redirect, Response, copy_current_request_context
 
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, AttrDict, Document, UpdateByQuery
@@ -23,6 +23,8 @@ from tms_datashader_api.helpers.cache import (
     get_cache,
     check_cache_dir,
     set_cache,
+    lock_cache,
+    unlock_cache
 )
 from tms_datashader_api.helpers.drawing import (
     create_color_key,
@@ -388,8 +390,8 @@ def get_tms(idx, x: int, y: int, z: int):
     force = request.args.get("force")
 
     # Check if the cached image already exists
-    c = get_cache(cache_dir, tile_name)
-    if c is not None and force is None:
+    c, t = get_cache(cache_dir, tile_name)
+    if (c is not None) and (force is None) and (len(c) > 0):
         current_app.logger.info("Hit cache (%s), returning", parameter_hash)
         # Return Cached Value
         img = c
@@ -398,83 +400,132 @@ def get_tms(idx, x: int, y: int, z: int):
             es.update(".datashader_tiles", tile_id, body=body, retry_on_conflict=5)
         except NotFoundError:
             current_app.logger.warn("Unable to find cached tile entry in .datashader_tiles")
+
+        expires = datetime.now() + timedelta(seconds=60)
+        resp = Response(img, status=200)
+        resp.headers["Content-Type"] = "image/png"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Datashader-Parameter-Hash"] = parameter_hash
+        resp.headers["Datashader-RunAs-User"] = params.get("user", "")
+        resp.headers["Expires"] = expires.strftime("%a, %d %b %Y %H:%m:%S GMT")
+        resp.cache_control.max_age = 60
+        return resp
     else:
-        # Generate a tile
-        if force is not None:
-            current_app.logger.info(
-                "Forced cache flush, generating a new tile %s/%s/%s", z, x, y
-            )
-        else:
-            current_app.logger.info(
-                "No cache (%s), generating a new tile %s/%s/%s", parameter_hash, z, x, y
-            )
-
         check_cache_dir(cache_dir, idx)
+        
+        # Store off params for async mode
+        request.params = params
 
-        headers = get_es_headers(request_headers=request.headers, user=params["user"])
-        current_app.logger.debug("Loaded input headers %s", request.headers)
-        current_app.logger.debug("Loaded elasticsearch headers %s", headers)
+        def create_tile(is_async):
+            if is_async:
+                c, t = get_cache(cache_dir, tile_name)
+                if (c is not None) and (len(c) > 0):
+                    current_app.logger.warning("Tile has already been generated: %s", tile_name)
+                    return
+                elif (c is not None) and (len(c) == 0) and (t < 120):
+                    current_app.logger.warning("Tile is being generated: %s", tile_name)
+                    return
+                
+            try:
+                if is_async:
+                    current_app.logger.warning("Locking %s %s", tile_name, os.getpid())
+                    lock_cache(cache_dir, tile_name)
 
-        # Get or generate extended parameters
-        params = merge_generated_parameters(params, idx, parameter_hash)
+                    # Check once again, just in case a narrow race condition occurred
+                    # between the original get_cache check and lock_cache
+                    c, t = get_cache(cache_dir, tile_name)
+                    if (c is not None) and (len(c) > 0):
+                        current_app.logger.debug("Tile has already been generated: %s", tile_name)
+                        return
 
-        # Separate call for ellipse
-        t1 = datetime.now()
-        try:
-            if params["render_mode"] in ["ellipses", "tracks"]:
-                img, metrics = generate_nonaggregated_tile(idx, x, y, z, params)
-            else:
-                img, metrics = generate_tile(idx, x, y, z, params)
-        except Exception as e:
-            logging.exception("Exception Generating Tile for request %s", request)
-            #Create an error entry in .datashader_tiles
-            doc = Document(
-                hash=parameter_hash,
-                idx=idx,
-                x=x,
-                y=y,
-                z=z,
-                url=request.url,
-                host=socket.gethostname(),
-                pid=os.getpid(),
-                timestamp=datetime.now(),
-                params=params,
-                error=repr(e)
-            )
-            doc.save(using=es, index=".datashader_tiles")
-            # generate an error tile/don't cache cache it
-            return error_tile_response(e, tile_height_px, tile_width_px)
-        et = (datetime.now() - t1).total_seconds()
-        # Make entry into .datashader_tiles
-        doc = Document(
-            _id=tile_id,
-            hash=parameter_hash,
-            idx=idx,
-            x=x,
-            y=y,
-            z=z,
-            url=request.url,
-            host=socket.gethostname(),
-            pid=os.getpid(),
-            render_time=et,
-            timestamp=datetime.now(),
-            params=params,
-            metrics=metrics,
-            cache_hits=0,
-        )
-        doc.save(using=es, index=".datashader_tiles")
+                    set_cache(cache_dir, tile_name, b'')
 
-        # Store image as well
-        set_cache(cache_dir, tile_name, img)
+                current_app.logger.warning("Creating tile %s", tile_name)
+                tile_height_px = 256
+                tile_width_px = 256
 
-    resp = Response(img, status=200)
-    resp.headers["Content-Type"] = "image/png"
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Datashader-Parameter-Hash"] = parameter_hash
-    resp.headers["Datashader-RunAs-User"] = params.get("user", "")
-    resp.cache_control.max_age = 60
-    return resp
+                headers = get_es_headers(request_headers=request.headers, user=request.params["user"])
+                
+                # Get or generate extended parameters
+                params = merge_generated_parameters(request.params, idx, parameter_hash)
 
+                # Separate call for ellipse
+                t1 = datetime.now()
+                try:
+                    if params["render_mode"] in ["ellipses", "tracks"]:
+                        img, metrics = generate_nonaggregated_tile(idx, x, y, z, params)
+                    else:
+                        img, metrics = generate_tile(idx, x, y, z, params)
+                    current_app.logger.warning("DONE")
+                except Exception as e:
+                    current_app.logger.exception("Exception Generating Tile for request %s", request)
+                    #Create an error entry in .datashader_tiles
+                    doc = Document(
+                        hash=parameter_hash,
+                        idx=idx,
+                        x=x,
+                        y=y,
+                        z=z,
+                        url=request.url,
+                        host=socket.gethostname(),
+                        pid=os.getpid(),
+                        timestamp=datetime.now(),
+                        params=params,
+                        error=repr(e)
+                    )
+                    doc.save(using=es, index=".datashader_tiles")
+                    if not is_async:
+                        # generate an error tile/don't cache cache it
+                        return error_tile_response(e, tile_height_px, tile_width_px)
+                et = (datetime.now() - t1).total_seconds()
+
+                # Make entry into .datashader_tiles
+                doc = Document(
+                    _id=tile_id,
+                    hash=parameter_hash,
+                    idx=idx,
+                    x=x,
+                    y=y,
+                    z=z,
+                    url=request.url,
+                    host=socket.gethostname(),
+                    pid=os.getpid(),
+                    render_time=et,
+                    timestamp=datetime.now(),
+                    params=params,
+                    metrics=metrics,
+                    cache_hits=0,
+                )
+                doc.save(using=es, index=".datashader_tiles")
+
+                # Store image as well
+                current_app.logger.info("Generated tile %s", tile_name)
+                set_cache(cache_dir, tile_name, img)
+
+                if not is_async:
+                    expires = datetime.now() + timedelta(seconds=60)
+                    resp = Response(img, status=200)
+                    resp.headers["Content-Type"] = "image/png"
+                    resp.headers["Access-Control-Allow-Origin"] = "*"
+                    resp.headers["Datashader-Parameter-Hash"] = parameter_hash
+                    resp.headers["Datashader-RunAs-User"] = params.get("user", "")
+                    resp.headers["Expires"] = expires.strftime("%a, %d %b %Y %H:%m:%S GMT")
+                    resp.cache_control.max_age = 60
+
+                    return resp
+            finally:
+                if is_async:
+                    unlock_cache(cache_dir, tile_name)
+
+    if current_app.config["USE_ASYNC"]:
+        @current_app.after_response
+        @copy_current_request_context
+        def async_create_tile():
+            create_tile(is_async=True)
+
+        return loading_tile_response(tile_height_px, tile_width_px)
+    else:
+        return create_tile(is_async=False)
 
 @api_blueprints.route("/indices", methods=["GET"])
 def retrieve_indices():
@@ -540,6 +591,16 @@ def legend_response(data: str, error: Optional[Exception] = None, **kwargs) -> R
         resp.headers["Error"] = str(error)
     return resp
 
+def loading_tile_response(
+    tile_height_px: int, tile_width_px: int
+) -> Response:
+    img = gen_error(tile_height_px, tile_width_px, color=(128, 128, 128, 128))
+    resp = Response(img, status=418)
+    resp.headers["Content-Type"] = "image/png"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Retry-After"] = 10
+    resp.cache_control.max_age = 5
+    return resp
 
 def error_tile_response(
     e: Exception, tile_height_px: int, tile_width_px: int

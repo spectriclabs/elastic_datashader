@@ -12,6 +12,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from flask import Flask
 from flask_apscheduler import APScheduler
 
+from tms_datashader_api.helpers.wsgi import AfterResponse
 from tms_datashader_api.helpers.cache import scheduled_cache_check_task
 from tms_datashader_api.helpers.config import Config
 from tms_datashader_api.helpers.elastic import verify_datashader_indices
@@ -72,6 +73,8 @@ def create_app(
 
     flask_app.logger.info("Registering Views")
     flask_app.register_blueprint(view_blueprints)
+
+    AfterResponse(flask_app)
 
     # If ElasticAPM can be loaded, then attempt to configure
     # if via environment variable.  To install APM

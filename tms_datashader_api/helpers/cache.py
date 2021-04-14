@@ -4,6 +4,7 @@ import logging
 import shutil
 import subprocess
 import time
+import portalocker
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -34,8 +35,22 @@ def get_cache(cache_dir: Union[Path, str], tile: str) -> Optional[bytes]:
     # Check if tile exists
     tile_path = Path(cache_dir) / tile
     if tile_path.exists():
-        return tile_path.read_bytes()
+        cache_age = tile_path.stat().st_mtime
+        return tile_path.read_bytes(), time.time() - cache_age
+    return None, 0
 
+def lock_cache(cache_dir: Union[Path, str], tile: str):
+    lock_path = Path(cache_dir) / tile
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.touch()
+    with lock_path.open() as f:
+         portalocker.lock(f, portalocker.LOCK_EX)
+
+def unlock_cache(cache_dir: Union[Path, str], tile: str):
+    lock_path = Path(cache_dir) / tile
+    if lock_path.exists():
+        with lock_path.open() as f:
+            portalocker.unlock(f)
 
 def set_cache(cache_dir: Union[Path, str], tile: str, img: bytes) -> None:
     """Add the tile image to the cache
