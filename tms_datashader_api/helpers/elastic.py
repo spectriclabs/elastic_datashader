@@ -605,7 +605,11 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
     response = cat_s.execute()
     if hasattr(response.aggregations, "categories"):
         for ii, category in enumerate(response.aggregations.categories):
-            category_filters[str(category.key)] = { "term": {category_field: category.key} }
+            # this if prevents bools from using 0/1 instead of true/false
+            if hasattr(category, "key_as_string"):
+                category_filters[str(category.key)] = { "term": {category_field: category.key_as_string} }
+            else:
+                category_filters[str(category.key)] = { "term": {category_field: category.key} }
             category_legend[str(category.key)] = category.doc_count
         category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
     if hasattr(response.aggregations, "missing") and response.aggregations.missing.doc_count > 0:
