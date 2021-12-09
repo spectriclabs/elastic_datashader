@@ -183,6 +183,36 @@ def create_datashader_ellipses_from_search(
             minor = minors[ii]
             angle = angles[ii]
 
+            try:
+                major = float(major)
+            except ValueError:
+                current_app.logger.warning(
+                    "skipping major with invalid major %s %s",
+                    major,
+                    type(major),
+                )
+                continue
+
+            try:
+                minor = float(minor)
+            except ValueError:
+                current_app.logger.warning(
+                    "skipping minor with invalid minor %s %s",
+                    minor,
+                    type(minor),
+                )
+                continue
+
+            try:
+                angle = float(angle)
+            except ValueError:
+                current_app.logger.warning(
+                    "skipping angle with invalid angle %s %s",
+                    angle,
+                    type(angle),
+                )
+                continue
+
             # Handle deg->Meters conversion and everything else
             x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
             if ellipse_units == "majmin_nm":
@@ -234,7 +264,7 @@ def create_datashader_ellipses_from_search(
                             else:
                                 C.append( str(v) )
                     else:
-                        if category_type == "number" or type(v) in (int, float):                             
+                        if category_type == "number" or type(raw) in (int, float):                             
                             quantized = (
                                 math.floor(raw / histogram_interval) * histogram_interval
                             )
@@ -251,7 +281,7 @@ def create_datashader_ellipses_from_search(
                             C = [ str(to_32bit_float(v)) ]
                     else:
                         # Just use the value
-                        if not isinstance(v, list):
+                        if not isinstance(v, (list, AttrList)):
                             C = [ str(v) ]
                         else:
                             C = [ str(vv) for vv in v ]
@@ -263,8 +293,8 @@ def create_datashader_ellipses_from_search(
                 C = C[0:100]
             
             for c in C:
-                for p in zip(X, Y, len(X) * [c]):
-                    yield {"x": p[0], "y": p[1], "c": p[2]}
+                for p in zip(X, Y):
+                    yield {"x": p[0], "y": p[1], "c": c}
             yield NAN_LINE  # Break between ellipses
             metrics["locations"] += 1
 
