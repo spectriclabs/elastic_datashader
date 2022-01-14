@@ -847,10 +847,16 @@ def calculate_pixel_spread(geotile_precision: int) -> int:
     '''
     current_app.logger.debug('calculate_pixel_spread(%d)', geotile_precision)
 
-    if geotile_precision > 12:
-        return max(geotile_precision//4, 0)
+    if geotile_precision >= 20:
+        return geotile_precision // 4
 
-    return 1
+    if geotile_precision >= 15:
+        return 2
+
+    if geotile_precision >= 12:
+        return 1
+
+    return 0
 
 def apply_spread(img, spread):
     '''
