@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import json
 import logging
 import shutil
@@ -8,7 +7,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from tms_datashader_api.helpers.timeutil import pretty_time_delta
+from .timeutil import pretty_time_delta
 
 
 _log = logging.getLogger("apscheduler.scheduler.cache")

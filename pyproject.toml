@@ -1,0 +1,49 @@
+[tool.poetry]
+name = "elastic_datashader"
+version = "0.0.4"
+description = "Elastic-Datashader TMS Server"
+authors = ["Spectric Labs <foss@spectric.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/spectriclabs/elastic_datashader"
+classifiers = [
+	"Topic :: Scientific/Engineering :: GIS",
+	"Topic :: Scientific/Engineering :: Information Analysis",
+	"Topic :: Scientific/Engineering :: Visualization"
+]
+
+[tool.poetry.scripts]
+tms_datashader = "elastic_datashader.cli:main"
+
+[tool.poetry.extras]
+apm = ["elasticapm"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+Flask = "^2.0.2"
+elasticsearch = "^7.16.3"
+elasticsearch-dsl = "^7.4.0"
+pyOpenSSL = "^21.0.0"
+datashader = "0.11.0"
+pandas = "1.2.0"
+colorcet = "^3.0.0"
+mercantile = "^1.2.1"
+pypng = "^0.0.21"
+Flask-APScheduler = "^1.12.3"
+Pillow = "^9.0.0"
+pynumeral = "^0.1.2"
+arrow = "^1.2.1"
+python-datemath = "^1.5.5"
+numba = "0.48.0"
+numpy = "1.19.5"
+urllib3 = "^1.26.8"
+PyYAML = "^6.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.2.5"
+pytest-cov = "^3.0.0"
+black = "^21.12b0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
