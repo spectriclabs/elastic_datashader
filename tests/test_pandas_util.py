@@ -1,7 +1,6 @@
-#!/usr/bin/env pytest
 import pandas as pd
 import pytest
-from tms_datashader_api.helpers import pandas_util
+from elastic_datashader.helpers import pandas_util
 
 
 def test_simplify_categories_not_categorical():

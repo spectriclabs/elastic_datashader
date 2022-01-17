@@ -50,7 +50,7 @@ $ python tms_datashader.py -p 6002 -e http://user:password@host:9200
 ```
 
 #### Gunicorn
-First you need to install the `localwebserver` optional extra.  From *outside* of the virtualenv run the following (you only have to do this once for the virtualenv).
+First you need to install the `localwebserver` optional extra.
 
 ```sh
 poetry install --extras localwebserver
@@ -83,7 +83,7 @@ $ docker run -it --rm=true -p 5000:5000 \
 ```
 
 ### Elastic APM support (EXPERIMENTAL)
-To add Elastic APM support run the following from *outside* of the virtualenv.
+To add Elastic APM support run the following.
 
 ```sh
 poetry install --extras apm

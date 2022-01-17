@@ -1,12 +1,11 @@
-#!/usr/bin/env pytest
-import json
-import subprocess
 from pathlib import Path
+
+import json
 
 import pytest
 
-from tms_datashader import create_app
-from tms_datashader_api.helpers.cache import du
+from elastic_datashader.cli import create_app
+from elastic_datashader.helpers.cache import du
 
 
 def setup_cache(cache_path: Path):
@@ -36,7 +35,7 @@ def client_and_cache(tmp_path):
 
 def test_index_no_cache(client_and_cache):
     client, _ = client_and_cache
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(FileNotFoundError):
         _ = client.get("/")
 
 

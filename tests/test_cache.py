@@ -1,23 +1,20 @@
-#!/usr/bin/env pytest
 import os
-import subprocess
 import time
 from unittest import mock
 import pytest
-from tms_datashader_api.helpers import cache
+from elastic_datashader.helpers import cache
 
 
 def test_du_fail(tmp_path):
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(FileNotFoundError):
         cache.du(tmp_path / "foo" / "bar" / "baz")
-
 
 def test_du(tmp_path):
     foo = tmp_path / "foo.txt"
     foo.write_text("Hello, World!")
-    actual = cache.du(foo)
+    actual = cache.du(tmp_path)
     assert isinstance(actual, str)
-    assert actual.endswith(".0K")
+    assert actual.endswith("B")  # bytes
 
 
 def test_get_cache_none():
@@ -70,7 +67,7 @@ def test_check_cache_age(tmp_path):
     assert not (cache_path / "hello").exists()
 
 
-@mock.patch("tms_datashader_api.helpers.cache.check_cache_age")
+@mock.patch("elastic_datashader.helpers.cache.check_cache_age")
 def test_scheduled_cache_check_task_file_nexist(check_cache_age_mock, tmp_path):
     cache.scheduled_cache_check_task("random_id", tmp_path)
 
@@ -78,7 +75,7 @@ def test_scheduled_cache_check_task_file_nexist(check_cache_age_mock, tmp_path):
     assert not check_cache_age_mock.called
 
 
-@mock.patch("tms_datashader_api.helpers.cache.check_cache_age")
+@mock.patch("elastic_datashader.helpers.cache.check_cache_age")
 def test_scheduled_cache_check_task_file_exist_new(check_cache_age_mock, tmp_path):
     cache_check_path = tmp_path / "cache.age.check"
     cache_check_path.touch()
@@ -88,7 +85,7 @@ def test_scheduled_cache_check_task_file_exist_new(check_cache_age_mock, tmp_pat
     assert not check_cache_age_mock.called
 
 
-@mock.patch("tms_datashader_api.helpers.cache.check_cache_age")
+@mock.patch("elastic_datashader.helpers.cache.check_cache_age")
 def test_scheduled_cache_check_task_file_exist_old(check_cache_age_mock, tmp_path):
     cache_check_path = tmp_path / "cache.age.check"
     cache_check_path.touch()

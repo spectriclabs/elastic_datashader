@@ -1,26 +1,47 @@
-import json
-import logging
-import shutil
-import subprocess
-import time
 from collections import OrderedDict
+from os import scandir
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from .timeutil import pretty_time_delta
+import json
+import logging
+import shutil
+import time
 
+from humanize import naturalsize
+
+from .timeutil import pretty_time_delta
 
 _log = logging.getLogger("apscheduler.scheduler.cache")
 _log.addHandler(logging.NullHandler())
 
+def directory_size(path: Path) -> int:
+    '''
+    Recursively traverses a directory to get the
+    total size.  Note that os.scandir is used since
+    it's iterable; it doesn't try to load all
+    entries into memory at once.
 
-def du(path: Union[str, Path]) -> str:
+    :param path: Get the size of directory at path
+    :return: Directory size in bytes
+    '''
+    total = 0
+
+    for entry in scandir(path):
+        if entry.is_file():
+            total += entry.stat().st_size
+        elif entry.is_dir():
+            total += directory_size(entry.path)
+
+    return total
+
+def du(path: Path) -> str:
     """Disk usage in human readable format (e.g. '2.1GB')
 
-    :param path: Path in ``du -sh <path>``
+    :param path: Get the size of directory at path
     :return: Disk usage in human readable form
     """
-    return subprocess.check_output(['du', '-sh', path]).split()[0].decode('utf-8')
+    return naturalsize(directory_size(path), gnu=True)
 
 
 def get_cache(cache_dir: Union[Path, str], tile: str) -> Optional[bytes]:
