@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+from functools import lru_cache
+
 import copy
 import math
 import time
@@ -838,7 +839,43 @@ def generate_nonaggregated_tile(
         )
         raise
 
+@lru_cache
+def calculate_pixel_spread(geotile_precision: int) -> int:
+    '''
+    Pixel spread is the number of pixels to put around each
+    data point.
+    '''
+    current_app.logger.debug('calculate_pixel_spread(%d)', geotile_precision)
+
+    if geotile_precision >= 20:
+        return geotile_precision // 4
+
+    if geotile_precision >= 15:
+        return 2
+
+    if geotile_precision >= 12:
+        return 1
+
+    return 0
+
+def apply_spread(img, spread):
+    '''
+    Applies the pixel spreading transform, if any.
+    '''
+    current_app.logger.debug('apply_spread(%d)', spread)
+
+    if spread > 0:
+        return tf.spread(img, spread)
+
+    return img
+
 def generate_tile(idx, x, y, z, params):
+    '''
+    idx: ElasticSearch index to search
+    x, y: TMS tile coordinates
+    z: Zoom level
+    params: HTTP request parameters
+    '''
 
     # Handle legacy keywords
     geopoint_field = params["geopoint_field"]
@@ -939,46 +976,37 @@ def generate_tile(idx, x, y, z, params):
             return img, metrics
         else:
             # Find number of pixels in required image
-            pixels = tile_height_px * tile_width_px
+            total_tile_pixel_count = tile_height_px * tile_width_px
 
             current_zoom = z
 
-            # calculate the geo precision that ensure we have at most one bin per 'pixel'
-            # every zoom level halves the number of pixels per bin
-            # assuming a square tile
-            max_agg_zooms = math.ceil(math.log(pixels, 4))
+            # Calculate the geo precision that ensure we have at most one bin per 'pixel'.
+            # Every zoom level halves the number of pixels per bin assuming a square tile.
+            max_agg_zooms = math.ceil(math.log(total_tile_pixel_count, 4))
             agg_zooms = max_agg_zooms
 
             # TODO consider adding 'grid resolution' coarse, fine, finest (pixel-lock)
             # In category-mode, zoom out if max_bins has not been increased
-            min_auto_spread = 0  # by default we don't need to spread
-            if category_field and max_bins < 65536:
+
+            if category_field and max_bins < total_tile_pixel_count:
                 agg_zooms -= 1
-                # if we back out agg_zooms we need to spread a little to make things
-                # look correct
-                min_auto_spread += 2
 
             if resolution == "coarse":
                 agg_zooms -= 2
-                min_auto_spread += 4
             elif resolution == "fine":
                 agg_zooms -= 1
-                min_auto_spread += 2
             elif resolution == "finest":
                 if category_field:
                     if doc_cnt > 5e3:
                         agg_zooms -= 2
-                        min_auto_spread += 1
                     elif doc_cnt > 1e6:
                         agg_zooms -= 3
-                        min_auto_spread += 2
                     elif doc_cnt > 5e6:
                         agg_zooms -= 4
-                        min_auto_spread += 3
             else:
                 raise ValueError("invalid resolution value")
 
-            # don't allow geotile precision to be anyworse than current zoom
+            # don't allow geotile precision to be any worse than current zoom
             geotile_precision = max(current_zoom, current_zoom + agg_zooms)
             
             tile_bbox = {
@@ -1023,7 +1051,6 @@ def generate_tile(idx, x, y, z, params):
 
                 if len(category_filters) >= int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]):
                     agg_zooms -= 1
-                    min_auto_spread += 1
 
                 # to avoid max bucket errors we need space for two
                 # additional buckets (one for Other and one for something else
@@ -1233,27 +1260,7 @@ def generate_tile(idx, x, y, z, params):
 
                 ###############################################################
                 # Common
-
-                # Below zoom threshold spread to make individual dots large enough
-                if spread is None or spread < 0:
-                    spread_threshold = 11
-                    # Always spread at least min_auto_spread
-                    spread = min_auto_spread
-                    if z >= spread_threshold:
-                        # Increase spread at high zoom levels, with a min spread of 2
-                        spread = math.floor(
-                            min_auto_spread + (z - (spread_threshold - 1)) * 0.5
-                        )
-                        spread = max(spread, 1)
-                    current_app.logger.info(
-                        "Calculated auto-spread %s (min %s)", spread, min_auto_spread
-                    )
-                else:
-                    current_app.logger.info("Spreading by fixed %s", spread)
-
-                if spread > 0:
-                    img = tf.spread(img, spread)
-
+                img = apply_spread(img, spread or calculate_pixel_spread(geotile_precision))
                 img = img.to_bytesio().read()
 
                 if partial_data:
