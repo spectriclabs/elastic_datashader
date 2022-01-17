@@ -13,7 +13,7 @@ classifiers = [
 ]
 
 [tool.poetry.scripts]
-tms_datashader = "elastic_datashader.cli:main"
+elastic_datashader = "elastic_datashader.cli:main"
 
 [tool.poetry.dependencies]
 python = "^3.8"
