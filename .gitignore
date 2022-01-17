@@ -121,3 +121,6 @@ dmypy.json
 
 # Elastic-Datashader specific
 tms-cache
+
+# poetry
+poetry.lock
