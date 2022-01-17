@@ -41,7 +41,7 @@ humanize = ">=3"
 [tool.poetry.dev-dependencies]
 pytest = ">=6"
 pytest-cov = ">=3"
-black = ">=21"
+black = ">=21.12b0"
 pylint = ">=2"
 
 [tool.poetry.extras]
