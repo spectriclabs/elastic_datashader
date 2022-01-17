@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+from typing import Optional
+
 import copy
 import fcntl
 import hashlib
@@ -21,6 +22,19 @@ from elasticsearch.exceptions import NotFoundError, ConflictError
 from tms_datashader_api.helpers.timeutil import quantize_time_range, convert_kibana_time
 from tms_datashader_api.helpers.elastic import get_search_base, build_dsl_filter
 
+def normalize_spread(spread) -> Optional[int]:
+    # Handle text-value spread in both legacy and new format
+    if spread in ("coarse", "large"): return 10
+    if spread in ("fine", "medium"): return 3
+    if spread in ("finest", "small"): return 1
+    if spread == "auto": return None
+
+    try:
+        return int(spread)
+    except (TypeError, ValueError):
+        pass
+
+    return None
 
 def extract_parameters(request):
     """Get the parameters from a request and return hash and dict of parameters
@@ -163,21 +177,8 @@ def extract_parameters(request):
         params["category_histogram"] = None
 
     params["highlight"] = request.args.get("highlight")
-    params["spread"] = request.args.get("spread")
-    # Handle text-value spread in both legacy and new format
-    if params["spread"] in ("coarse", "large"):
-        params["spread"] = 10
-    elif params["spread"] in ("fine", "medium"):
-        params["spread"] = 3
-    elif params["spread"] in ("finest", "small"):
-        params["spread"] = 1
-    elif params["spread"] == "auto":
-        params["spread"] = None
-    else:
-        try:
-            params["spread"] = int(params["spread"])
-        except (TypeError, ValueError):
-            params["spread"] = None
+
+    params["spread"] = normalize_spread(request.args.get("spread"))
     params["resolution"] = request.args.get("resolution", default=params["resolution"])
     params["use_centroid"] = request.args.get("use_centroid", default=params["use_centroid"])
     

@@ -9,3 +9,6 @@ elastic_datashader:
 
 elastic_datashader_kibana:
 	docker build -t $(REPOSITORY)elastic_datashader_kibana:$(VERSION) -f kibana/Dockerfile kibana/
+
+clean_cache:
+	rm -rf tms-cache/*
