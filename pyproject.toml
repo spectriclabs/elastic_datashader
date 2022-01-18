@@ -59,7 +59,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.tox]
 legacy_tox_ini = """
 [tox]
-envlist = py38,py39
+envlist = py38
 isolated_build = true
 
 [gh-actions]
