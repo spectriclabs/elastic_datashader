@@ -37,16 +37,16 @@ First enter the virtualenv created by poetry.
 poetry shell
 ```
 
-#### Debug development mode:
+#### Debug development mode
 
-```
-$ python tms_datashader.py --debug -p 6002 -e http://user:password@host:9200
+```sh
+$ python -m elastic_datashader --debug -p 6002 -e http://user:password@host:9200
 ```
 
-#### Quasi-production mode:
+#### Quasi-production mode
 
-```
-$ python tms_datashader.py -p 6002 -e http://user:password@host:9200
+```sh
+$ python -m elastic_datashader -p 6002 -e http://user:password@host:9200
 ```
 
 #### Gunicorn
@@ -58,7 +58,7 @@ poetry install --extras localwebserver
 
 Gunicorn is now available for you within the virtualenv (you can reenter with `poetry shell`).
 
-```
+```sh
 gunicorn -c deployment/gunicorn_config.py -b 0.0.0.0:6002 -w 24 -t 120 -e DATASHADER_ELASTIC=http://user:password@host:9200 "elastic_datashader:create_app()"
 ```
 
