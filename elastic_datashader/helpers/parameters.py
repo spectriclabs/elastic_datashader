@@ -1,7 +1,6 @@
 from typing import Optional
 
 import copy
-import fcntl
 import hashlib
 import json
 import math
