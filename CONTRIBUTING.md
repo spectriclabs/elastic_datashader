@@ -1,5 +1,4 @@
-Contributing to Elastic-Datashader
-==================================
+# Contributing to Elastic-Datashader
 
 We welcome any contributions!
 
@@ -18,25 +17,10 @@ Elastic-Datashader (e.g., Docker, macOS, RHEL, etc.),
 
 ## Bug Fixes and Other contributions
 
-To help contribute, make sure you have Python 3.6+
-installed. Then, we recommend setting up a virtual
-environment
+To help contribute, make sure to set up your local
+environment as described in README.md.
 
-```
-python -m venv venv
-source venv/bin/activate
-```
-
-Once the virtual environment is setup,
-install the project dependencies.
-
-```
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-dev.txt
-```
-
-Once the dependencies are installed, begin
-developing. We recommend developing on a new branch,
+We recommend developing on a new branch,
 where the branch name is descriptive enough to glean
 what is contained in it, e.g., `fix-ellipse-edge-case`
 is better than `patch-1`.
@@ -47,11 +31,8 @@ suggest adding a unit test verifying the behavior.
 ## Running Tests
 
 Once you have added the bug fix/new functionality and
-relevant unit tests, you can run the unit tests via
-
-```
-python -m pytest -vls
-```
+relevant unit tests, follow the testing instructions
+described in README.md.
 
 We also encourage you to ensure the Docker image will
 still build via `make`.
