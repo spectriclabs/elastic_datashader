@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import copy
 import json
 import logging
@@ -18,33 +17,33 @@ from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, AttrDict, Document, UpdateByQuery
 from elasticsearch.exceptions import NotFoundError
 
-from tms_datashader_api.helpers.cache import (
+from elastic_datashader.helpers.cache import (
     check_cache_age,
     get_cache,
     check_cache_dir,
     set_cache,
 )
-from tms_datashader_api.helpers.drawing import (
+from elastic_datashader.helpers.drawing import (
     create_color_key,
     gen_error,
     get_unique_color_cnt,
 )
-from tms_datashader_api.helpers.elastic import (
+from elastic_datashader.helpers.elastic import (
     get_search_base,
     get_es_headers,
     to_32bit_float,
     get_tile_categories
 )
-from tms_datashader_api.helpers.parameters import (
+from elastic_datashader.helpers.parameters import (
     extract_parameters,
     merge_generated_parameters,
     update_params,   
 )
-from tms_datashader_api.helpers.tilegen import (
+from elastic_datashader.helpers.tilegen import (
     generate_nonaggregated_tile,
     generate_tile,
 )
-from tms_datashader_api.helpers.mercantile_util import (
+from elastic_datashader.helpers.mercantile_util import (
     tiles_bounds
 )
 

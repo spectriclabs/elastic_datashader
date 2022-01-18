@@ -16,7 +16,7 @@ from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import RequestError
 from elasticsearch_dsl import Search, AttrDict, Index
 from flask import current_app, request
-import tms_datashader_api.helpers.mercantile_util as mu
+import elastic_datashader.helpers.mercantile_util as mu
 
 
 def to_32bit_float(number):

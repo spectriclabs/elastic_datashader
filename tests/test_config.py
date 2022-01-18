@@ -5,7 +5,7 @@ import importlib
 
 
 def test_config_defaults():
-    from tms_datashader_api.helpers import config
+    from elastic_datashader.helpers import config
 
     assert config.Config.LOG_LEVEL is None
     assert config.Config.CACHE_DIRECTORY == "./tms-cache/"
@@ -42,7 +42,7 @@ def test_config_env():
             "DATASHADER_QUERY_TIMEOUT": "1",
         }
     )
-    from tms_datashader_api.helpers import config
+    from elastic_datashader.helpers import config
 
     importlib.reload(config)
 

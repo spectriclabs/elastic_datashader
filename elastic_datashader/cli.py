@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import argparse
 import logging
 import os
@@ -8,16 +7,17 @@ import logging
 from typing import Optional
 
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from flask import Flask
 from flask_apscheduler import APScheduler
 
-from tms_datashader_api.helpers.cache import scheduled_cache_check_task
-from tms_datashader_api.helpers.config import Config
-from tms_datashader_api.helpers.elastic import verify_datashader_indices
-from tms_datashader_api.helpers.drawing import initialize_custom_color_maps
-from tms_datashader_api.routes import api_blueprints
-from tms_datashader_api.views import view_blueprints
+from .helpers.cache import scheduled_cache_check_task
+from .helpers.config import Config
+from .helpers.elastic import verify_datashader_indices
+from .helpers.drawing import initialize_custom_color_maps
+from .routes import api_blueprints
+from .views import view_blueprints
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # the elasticsearch module will log warnings
 # for expected things (i.e. a 404 when checking if a document exsits)
@@ -203,8 +203,7 @@ def setup_cli_parser() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
-if __name__ == "__main__":
+def main():
     # Disable warnings
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     urllib3.disable_warnings(urllib3.exceptions.InsecurePlatformWarning)

@@ -23,8 +23,7 @@ def build_cache(base_url: str, start_level: int = 0, end_level: int = 10) -> int
                     print(url)
     return num_tiles_cached
 
-
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Request TMS tiles to build up the cache"
     )
@@ -58,3 +57,6 @@ if __name__ == "__main__":
     duration = time.time() - s1
     per_tile = duration / num_tiles
     print(f"Took {duration} sec for {num_tiles} tiles ({per_tile} s/tile)")
+
+if __name__ == "__main__":
+    main()

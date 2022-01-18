@@ -1,8 +1,7 @@
-#!/usr/bin/env pytest
 import numpy as np
 from PIL import Image
 import pytest
-from tms_datashader_api.helpers import drawing
+from elastic_datashader.helpers import drawing
 
 
 @pytest.mark.parametrize(

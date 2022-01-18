@@ -1,8 +1,7 @@
-#!/usr/bin/env pytest
 from datetime import datetime
 from dateutil.tz import tzutc
 import pytest
-from tms_datashader_api.helpers import timeutil
+from elastic_datashader.helpers import timeutil
 
 
 @pytest.mark.parametrize(

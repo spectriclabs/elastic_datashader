@@ -5,7 +5,7 @@ from pprint import pformat
 
 from flask import current_app, render_template, request, Blueprint
 
-from tms_datashader_api.helpers.cache import du, build_layer_info
+from elastic_datashader.helpers.cache import du, build_layer_info
 
 view_blueprints = Blueprint("views", __name__, template_folder="templates")
 

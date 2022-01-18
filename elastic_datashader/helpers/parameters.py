@@ -1,7 +1,6 @@
 from typing import Optional
 
 import copy
-import fcntl
 import hashlib
 import json
 import math
@@ -19,8 +18,8 @@ from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search, AttrDict, Document
 from elasticsearch.exceptions import NotFoundError, ConflictError
 
-from tms_datashader_api.helpers.timeutil import quantize_time_range, convert_kibana_time
-from tms_datashader_api.helpers.elastic import get_search_base, build_dsl_filter
+from .timeutil import quantize_time_range, convert_kibana_time
+from .elastic import get_search_base, build_dsl_filter
 
 def normalize_spread(spread) -> Optional[int]:
     # Handle text-value spread in both legacy and new format

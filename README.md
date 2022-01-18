@@ -1,5 +1,6 @@
-Introduction
-============
+# Elastic Datashader
+
+## Introduction
 
 [Elastic Datashader](https://github.com/spectriclabs/elastic_datashader) combines
 the power of [ElasticSearch](www.elastic.co) with [Datashader](https://datashader.org/).
@@ -11,54 +12,69 @@ To this:
 
 ![Kibana Default Heatmap](doc/img/datashader_heatmap.png)
 
-Running
-============
+## Running
 
-Setup
---------------------
-Running in virtualenv is recommended.
+### Setup
+Poetry takes care of installing dependencies within the virtual environment.  First install poetry.
 
-```
-$ virtualenv -p python3 env
-$ . env/bin/activate
-$ pip install -r requirements.txt
+```sh
+python3 -m pip install poetry
 ```
 
-Locally
---------------------
+Now we can create the virtual environment and install dependencies into it with
 
-To run in debug development mode:
-
-```
-$ python tms_datashader.py --debug -p 6002 -e http://user:password@host:9200
+```sh
+poetry install
 ```
 
-To run in quasi-production mode:
+Note that there are extras that can also be installed with `--extras` which are specified below.
 
-```
-$ python tms_datashader.py -p 6002 -e http://user:password@host:9200
-```
+### Locally
 
-To run in gunicorn:
+First enter the virtualenv created by poetry.
 
-```
-gunicorn -c deployment/gunicorn_config.py -b 0.0.0.0:6002 -w 24 -t 120 -e DATASHADER_ELASTIC=http://user:password@host:9200 "tms_datashader:create_app()"
+```sh
+poetry shell
 ```
 
-Docker
---------------------
+#### Debug development mode
+
+```sh
+$ python -m elastic_datashader --debug -p 6002 -e http://user:password@host:9200
+```
+
+#### Quasi-production mode
+
+```sh
+$ python -m elastic_datashader -p 6002 -e http://user:password@host:9200
+```
+
+#### Gunicorn
+First you need to install the `localwebserver` optional extra.
+
+```sh
+poetry install --extras localwebserver
+```
+
+Gunicorn is now available for you within the virtualenv (you can reenter with `poetry shell`).
+
+```sh
+gunicorn -c deployment/gunicorn_config.py -b 0.0.0.0:6002 -w 24 -t 120 -e DATASHADER_ELASTIC=http://user:password@host:9200 "elastic_datashader:create_app()"
+```
+
+### Docker
 
 First build the Docker container by running 'make' within the folder:
 
-```
-$ make
+```sh
+make
 ```
 
 To run in production mode via Docker+Gunicorn:
 
-```
+```sh
 $ docker run -it --rm=true -p 5000:5000 \
-    elastic_datashader:0.0.2 \
+    elastic_datashader:0.0.5 \
     --log-level=debug \
     -b :5000 \
     --workers 32 \
@@ -66,22 +82,23 @@ $ docker run -it --rm=true -p 5000:5000 \
     --env DATASHADER_LOG_LEVEL=DEBUG
 ```
 
-Elastic APM support
---------------------
-(EXPERIMENTAL) To add Elastic APM support:
+### Elastic APM support (EXPERIMENTAL)
+To add Elastic APM support run the following.
 
-```
-$ pip install elastic-apm[flask]
-
-$ export ELASTIC_APM_SERVICE_NAME=elastic_datashader
-$ export ELASTIC_APM_SERVER_URL=http://localhost:7200
+```sh
+poetry install --extras apm
 ```
 
-Then run as normal.  IMPORTANT, this only works in --debug or Gunicorn mode.  The Elastic APM module
-does not work correctly with Flask when multiple worker processes are run.
+You'll also need to set some environment variables.
 
-Running behind NGINX
---------------------
+```sh
+export ELASTIC_APM_SERVICE_NAME=elastic_datashader
+export ELASTIC_APM_SERVER_URL=http://localhost:7200
+```
+
+Then run as normal.  IMPORTANT, this only works in --debug or Gunicorn mode.  The Elastic APM module does not work correctly with Flask when multiple worker processes are run.
+
+### Running behind NGINX
 
 Run datashader as normal and use the following NGINX configuration snippet:
 
@@ -98,37 +115,34 @@ Run datashader as normal and use the following NGINX configuration snippet:
   }
 ```
 
-Testing
---------------------
-```
-python -m pytest
+### Testing
+From within the virtualenv (`poetry shell`) just run the following.
+
+```sh
+pytest
 ```
 
-Tweaks
-============
+## Tweaks
 
 Datashader layers will be generated faster if Elastic `search.max_buckets` is increase to 65536.
 
-Kibana
-============
+## Kibana
 
 Integration with Kibana Maps can be found [here](https://github.com/spectriclabs/kibana/tree/feat-datashader).  This code
 requires changes to code covered via the Elastic License.  It is your responsibility to use this code in compliance with this license.
 
 You can build a Kibana with Elastic-Datashader support:
 
-```
-$ cd kibana
-$ make
+```sh
+cd kibana
+make
 ```
 
-API
-============
+## API
 
 The API is currently provisional and may change in future releases.
 
-Get Tile
---------
+### Get Tile
 
 **URL** : `/tms/{index-name}/{z}/{x}/{y}.png`
 **Method** : `GET`
@@ -169,8 +183,7 @@ Get Tile
 }
 ```
 
-Get Legend
---------
+### Get Legend
 
 **URL** : `/legend/{index-name}/fieldname`
 **Method** : `GET`

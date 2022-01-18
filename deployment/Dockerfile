@@ -1,21 +1,24 @@
-FROM python:3.7
-LABEL maintainer="mastley@spectric.com" \
-      version="0.0.4"
+FROM python:3.9 AS builder
 
-COPY deployment/pip.conf /root/.pip/pip.conf
-
-RUN mkdir -p /opt/elastic_datashader/tms_cache
-
-COPY requirements.txt /opt/elastic_datashader
-
+RUN mkdir -p /build
 RUN pip install --upgrade pip && \
-    pip install wheel && \
-    pip install --no-cache-dir -r /opt/elastic_datashader/requirements.txt && \
+    pip install poetry
+COPY pyproject.toml /build/pyproject.toml
+COPY README.md /build/README.md
+COPY elastic_datashader /build/elastic_datashader
+WORKDIR /build/elastic_datashader
+RUN poetry build
+
+FROM python:3.9 AS deployment
+LABEL maintainer="foss@spectric.com" \
+      version="0.0.5"
+
+RUN mkdir -p /opt/elastic_datashader/tms-cache
+COPY --from=builder /build/dist/*.whl /opt/elastic_datashader/
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir /opt/elastic_datashader/*.whl && \
     pip install gunicorn
 
-COPY tms_datashader.py /opt/elastic_datashader
-COPY tms_datashader_api /opt/elastic_datashader/tms_datashader_api
-COPY templates /opt/elastic_datashader/templates
 COPY deployment/gunicorn_config.py /opt/elastic_datashader
 
 VOLUME ["/opt/elastic_datashader/tms-cache"]
@@ -24,5 +27,5 @@ ENTRYPOINT [ "gunicorn", \
     "--chdir", "/opt/elastic_datashader", \
     "-c", "/opt/elastic_datashader/gunicorn_config.py", \
     "--env", "DATASHADER_CACHE_DIR=/opt/elastic_datashader/tms-cache", \
-    "tms_datashader:create_app()" \
+    "elastic_datashader:create_app()" \
 ]

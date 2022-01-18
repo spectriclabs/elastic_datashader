@@ -18,8 +18,8 @@ from numpy import pi
 from datashader.utils import lnglat_to_meters
 import numpy as np
 
-import tms_datashader_api.helpers.mercantile_util as mu
-from tms_datashader_api.helpers.drawing import (
+import elastic_datashader.helpers.mercantile_util as mu
+from elastic_datashader.helpers.drawing import (
     ellipse,
     gen_empty,
     gen_overlay,
@@ -27,7 +27,7 @@ from tms_datashader_api.helpers.drawing import (
     gen_debug_overlay,
     generate_ellipse_points
 )
-from tms_datashader_api.helpers.elastic import (
+from elastic_datashader.helpers.elastic import (
     get_search_base,
     convert,
     convert_composite,
@@ -38,7 +38,7 @@ from tms_datashader_api.helpers.elastic import (
     get_tile_categories,
     scan
 )
-from tms_datashader_api.helpers.pandas_util import simplify_categories
+from elastic_datashader.helpers.pandas_util import simplify_categories
 
 NAN_LINE = {"x": None, "y": None, "c": "None"}
 
