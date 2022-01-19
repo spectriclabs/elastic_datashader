@@ -1,20 +1,21 @@
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
 import copy
 import json
 import logging
 import shutil
 import os
 import socket
-import time
 import mercantile
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
-import pynumeral
 from flask import Blueprint, current_app, request, redirect, Response
 
+import pynumeral
+
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Search, AttrDict, Document, UpdateByQuery
+from elasticsearch_dsl import Document
 from elasticsearch.exceptions import NotFoundError
 
 from elastic_datashader.helpers.cache import (
@@ -26,7 +27,6 @@ from elastic_datashader.helpers.cache import (
 from elastic_datashader.helpers.drawing import (
     create_color_key,
     gen_error,
-    get_unique_color_cnt,
 )
 from elastic_datashader.helpers.elastic import (
     get_search_base,
@@ -37,14 +37,10 @@ from elastic_datashader.helpers.elastic import (
 from elastic_datashader.helpers.parameters import (
     extract_parameters,
     merge_generated_parameters,
-    update_params,   
 )
 from elastic_datashader.helpers.tilegen import (
     generate_nonaggregated_tile,
     generate_tile,
-)
-from elastic_datashader.helpers.mercantile_util import (
-    tiles_bounds
 )
 
 api_blueprints = Blueprint("rest_api", __name__)
@@ -96,7 +92,7 @@ def age_cache():
 
 
 @api_blueprints.route("/<idx>/<field_name>/legend.json", methods=["GET"])
-def provide_legend(idx, field_name):
+def provide_legend(idx, field_name):  # pylint: disable=W0613
     # Extract out special extent parameter that is independent from hash
     extent = None
     params = request.args.get("params")
@@ -120,11 +116,10 @@ def provide_legend(idx, field_name):
     # Get hash and parameters
     try:
         parameter_hash, params = extract_parameters(request)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=W0703
         current_app.logger.exception("Error while extracting parameters")
         return legend_response("[]", e)
 
-    cache_dir = Path(current_app.config["CACHE_DIRECTORY"])
     params = merge_generated_parameters(params, idx, parameter_hash)
 
     # Assign param value to legacy keyword values
@@ -266,7 +261,7 @@ def get_data(idx, lat, lon, radius):
         #Check for paging args
         from_arg = int(request.args.get("from", 0))
         size_arg = int(request.args.get("size", 100))
-    except Exception as e:
+    except Exception:  # pylint: disable=W0703
         current_app.logger.exception("Error while converting lat/lon/radius/from/size")
         return error_data_response("Error while converting lat/lon/radius/from/size")
 
@@ -289,12 +284,12 @@ def get_data(idx, lat, lon, radius):
 
     # Get hash and parameters
     try:
-        parameter_hash, params = extract_parameters(request)
-    except Exception as e:
+        _parameter_hash, params = extract_parameters(request)
+    except Exception:  # pylint: disable=W0703
         current_app.logger.exception("Error while extracting parameters")
         return error_data_response("Error while extracting parameters")
+
     geopoint_field = params["geopoint_field"]
-    timestamp_field = params["timestamp_field"]
 
     #Build and execute search
     base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
@@ -361,7 +356,7 @@ def get_tms(idx, x: int, y: int, z: int):
     # Get hash and parameters
     try:
         parameter_hash, params = extract_parameters(request)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=W0703
         current_app.logger.exception("Error while extracting parameters")
         params = {"user": request.headers.get("es-security-runas-user", None)}
         #Create an error entry in .datashader_tiles
@@ -394,7 +389,12 @@ def get_tms(idx, x: int, y: int, z: int):
         img = c
         try:
             body = {"script" : {"source": "ctx._source.cache_hits++"}}
-            es.update(".datashader_tiles", tile_id, body=body, retry_on_conflict=5)
+            es.update(  # pylint: disable=E1123
+                ".datashader_tiles",
+                tile_id,
+                body=body,
+                retry_on_conflict=5,
+            )
         except NotFoundError:
             current_app.logger.warn("Unable to find cached tile entry in .datashader_tiles")
     else:
@@ -424,7 +424,7 @@ def get_tms(idx, x: int, y: int, z: int):
                 img, metrics = generate_nonaggregated_tile(idx, x, y, z, params)
             else:
                 img, metrics = generate_tile(idx, x, y, z, params)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=W0703
             logging.exception("Exception Generating Tile for request %s", request)
             #Create an error entry in .datashader_tiles
             doc = Document(
@@ -494,10 +494,10 @@ def retrieve_field_caps(index):
     es = Elasticsearch(
         current_app.config.get("ELASTIC").split(","), verify_certs=False, timeout=120
     )
-    field_caps = es.field_caps(
+    field_caps = es.field_caps(  # pylint: disable=E1123
         index,
         fields='*',
-        ignore_unavailable=True
+        ignore_unavailable=True,
     )
 
     response_json = json.dumps(field_caps)

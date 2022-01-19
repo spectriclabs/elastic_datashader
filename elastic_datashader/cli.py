@@ -1,18 +1,20 @@
+from typing import Optional
+
 import argparse
 import logging
 import os
 import socket
 import ssl
-import logging
-from typing import Optional
+
+from flask import Flask
+from flask.logging import create_logger
+from flask_apscheduler import APScheduler
 
 import urllib3
-from flask import Flask
-from flask_apscheduler import APScheduler
 
 from .helpers.cache import scheduled_cache_check_task
 from .helpers.config import Config
-from .helpers.elastic import verify_datashader_indices
+from .helpers.elastic import load_datashader_headers, verify_datashader_indices
 from .helpers.drawing import initialize_custom_color_maps
 from .routes import api_blueprints
 from .views import view_blueprints
@@ -26,18 +28,7 @@ logger.setLevel(logging.ERROR)
 # the urllib module is noisy about SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def create_app(
-    app_args: Optional[argparse.Namespace] = None,
-    verify_indices: bool = True
-) -> Flask:
-    """Application factory for setting up Flask app
-
-    Use factory pattern as shown in:
-
-    https://flask.palletsprojects.com/en/1.1.x/tutorial/factory/
-    """
-    flask_app = Flask(__name__)
-
+def configure(flask_app, app_args) -> None:
     # Load default settings
     flask_app.config.from_object(Config())
 
@@ -50,12 +41,28 @@ def create_app(
         for k, v in vars(app_args).items():
             if k.upper() in flask_app.config:
                 flask_app.config[k.upper()] = v
+
+    flask_app.config["DATASHADER_HEADERS"] = load_datashader_headers(flask_app.config.get("HEADER_FILE"))
     flask_app.config["SECRET_KEY"] = "CSRFProtectionKey"
 
     # Limit logging at INFO, reduce if needed for debugging
     if flask_app.config["LOG_LEVEL"]:
         flask_app.logger.setLevel(getattr(logging, flask_app.config["LOG_LEVEL"]))
 
+def create_app(
+    app_args: Optional[argparse.Namespace] = None,
+    verify_indices: bool = True
+) -> Flask:
+    """Application factory for setting up Flask app
+
+    Use factory pattern as shown in:
+
+    https://flask.palletsprojects.com/en/1.1.x/tutorial/factory/
+    """
+    flask_app = Flask(__name__)
+    flask_app.logger = create_logger(flask_app) # to make pylint happy
+
+    configure(flask_app, app_args)
     flask_app.logger.info("Loaded configuration %s", flask_app.config)
     flask_app.logger.info("Loaded environment %s", os.environ)
 
@@ -88,9 +95,9 @@ def create_app(
         if os.environ.get("ELASTIC_APM_SERVER_URL"):
             from elasticapm.contrib.flask import ElasticAPM
 
-            apm = ElasticAPM(flask_app, logging=logging.ERROR)
+            ElasticAPM(flask_app, logging=logging.ERROR)
     except ImportError:
-        apm = None
+        pass
 
     scheduler = APScheduler()
     scheduler.init_app(flask_app)

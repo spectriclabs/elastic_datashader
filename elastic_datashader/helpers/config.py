@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
 import os
 import socket
 
-
-class Config(object):
+class Config:
     """
     The default configuration; configuration parameters need
     to be in all upper case to be loaded correctly by
@@ -22,6 +20,7 @@ class Config(object):
     MAX_BATCH = int(os.environ.get("DATASHADER_MAX_BATCH", 10000))
     MAX_ELLIPSES_PER_TILE = int(os.environ.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100000))
     HEADER_FILE = os.environ.get("DATASHADER_HEADER_FILE", "./headers.yaml")
+    DATASHADER_HEADERS = {}
     WHITELIST_HEADERS = os.environ.get("DATASHADER_WHITELIST_HEADERS", None)
     NUM_ELLIPSE_POINTS = os.environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)
     ELLIPSE_RENDER_MODE = os.environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix")

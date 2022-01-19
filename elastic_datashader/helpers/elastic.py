@@ -1,22 +1,18 @@
-#!/usr/bin/env python3
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import copy
-import logging
-import os
-import threading
 import struct
-import mercantile
 import pynumeral
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
 
-import yaml
 from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
-from elasticsearch.exceptions import RequestError
-from elasticsearch_dsl import Search, AttrDict, Index
+from elasticsearch_dsl import AttrDict, Search
 from flask import current_app, request
+
 import elastic_datashader.helpers.mercantile_util as mu
+import yaml
 
 
 def to_32bit_float(number):
@@ -129,14 +125,21 @@ def verify_datashader_indices(elasticsearch_uri: str):
         }
     }
 
-    es.indices.create(index=".datashader_layers", body=layer_mapping, ignore=400)
-    es.indices.create(index=".datashader_tiles", body=tile_mapping, ignore=400)
+    es.indices.create(  # pylint: disable=E1123
+        index=".datashader_layers",
+        body=layer_mapping,
+        ignore=400
+    )
+    es.indices.create(  # pylint: disable=E1123
+        index=".datashader_tiles",
+        body=tile_mapping,
+        ignore=400
+    )
 
 def get_search_base(
     elastic_uri: str,
     params: Dict[str, Any],
     idx: int,
-    header_file: Optional[Union[str, Path]] = None,
 ) -> Search:
     """
 
@@ -159,14 +162,16 @@ def get_search_base(
         elastic_uri.split(","),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(header_file, request.headers, user),
+        headers=get_es_headers(request.headers, user),
     )
 
     # Create base search
-    base_s = Search(index=idx).using(es)
+    base_s = Search(index=idx, using=es)
+
     # Add time bounds
     # Handle time calculations
     time_range = None
+
     if timestamp_field:
         time_range = {timestamp_field: {}}
         if start_time is not None:
@@ -294,44 +299,35 @@ def build_dsl_filter(filter_inputs):
     current_app.logger.info("Filter output %s", filter_dict)
     return filter_dict
 
+def load_datashader_headers(header_file_path_str: Optional[str]) -> Dict[Any, Any]:
+    if header_file_path_str is None:
+        return {}
 
-HEADERS = None
-header_lock = threading.Lock()
+    header_file_path = Path(header_file_path_str)
 
+    if not header_file_path.exists():
+        return {}
 
-def get_es_headers(header_file=None, request_headers=None, user=None):
+    try:
+        loaded_yaml = yaml.safe_load(header_file_path.read_text(encoding='utf8'))
+    except (OSError, IOError, yaml.YAMLError) as ex:
+        raise Exception(f"Failed to load HEADER_FILE from {header_file_path_str}") from ex
+
+    if type(loaded_yaml) is not dict:
+        raise ValueError(f"HEADER_FILE YAML should be a dict mapping, but received {loaded_yaml}")
+
+    return loaded_yaml
+
+def get_es_headers(request_headers=None, user=None):
     """
 
-    :param header_file:
     :param request_headers:
     :param user:
     :return:
     """
-    global HEADERS, header_lock
 
-    with header_lock:
-        if HEADERS is None:
-            if header_file is None:
-                header_file = current_app.config.get("HEADER_FILE")
-            # Load HEADERS from the file if requested
-            if header_file and os.path.exists(header_file):
-                try:
-                    with open(header_file) as ff:
-                        HEADERS = yaml.safe_load(ff)
-                    if not isinstance(HEADERS, dict):
-                        raise ValueError(
-                            f"header YAML file must return a mapping, received {HEADERS}"
-                        )
-                except (OSError, IOError, ValueError, yaml.YAMLError):
-                    current_app.logger.exception(
-                        "Failed to load headers from %s", header_file
-                    )
-                    # in failure, headers are set to empty
-                    HEADERS = {}
-            else:
-                HEADERS = {}
-
-    result = copy.deepcopy(HEADERS)
+    # Copy so we don't mutate the headers in the config
+    result = copy.deepcopy(current_app.config.get("DATASHADER_HEADERS"))  
 
     # Figure out what headers are allowed to pass-through
     whitelist_headers = current_app.config.get("WHITELIST_HEADERS")
@@ -510,10 +506,10 @@ def chunk_iter(iterable, chunk_size):
         yield (False, chunks[0:last_written_idx+1])
 
 class ScanAggs(object):
-    def __init__(self, search, source_aggs, inner_aggs={}, size=10, timeout=None):
+    def __init__(self, search, source_aggs, inner_aggs=None, size=10, timeout=None):
         self.search = search
         self.source_aggs = source_aggs
-        self.inner_aggs = inner_aggs
+        self.inner_aggs = inner_aggs if inner_aggs is not None else {}
         self.size = size
         self.num_searches = 0
         self.total_took = 0
@@ -541,12 +537,11 @@ class ScanAggs(object):
                 _time_remaining = _timeout_at - time.time()
                 s = s.params(timeout="%ds" % _time_remaining)
             s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
+
             for agg_name, agg in self.inner_aggs.items():
                 s.aggs["comp"][agg_name] = agg
-            try:
-                return s.execute()
-            except:
-                raise
+
+            return s.execute()
 
         timeout_at = None
         if self.timeout:
@@ -555,10 +550,10 @@ class ScanAggs(object):
         response = run_search(timeout_at=timeout_at)
         self.num_searches += 1
         self.total_took += response.took
-        self.total_shards += response._shards.total
-        self.total_skipped += response._shards.skipped
-        self.total_successful += response._shards.successful
-        self.total_failed += response._shards.failed
+        self.total_shards += response._shards.total  # pylint: disable=W0212
+        self.total_skipped += response._shards.skipped  # pylint: disable=W0212
+        self.total_successful += response._shards.successful  # pylint: disable=W0212
+        self.total_failed += response._shards.failed  # pylint: disable=W0212
         
         while response.aggregations.comp.buckets:
             for b in response.aggregations.comp.buckets:
@@ -575,10 +570,10 @@ class ScanAggs(object):
             response = run_search(after=after, timeout_at=timeout_at)
             self.num_searches += 1
             self.total_took += response.took
-            self.total_shards += response._shards.total
-            self.total_skipped += response._shards.skipped
-            self.total_successful += response._shards.successful
-            self.total_failed += response._shards.failed
+            self.total_shards += response._shards.total  # pylint: disable=W0212
+            self.total_skipped += response._shards.skipped  # pylint: disable=W0212
+            self.total_successful += response._shards.successful  # pylint: disable=W0212
+            self.total_failed += response._shards.failed  # pylint: disable=W0212
 
 def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
 
@@ -604,7 +599,7 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
     cat_s.aggs.bucket("missing", "filter", bool={ "must_not" : { "exists": { "field": category_field } } })
     response = cat_s.execute()
     if hasattr(response.aggregations, "categories"):
-        for ii, category in enumerate(response.aggregations.categories):
+        for category in response.aggregations.categories:
             # this if prevents bools from using 0/1 instead of true/false
             if hasattr(category, "key_as_string"):
                 category_filters[str(category.key)] = { "term": {category_field: category.key_as_string} }

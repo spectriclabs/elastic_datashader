@@ -1,21 +1,19 @@
+from datetime import datetime, timedelta
+from urllib.parse import unquote
 from typing import Optional
 
 import copy
 import hashlib
 import json
 import math
-import pathlib
-import threading
 import os
 import socket
 import time
-from urllib.parse import unquote
-from datetime import datetime, timedelta
 
 from flask import current_app, Response
 
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Search, AttrDict, Document
+from elasticsearch_dsl import Document
 from elasticsearch.exceptions import NotFoundError, ConflictError
 
 from .timeutil import quantize_time_range, convert_kibana_time
@@ -206,17 +204,17 @@ def extract_parameters(request):
     if to_time:
         try:
             params["stop_time"] = convert_kibana_time(to_time, now, 'up')
-        except ValueError:
+        except ValueError as err:
             current_app.logger.exception("invalid to_time parameter")
-            raise Exception("invalid to_time parameter")
+            raise Exception("invalid to_time parameter") from err
 
     params["start_time"] = None
     if from_time:
         try:
             params["start_time"] = convert_kibana_time(from_time, now, 'down')
-        except ValueError:
+        except ValueError as err:
             current_app.logger.exception("invalid from_time parameter")
-            raise Exception("invalid from_time parameter")
+            raise Exception("invalid from_time parameter") from err
 
     if params.get("start_time") and params.get("stop_time"):
         params["start_time"], params["stop_time"] = quantize_time_range(
@@ -231,10 +229,12 @@ def extract_parameters(request):
 
     # Calculate a hash value for the specific parameter set
     parameter_hash = hashlib.md5()
-    for k, p in sorted(params.items()):
+
+    for _, p in sorted(params.items()):
         if isinstance(p, datetime):
             p = p.isoformat()
         parameter_hash.update(str(p).encode("utf-8"))
+
     parameter_hash = parameter_hash.hexdigest()
 
     # Unhashed parameters
@@ -250,10 +250,12 @@ def update_params(params, updates=None):
     
     # Calculate a hash value for the specific parameter set
     parameter_hash = hashlib.md5()
-    for k, p in sorted(params.items()):
+
+    for _, p in sorted(params.items()):
         if isinstance(p, datetime):
             p = p.isoformat()
         parameter_hash.update(str(p).encode("utf-8"))
+
     parameter_hash = parameter_hash.hexdigest()
 
     current_app.logger.debug("Parameters: %s (%s)", params, parameter_hash)
@@ -261,17 +263,10 @@ def update_params(params, updates=None):
 
 def generate_global_params(params, idx):
     geopoint_field = params["geopoint_field"]
-    timestamp_field = params["timestamp_field"]
-    start_time = params["start_time"]
-    stop_time = params["stop_time"]
     category_field = params["category_field"]
     category_type = params["category_type"]
     category_histogram = params["category_histogram"]
-    spread = params["spread"]
     span_range = params["span_range"]
-    lucene_query = params["lucene_query"]
-    dsl_query = params["dsl_query"]
-    dsl_filter = params["dsl_filter"]
 
     histogram_range = 0
     histogram_interval = None
@@ -385,16 +380,8 @@ def generate_global_params(params, idx):
     return generated_params
 
 
-def merge_generated_parameters(params, idx, hash):
-    """
-
-    :param params:
-    :param paramsfile:
-    :param idx:
-    :return:
-    """
-
-    layer_id = "%s_%s" % (hash, socket.gethostname())
+def merge_generated_parameters(params, idx, param_hash):
+    layer_id = "%s_%s" % (param_hash, socket.gethostname())
     es = Elasticsearch(
         current_app.config.get("ELASTIC").split(","),
         verify_certs=False,
