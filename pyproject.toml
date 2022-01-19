@@ -69,8 +69,10 @@ python =
 
 [testenv]
 deps =
+	pylint
 	pytest
 
 commands =
+	pylint --disable=R,C,fixme elastic_datashader
 	pytest
 """

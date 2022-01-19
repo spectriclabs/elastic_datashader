@@ -160,9 +160,9 @@ def _tiles_in_bbox(w, s, e, n, z):
 
     num_i = lr_tile[0] + 1 - ul_tile[0]
     num_j = lr_tile[1] + 1 - ul_tile[1]
-    num_tiles = num_i * num_j
+    total_num_tiles = num_i * num_j
 
-    result = np.zeros((num_tiles, 4), dtype=np.float64)
+    result = np.zeros((total_num_tiles, 4), dtype=np.float64)
 
     # Because numba doesn't support np.tile or np.resize yet
     current_tile = 0

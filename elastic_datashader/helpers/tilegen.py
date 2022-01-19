@@ -13,7 +13,7 @@ import pandas as pd
 from datashader import reductions as rd, transfer_functions as tf
 from elasticsearch_dsl import AttrList, AttrDict, A
 from elasticsearch_dsl.aggs import Bucket
-from flask import current_app, request
+from flask import current_app
 from numpy import pi
 from datashader.utils import lnglat_to_meters
 import numpy as np
@@ -29,7 +29,6 @@ from elastic_datashader.helpers.drawing import (
 )
 from elastic_datashader.helpers.elastic import (
     get_search_base,
-    convert,
     convert_composite,
     split_fieldname_to_list,
     get_nested_field_from_hit,
@@ -248,7 +247,7 @@ def create_datashader_ellipses_from_search(
                 )
                 X, Y = lnglat_to_meters(LON, LAT)
             else:
-                raise ValueError("invalid ellipse render mode %s", ellipse_render_mode)
+                raise ValueError(f"Invalid ellipse render mode {ellipse_render_mode}")
 
             if category_field:
                 if histogram_interval:
@@ -465,16 +464,12 @@ def generate_nonaggregated_tile(
     start_time = params["start_time"]
     stop_time = params["stop_time"]
     category_field = params["category_field"]
-    category_type = params["category_type"]
     category_format = params["category_format"]
     highlight = params["highlight"]
     cmap = params["cmap"]
     spread = params["spread"]
     span_range = params["span_range"]
     spread = params["spread"]
-    lucene_query = params["lucene_query"]
-    dsl_query = params["dsl_query"]
-    dsl_filter = params["dsl_filter"]
     ellipse_major = params["ellipse_major"]
     ellipse_minor = params["ellipse_minor"]
     ellipse_tilt = params["ellipse_tilt"]
@@ -483,7 +478,6 @@ def generate_nonaggregated_tile(
     filter_distance = params["filter_distance"]
     track_connection = params["track_connection"]
     max_batch = params["max_batch"]
-    max_bins = params["max_bins"]
     max_ellipses_per_tile = params["max_ellipses_per_tile"]
     histogram_interval = params.get("generated_params", {}).get(
         "histogram_interval", None
@@ -548,12 +542,6 @@ def generate_nonaggregated_tile(
                 "lon": min(180, max(-180, bot_rght[0])),
             },
         }
-
-        # Figure out how big the tile is in meters
-        xwidth = x_range[1] - x_range[0]
-        yheight = y_range[1] - y_range[0]
-        # And now the area of the tile
-        area = xwidth * yheight
 
         # Create base search
         base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx).params(
@@ -649,7 +637,7 @@ def generate_nonaggregated_tile(
             track_distance = 0.0
             blank_row = {"x": np.nan, "y": np.nan, "c": None, "t": None}
             old_row = blank_row
-            for index, row in df.iterrows():
+            for _, row in df.iterrows():
                 if old_row.get("c") != row.get("c"):
                     #new category, so insert space in the tracks dicts and add to the start dicts
                     if track_distance > filter_meters:
@@ -724,9 +712,6 @@ def generate_nonaggregated_tile(
             if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
         else:
-            # Find number of pixels in required image
-            pixels = tile_height_px * tile_width_px
-
             categories = [ x for x in df["c"].unique() if x != None ]
             metrics["categories"] = json.dumps(categories)
 
@@ -890,9 +875,6 @@ def generate_tile(idx, x, y, z, params):
     spread = params["spread"]
     resolution = params["resolution"]
     span_range = params["span_range"]
-    lucene_query = params["lucene_query"]
-    dsl_query = params["dsl_query"]
-    dsl_filter = params["dsl_filter"]
     max_bins = params["max_bins"]
     use_centroid = params["use_centroid"]
     histogram_interval = params.get("generated_params", {}).get("histogram_interval")
@@ -947,12 +929,6 @@ def generate_tile(idx, x, y, z, params):
                 "lon": min(180, max(-180, east)),
             },
         }
-
-        # Figure out how big the tile is in meters
-        xwidth = x_range[1] - x_range[0]
-        yheight = y_range[1] - y_range[0]
-        # And now the area of the tile
-        area = xwidth * yheight
 
         # Create base search
         base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
@@ -1039,7 +1015,7 @@ def generate_tile(idx, x, y, z, params):
                 if category_tile.z > int(params.get("mapZoom")):
                     category_tile = mercantile.parent(category_tile, zoom=int(params["mapZoom"]))
                     
-                category_filters, category_legend = get_tile_categories(
+                category_filters, _category_legend = get_tile_categories(
                     base_s,
                     category_tile.x,
                     category_tile.y,
@@ -1172,18 +1148,17 @@ def generate_tile(idx, x, y, z, params):
                     cat_dtype = pd.api.types.CategoricalDtype(categories=categories, ordered=True)
                     df["t"] = df["t"].astype(cat_dtype)
 
-                    """
                     # When the number of categories exceeds the number of colors, we can simply
                     # replaced the category name with the desired color (i.e. use the color as the category)
                     # field.  This is especially important in highly categorical data where the number of
                     # categories can be very large and thus cause huge memory allocations in `_colorize`
-                    _, color_key = simplify_categories(
-                        df,
-                        "t",
-                        create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight),
-                        inplace=True,
-                    )
-                    """
+                    #   _, color_key = simplify_categories(
+                    #       df,
+                    #       "t",
+                    #       create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight),
+                    #       inplace=True,
+                    #   )
+
                     color_key=create_color_key(
                         df["t"].cat.categories,
                         cmap=cmap,

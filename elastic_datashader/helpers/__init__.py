@@ -1,7 +1,9 @@
-import pynumeral
+import math
 import re
 
-def patched_get_python_format(self, numeralfmt, value):
+import pynumeral
+
+def patched_get_python_format(self, numeralfmt, value):  # pylint: disable=W0613
     thousand = "," if "," in numeralfmt else ""
     float_or_exp = "e" if "e+0" in numeralfmt else "f"
     precision = numeralfmt.split(".")[1] if "." in numeralfmt else None
@@ -39,7 +41,6 @@ def patched_get_format(self, numeralfmt, value):
     if numeralfmt.strip("(").startswith(".") and value > -1 and value < 1:
         ret = ret.replace("0.", ".")
     if ".[" in numeralfmt and "[.]" not in numeralfmt and "." in ret:
-        precision = numeralfmt.replace("]", "").split("[")[1].count("0")
         # remove up to precision zeros from the end
         ii = len(ret)
         for ii in reversed(range(len(ret))):
