@@ -40,7 +40,8 @@ from elastic_datashader.helpers.elastic import (
 from elastic_datashader.helpers.pandas_util import simplify_categories
 
 NAN_LINE = {"x": None, "y": None, "c": "None"}
-
+TILE_HEIGHT_PX = 256
+TILE_WIDTH_PX = 256
 
 class GeotileGrid(Bucket):
     name = "geotile_grid"

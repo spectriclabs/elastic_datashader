@@ -15,6 +15,12 @@ from .timeutil import pretty_time_delta
 _log = logging.getLogger("apscheduler.scheduler.cache")
 _log.addHandler(logging.NullHandler())
 
+def tile_name(idx, x, y, z, parameter_hash) -> str:
+    return f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
+
+def tile_id(idx, x, y, z, parameter_hash) -> str:
+    return "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y)
+
 def directory_size(path: Path) -> int:
     '''
     Recursively traverses a directory to get the
@@ -73,15 +79,15 @@ def set_cache(cache_dir: Union[Path, str], tile: str, img: bytes) -> None:
     tile_path.write_bytes(img)
 
 
-def check_cache_dir(cache_dir: Union[str, Path], layer_name: str) -> None:
-    """Ensure the folder ``cache_dir``/``layer_name`` exists
+def check_cache_dir(cache_dir: Path, layer_name: str) -> None:
+    """
+    Ensure the folder ``cache_dir``/``layer_name`` exists
 
     :param cache_dir: Top level directory
     :param layer_name: Specific layer in cache
     """
-    tile_cache_path = Path(cache_dir) / layer_name
+    tile_cache_path = cache_dir / layer_name
     tile_cache_path.mkdir(parents=True, exist_ok=True)
-
 
 def check_cache_age(cache_dir: Union[Path, str], age_limit: int) -> None:
     """Check for and delete any cache files older than ``age_limit``
