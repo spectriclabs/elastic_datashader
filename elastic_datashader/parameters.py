@@ -1,23 +1,55 @@
 from datetime import datetime, timedelta
-from urllib.parse import unquote
+from json import loads
+from socket import gethostname
+from time import sleep
 from typing import Optional
+from urllib.parse import unquote
 
 import copy
 import hashlib
-import json
 import math
 import os
-import socket
-import time
-
-from flask import current_app, Response
 
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Document
 from elasticsearch.exceptions import NotFoundError, ConflictError
 
-from .timeutil import quantize_time_range, convert_kibana_time
+from .config import config
 from .elastic import get_search_base, build_dsl_filter
+from .timeutil import quantize_time_range, convert_kibana_time
+
+def create_default_params() -> Dict[str, Any]:
+    return {
+        "category_field": None,
+        "category_format": None,
+        "category_histogram": None,
+        "category_type": None,
+        "cmap": None,
+        "debug": False,
+        "dsl_query": None,
+        "dsl_filter": None,
+        "ellipse_major": "",
+        "ellipse_minor": "",
+        "ellipse_tilt": "",
+        "ellipse_units": "",
+        "filter_distance": None,
+        "geopoint_field": None,
+        "highlight": None,
+        "lucene_query": None,
+        "max_batch": config.max_batch,
+        "max_bins": config.max_bins,
+        "max_ellipses_per_tile": config.max_ellipses_per_tile,
+        "render_mode": None,
+        "resolution": "finest",
+        "search_distance": 50,
+        "span_range": None,
+        "spread": None,
+        "timestamp_field": "@timestamp",
+        "track_connection": None,
+        "use_centroid": False,
+        "user": None,
+    }
+
 
 def normalize_spread(spread) -> Optional[int]:
     # Handle text-value spread in both legacy and new format
@@ -33,112 +65,107 @@ def normalize_spread(spread) -> Optional[int]:
 
     return None
 
-def extract_parameters(request):
-    """Get the parameters from a request and return hash and dict of parameters
+def load_params_param(params: Optional[str]) -> Optional[Dict[Any, Any]]:
+    if params and params != "{params}":
+        return loads(unquote(params))
 
-    :param request:
-    """
+    return None
 
-    # Default values
-    from_time = None
-    to_time = "now"
-    params = {
-        "user": request.headers.get("es-security-runas-user", None),
-        "geopoint_field": None,
-        "timestamp_field": "@timestamp",
-        "lucene_query": None,
-        "dsl_query": None,
-        "dsl_filter": None,
-        "cmap": None,
-        "category_field": None,
-        "category_type": None,
-        "category_format": None,
-        "category_histogram": None,
-        "highlight": None,
-        "render_mode": None,
-        "ellipse_major": "",
-        "ellipse_minor": "",
-        "ellipse_tilt": "",
-        "ellipse_units": "",
-        "search_distance": 50,
-        "filter_distance": None,
-        "track_connection": None,
-        "spread": None,
-        "span_range": None,
-        "resolution": "finest",
-        "use_centroid": False,
-        "max_bins": int(current_app.config["MAX_BINS"]),
-        "max_batch": int(current_app.config["MAX_BATCH"]),
-        "max_ellipses_per_tile": int(current_app.config["MAX_ELLIPSES_PER_TILE"]),
-        "debug": False,
-    }
+def get_from_time(params: Optional[Dict[Any, Any]]) -> Optional[str]:
+    if params:
+        return params.get("timeFilters", {}).get("from")
 
-    # Extract user from headers
+    return None
 
-    # Argument Parameters
-    arg_params = request.args.get("params")
-    if arg_params and arg_params != "{params}":
-        arg_params = unquote(arg_params)
-        arg_params = json.loads(arg_params)
-        if arg_params.get("timeFilters", {}).get("from"):
-            from_time = arg_params.get("timeFilters", {}).get("from")
-        if arg_params.get("timeFilters", {}).get("to"):
-            to_time = arg_params.get("timeFilters", {}).get("to")
-        if arg_params.get("filters"):
-            params["dsl_filter"] = build_dsl_filter(arg_params.get("filters"))
-        if arg_params.get("query") and arg_params.get("query", {}).get(
-            "language", None
-        ) in ("lucene", "kuery"):
-            # accept 'kuery' for backwords compatibility...
-            params["lucene_query"] = arg_params.get("query").get("query")
-        elif (
-            arg_params.get("query")
-            and arg_params.get("query", {}).get("language", None) == "dsl"
-        ):
-            params["dsl_query"] = arg_params.get("query").get("query")
-    elif arg_params and arg_params == "{params}":
-        # If the parameters haven't been provided yet
-        resp = Response("TMS parameters not yet provided", status=204)
-        return resp
+def get_to_time(params: Optional[Dict[Any, Any]]) -> str:
+    if params:
+        return params.get("timeFilters", {}).get("to")
 
-    # Custom parameters can be provided by the URL
-    params["render_mode"] = request.args.get("render_mode", default=params["render_mode"])
-    
+    return "now"
+
+def get_dsl_filter(params: Optional[Dict[Any, Any]]) -> Optional[Dict[str, Any]]:
+    if params and "filters" in params:
+        return build_dsl_filter(params["filters"])
+
+    return None
+
+def get_query(params: Optional[Dict[Any, Any]]) -> Dict[str, Any]:
+    query = params.get("query", {})
+
+    if query and query.get("language", None) in ("lucene", "kuery"):
+        # accept 'kuery' for backwords compatibility...
+        return {"lucene_query": query.get("query")}
+    elif query and query.get("langauge", None) == "dsl":
+        return {"dsl_query": query.get("query")}
+
+    return {}
+
+def get_render_mode(query_params: Dict[Any, Any]) -> str:
     # ensure backwards compatibility with older API
-    if params["render_mode"] == None:
-        if request.args.get("ellipses", default=None) == "true":
-            params["render_mode"] = "ellipses"
-        else:
-            params["render_mode"] = "points"
+    render_mode = query_params.get("render_mode", None)
 
-    if params["render_mode"] == "ellipses":
-        # Handle the other fields
-        params["ellipse_major"] = request.args.get("ellipse_major", default="")
-        params["ellipse_minor"] = request.args.get("ellipse_minor", default="")
-        params["ellipse_tilt"] = request.args.get("ellipse_tilt", default="")
-        params["ellipse_units"] = request.args.get("ellipse_units", default="")
-        if (
-            params["ellipse_major"] == ""
-            or params["ellipse_minor"] == ""
-            or params["ellipse_tilt"] == ""
-        ):
-            params["render_mode"] = "points"
-    
+    if render_mode is not None:
+        return render_mode
+
+    if (
+        query_params.get("ellipses", None) == "true" and
+        query_params.get("ellipse_major", "") != "" and
+        query_params.get("ellipse_minor", "") != "" and
+        query_params.get("ellipse_tilt", "") != ""
+    ):
+        return "ellipses"
+
+    return "points"
+
+def get_ellipse_params(render_mode: str, query_params: Dict[Any, Any]) -> Dict[str, Any]:
+    if render_mode != "ellipses":
+        return {}
+
+    param_names = ("ellipse_major", "ellipse_minor", "ellipse_tilt", "ellipse_units")
+    return {name: query_params.get(name, "") for name in param_names}
+
+def get_search_distance(query_params: Dict[Any, Any]) -> float:
     #Reduce this to just "search" -> "search_distance" once Kibana is changed
-    if request.args.get("ellipse_search", default="") == "narrow":
-        params["search_distance"] = 1.0
-    elif request.args.get("ellipse_search", default="") == "normal":
-        params["search_distance"] = 10.0
-    elif request.args.get("ellipse_search", default="") == "wide":
-        params["search_distance"] = 50.0
-    if request.args.get("track_search", default="") == "narrow":
-        params["search_distance"] = 1.0
-    elif request.args.get("track_search", default="") == "normal":
-        params["search_distance"] = 10.0
-    elif request.args.get("track_search", default="") == "wide":
-        params["search_distance"] = 50.0
+    if query_params.get("track_search", "") == "narrow":
+        return 1.0
 
-    params["track_connection"] = request.args.get("track_connection", default=params["track_connection"])
+    if query_params.get("track_search", "") == "normal":
+        return 10.0
+
+    if query_params.get("track_search", "") == "wide":
+        return 50.0
+
+    if query_params.get("ellipse_search", "") == "narrow":
+        return 1.0
+
+    if query_params.get("ellipse_search", "") == "normal":
+        return 10.0
+
+    if query_params.get("ellipse_search", "") == "wide":
+        return 50.0
+
+    return 50.0
+
+def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) -> Tuple[str, Dict[str, Any]]:
+    """
+    Get the parameters from a request and return hash and dict of parameters
+    """
+    params = create_default_params()
+    params['user'] = headers.get("es-security-runas-user", None)
+
+    # There's a query parameter called "params"
+    params_param = load_params_param(query_params.get("params"))
+
+    from_time = get_from_time(params_param)
+    to_time = get_to_time(params_param)
+    render_mode = get_render_mode(query_params)
+
+    params["dsl_filter"] = get_dsl_filter(params_param)
+    params.update(get_query(params_param))
+    params["render_mode"] = render_mode
+    params.update(get_ellipse_params(render_mode, query_params))
+    params["search_distance"] = get_search_distance(query_params)
+    params["track_connection"] = query_params.get("track_connection", params["track_connection"])
     
     params["filter_distance"] = request.args.get("track_filter", default=params["filter_distance"])
     if params["filter_distance"] == "none":
@@ -205,7 +232,7 @@ def extract_parameters(request):
         try:
             params["stop_time"] = convert_kibana_time(to_time, now, 'up')
         except ValueError as err:
-            current_app.logger.exception("invalid to_time parameter")
+            logger.exception("invalid to_time parameter")
             raise Exception("invalid to_time parameter") from err
 
     params["start_time"] = None
@@ -213,7 +240,7 @@ def extract_parameters(request):
         try:
             params["start_time"] = convert_kibana_time(from_time, now, 'down')
         except ValueError as err:
-            current_app.logger.exception("invalid from_time parameter")
+            logger.exception("invalid from_time parameter")
             raise Exception("invalid from_time parameter") from err
 
     if params.get("start_time") and params.get("stop_time"):
@@ -222,7 +249,7 @@ def extract_parameters(request):
         )
 
     if params["geopoint_field"] is None:
-        current_app.logger.error("missing geopoint_field")
+        logger.error("missing geopoint_field")
         raise Exception("missing geopoint_field")
 
     params["debug"] = ( request.args.get("debug", default=False) == 'true' )
@@ -241,7 +268,7 @@ def extract_parameters(request):
     params["mapZoom"] = arg_params.get("zoom", None)
     params["extent"] = arg_params.get("extent", None)
     
-    current_app.logger.debug("Parameters: %s (%s)", params, parameter_hash)
+    logger.debug("Parameters: %s (%s)", params, parameter_hash)
     return parameter_hash, params
 
 def update_params(params, updates=None):
@@ -258,7 +285,7 @@ def update_params(params, updates=None):
 
     parameter_hash = parameter_hash.hexdigest()
 
-    current_app.logger.debug("Parameters: %s (%s)", params, parameter_hash)
+    logger.debug("Parameters: %s (%s)", params, parameter_hash)
     return parameter_hash, params
 
 def generate_global_params(params, idx):
@@ -276,7 +303,7 @@ def generate_global_params(params, idx):
     field_max = None
 
     # Create base search
-    base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
+    base_s = get_search_base(config.elastic_hosts, params, idx)
 
     # west, south, east, north
     global_bounds = [-180, -90, 180, 90]
@@ -328,9 +355,9 @@ def generate_global_params(params, idx):
 
         # In a numeric field, we can fall back to histogram mode if there are too many unique values
         if category_type == "number" and category_histogram in (True, None):
-            current_app.logger.info("Generating histogram parameters")
+            logger.info("Generating histogram parameters")
             if hasattr(bounds_resp.aggregations, "field_stats"):
-                current_app.logger.info(
+                logger.info(
                     "field stats %s", bounds_resp.aggregations.field_stats
                 )
                 # to prevent strain on the cluster, if there are over 1million
@@ -357,7 +384,7 @@ def generate_global_params(params, idx):
                                 10, math.ceil(math.log10(histogram_range))
                             )
                             histogram_interval = histogram_range / histogram_cnt
-                            current_app.logger.info(
+                            logger.info(
                                 "histogram interval %s, category_cnt: %s ",
                                 histogram_interval,
                                 histogram_cnt,
@@ -365,7 +392,7 @@ def generate_global_params(params, idx):
                         else:
                             histogram_range = 0
     else:
-        current_app.logger.debug("Skipping global query")
+        logger.debug("Skipping global query")
 
     # Return generated params dict
     generated_params = {
@@ -381,9 +408,9 @@ def generate_global_params(params, idx):
 
 
 def merge_generated_parameters(params, idx, param_hash):
-    layer_id = "%s_%s" % (param_hash, socket.gethostname())
+    layer_id = "%s_%s" % (param_hash, gethostname())
     es = Elasticsearch(
-        current_app.config.get("ELASTIC").split(","),
+        config.elastic_hosts.split(","),
         verify_certs=False,
         timeout=120
     )
@@ -398,15 +425,15 @@ def merge_generated_parameters(params, idx, param_hash):
         #if not, create the hash in the db but only if it does not already exist
         try:
             doc = Document(_id=layer_id,
-                            creating_host=socket.gethostname(),
+                            creating_host=gethostname(),
                             creating_pid=os.getpid(),
                             creating_timestamp=datetime.now(),
                             generated_params=None,
                             params=params)
             doc.save(using=es, index=".datashader_layers", op_type="create", skip_empty=False)
-            current_app.logger.debug("Created Hash document")
+            logger.debug("Created Hash document")
         except ConflictError:
-            current_app.logger.debug("Hash document now exists, continuing")
+            logger.debug("Hash document now exists, continuing")
 
         #re-fetch to get sequence number correct
         doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
@@ -419,32 +446,32 @@ def merge_generated_parameters(params, idx, param_hash):
             doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \
                 generated_params=None)
         except ConflictError:
-            current_app.logger.debug("Abandoned resetting parameters due to conflict, other process has completed.")
+            logger.debug("Abandoned resetting parameters due to conflict, other process has completed.")
 
     #Loop-check if the generated params are in missing/in-process/complete
     timeout_at = datetime.now()+timedelta(seconds=45)
     while doc.to_dict().get("generated_params", {}).get("complete", False) == False:
         if datetime.now() > timeout_at:
-            current_app.logger.info("Hit timeout waiting for generated parameters to be placed into database")
+            logger.info("Hit timeout waiting for generated parameters to be placed into database")
             break
         #If missing, mark them as in generation
         if not doc.to_dict().get("generated_params", None):
             #Mark them as being generated but do so with concurrenty control
             #https://www.elastic.co/guide/en/elasticsearch/reference/current/optimistic-concurrency-control.html
-            current_app.logger.info("Discovering generated parameters")
+            logger.info("Discovering generated parameters")
             generated_params = dict()
             generated_params["complete"] = False
             generated_params["generation_start_time"] = datetime.now()
-            generated_params["generating_host"] = socket.gethostname()
+            generated_params["generating_host"] = gethostname()
             generated_params["generating_pid"] = os.getpid()
             try:
                 doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \
                     generated_params=generated_params)
             except ConflictError:
-                current_app.logger.debug("Abandoned generating parameters due to conflict, will wait for other process to complete.")
+                logger.debug("Abandoned generating parameters due to conflict, will wait for other process to complete.")
                 break
             #Generate and save off parameters
-            current_app.logger.warn("Discovering generated params")
+            logger.warn("Discovering generated params")
             generated_params.update(generate_global_params(params, idx))
             generated_params["generation_complete_time"] = datetime.now()
             generated_params["complete"] = True
@@ -453,7 +480,7 @@ def merge_generated_parameters(params, idx, param_hash):
                     generated_params=generated_params)
             break
         else:
-            time.sleep(1)
+            sleep(1)
             doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
 
     #We now have params so use them

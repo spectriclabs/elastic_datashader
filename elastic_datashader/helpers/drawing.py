@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import io
 from functools import lru_cache
 from hashlib import md5

@@ -215,7 +215,7 @@ def get_search_base(
     return base_s
 
 
-def build_dsl_filter(filter_inputs):
+def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
     """
 
     :param filter_inputs:
