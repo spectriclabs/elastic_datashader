@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from os import environ
 from pathlib import Path
 from socket import getfqdn
+from ssl import PROTOCOL_TLSv1_2, SSLContext
 from typing import Any, Dict, Optional, Union
 
 import yaml
@@ -21,18 +22,18 @@ class Config:
     max_batch: int
     max_bins: int
     max_ellipses_per_tile: int
-    max_legend_items_per_title: int
+    max_legend_items_per_tile: int
     num_ellipse_points: int
     port: Optional[int]
     proxy_host: Optional[str]
     proxy_prefix: str
     query_timeout_seconds: int
-    ssl_context: Optional[Union[SSLContext, str]],
+    ssl_context: Optional[Union[SSLContext, str]]
     tms_key: Optional[str]
     use_scroll: bool
 
 def load_datashader_headers(header_path_str: str) -> Dict[Any, Any]:
-    header_file_path = Path(header_path_str)
+    header_path = Path(header_path_str)
 
     if not header_path.exists():
         return {}
@@ -52,11 +53,11 @@ def get_ssl_context() -> Optional[Union[SSLContext, str]]:
         return "adhoc"
 
     if environ.get("DATASHADER_SSL", None) is not None:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-        context.load_verify_locations(os.environ.get("SSL_CA_CHAIN"))
+        context = SSLContext(PROTOCOL_TLSv1_2)
+        context.load_verify_locations(environ.get("SSL_CA_CHAIN"))
         context.load_cert_chain(
-            os.environ.get("SSL_SERVER_CERT"),
-            os.environ.get("SSL_SERVER_KEY"),
+            environ.get("SSL_SERVER_CERT"),
+            environ.get("SSL_SERVER_KEY"),
         )
         return context
 
@@ -72,13 +73,12 @@ def config_from_env() -> Config:
         debug=(environ.get("DATASHADER_DEBUG", None) is not None),
         elastic_hosts=environ.get("DATASHADER_ELASTIC", "http://localhost:9200"),
         ellipse_render_mode=environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix"),
-        header_path=Path(environ.get("DATASHADER_HEADER_FILE", "headers.yaml")),
         hostname=getfqdn(),
         log_level=environ.get("DATASHADER_LOG_LEVEL", None),
         max_batch=int(environ.get("DATASHADER_MAX_BATCH", 10_000)),
         max_bins=int(environ.get("DATASHADER_MAX_BINS", 10_000)),
         max_ellipses_per_tile=int(environ.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100_000)),
-        max_legend_items_per_title=int(environ.get("MAX_LEGEND_ITEMS_PER_TILE", 20)),
+        max_legend_items_per_tile=int(environ.get("MAX_LEGEND_ITEMS_PER_TILE", 20)),
         num_ellipse_points=int(environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)),
         proxy_host=environ.get("DATASHADER_PROXY_HOST", None),
         proxy_prefix=environ.get("DATASHADER_PROXY_PREFIX", ""),

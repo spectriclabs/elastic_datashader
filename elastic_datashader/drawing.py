@@ -346,5 +346,6 @@ CATEGORICAL_CMAPS = set((
   'category10',
   'kibana5'
 ))
+
 def is_categorical_cmap(cmap):
-    return ( cmap in CATEGORICAL_CMAPS )
+    return cmap in CATEGORICAL_CMAPS

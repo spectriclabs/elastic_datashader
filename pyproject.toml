@@ -17,7 +17,6 @@ elastic_datashader = "elastic_datashader.cli:main"
 
 [tool.poetry.dependencies]
 python = ">=3.8,<4"
-Flask = ">=2"
 elasticsearch = ">=7.16"
 elasticsearch-dsl = ">=7.4"
 pyOpenSSL = "*"
@@ -26,17 +25,16 @@ pandas = "*"
 colorcet = "*"
 mercantile = ">=1.2"
 pypng = "*"
-Flask-APScheduler = "*"
 Pillow = "*"
 pynumeral = "*"
 arrow = "*"
 python-datemath = "*"
 numba = "*"
 numpy = ">=1.19"
-urllib3 = "*"
 PyYAML = "*"
 humanize = "*"
-gunicorn = {version = "*", optional = true}
+uvicorn = {extras = ["standard"], version = "*", optional = true}
+fastapi = "^0.73.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
@@ -50,7 +48,7 @@ testpaths = ["tests"]
 
 [tool.poetry.extras]
 apm = ["elasticapm"]
-localwebserver = ["gunicorn"]
+localwebserver = ["uvicorn"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

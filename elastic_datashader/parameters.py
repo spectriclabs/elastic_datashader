@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
+from hashlib import md5
 from json import loads
+from logging import getLogger
 from socket import gethostname
 from time import sleep
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import unquote
 
 import copy
@@ -17,6 +19,8 @@ from elasticsearch.exceptions import NotFoundError, ConflictError
 from .config import config
 from .elastic import get_search_base, build_dsl_filter
 from .timeutil import quantize_time_range, convert_kibana_time
+
+logger = getLogger(__name__)
 
 def create_default_params() -> Dict[str, Any]:
     return {
@@ -51,7 +55,7 @@ def create_default_params() -> Dict[str, Any]:
     }
 
 
-def normalize_spread(spread) -> Optional[int]:
+def normalize_spread(spread: Optional[str]) -> Optional[int]:
     # Handle text-value spread in both legacy and new format
     if spread in ("coarse", "large"): return 10
     if spread in ("fine", "medium"): return 3
@@ -77,7 +81,7 @@ def get_from_time(params: Optional[Dict[Any, Any]]) -> Optional[str]:
 
     return None
 
-def get_to_time(params: Optional[Dict[Any, Any]]) -> str:
+def get_to_time(params: Optional[Dict[Any, Any]]) -> Optional[str]:
     if params:
         return params.get("timeFilters", {}).get("to")
 
@@ -95,7 +99,8 @@ def get_query(params: Optional[Dict[Any, Any]]) -> Dict[str, Any]:
     if query and query.get("language", None) in ("lucene", "kuery"):
         # accept 'kuery' for backwords compatibility...
         return {"lucene_query": query.get("query")}
-    elif query and query.get("langauge", None) == "dsl":
+
+    if query and query.get("langauge", None) == "dsl":
         return {"dsl_query": query.get("query")}
 
     return {}
@@ -146,11 +151,95 @@ def get_search_distance(query_params: Dict[Any, Any]) -> float:
 
     return 50.0
 
+def get_filter_distance(track_filter: Optional[str]) -> Optional[int]:
+    if track_filter is None or track_filter == "default":
+        return None
+
+    if track_filter == "none":
+        return 0.0
+
+    if track_filter == "short":
+        return 1.0
+
+    if track_filter == "normal":
+        return 10.0
+
+    if track_filter == "long":
+        return 50.0
+
+    try:
+        return float(track_filter)
+    except (TypeError, ValueError):
+        pass
+
+    return None
+
+def get_category_histogram(category_histogram: Optional[str]) -> Optional[bool]:
+    if category_histogram in ("true", "True", "TRUE"):
+        return True
+    
+    if category_histogram in ("false", "False", "FALSE"):
+        return False
+
+    return None
+
+def get_cmap(cmap: Optional[str], category_field: Optional[str]) -> Optional[str]:
+    if cmap is None:
+        if category_field is None:
+            return "bmy"
+
+        return "glasbey_category10"
+
+    return None
+
+def get_category_field(category_field: Optional[str]) -> Optional[str]:
+    # Handle dumb javascript on the client side
+    if category_field == "null":
+        return None
+
+    return category_field
+
+def get_time_bounds(from_time: Optional[str], to_time: Optional[str]) -> Dict[str, datetime]:
+    now = datetime.utcnow()
+    start_time = None
+    stop_time = now
+
+    if from_time:
+        try:
+            start_time = convert_kibana_time(from_time, now, 'down')
+        except ValueError as err:
+            logger.exception("invalid from_time parameter")
+            raise Exception("invalid from_time parameter") from err
+
+    if to_time:
+        try:
+            stop_time = convert_kibana_time(to_time, now, 'up')
+        except ValueError as err:
+            logger.exception("invalid to_time parameter")
+            raise Exception("invalid to_time parameter") from err
+
+    if start_time and stop_time:
+        start_time, stop_time = quantize_time_range(start_time, stop_time)
+
+    return {"start_time": start_time, "stop_time": stop_time}
+
+def get_parameter_hash(params: Dict[str, Any]) -> str:
+    """Calculates a hash value for the specific parameter set"""
+    parameter_hash = md5()
+
+    for _, p in sorted(params.items()):
+        if isinstance(p, datetime):
+            p = p.isoformat()
+        parameter_hash.update(str(p).encode("utf-8"))
+
+    return parameter_hash.hexdigest()
+
 def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) -> Tuple[str, Dict[str, Any]]:
     """
     Get the parameters from a request and return hash and dict of parameters
     """
     params = create_default_params()
+    unhashed_params = {}  # Some parameters aren't used to make the final hash
     params['user'] = headers.get("es-security-runas-user", None)
 
     # There's a query parameter called "params"
@@ -159,6 +248,10 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     from_time = get_from_time(params_param)
     to_time = get_to_time(params_param)
     render_mode = get_render_mode(query_params)
+    category_field = get_category_field(query_params.get("category_field", params["category_field"]))
+
+    unhashed_params["mapZoom"] = params_param.get("zoom", None)
+    unhashed_params["extent"] = params_param.get("extent", None)
 
     params["dsl_filter"] = get_dsl_filter(params_param)
     params.update(get_query(params_param))
@@ -166,129 +259,32 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params.update(get_ellipse_params(render_mode, query_params))
     params["search_distance"] = get_search_distance(query_params)
     params["track_connection"] = query_params.get("track_connection", params["track_connection"])
-    
-    params["filter_distance"] = request.args.get("track_filter", default=params["filter_distance"])
-    if params["filter_distance"] == "none":
-        params["filter_distance"] = 0.0
-    elif params["filter_distance"] == "short":
-        params["filter_distance"] = 1.0
-    elif params["filter_distance"] == "normal":
-        params["filter_distance"] = 10.0
-    elif params["filter_distance"] == "long":
-        params["filter_distance"] = 50.0
-    elif params["filter_distance"] in ("default", None):
-        params["filter_distance"] = None
-    else:
-        params["filter_distance"] = float(params["filter_distance"])
-
-    params["category_field"] = request.args.get(
-        "category_field", default=params["category_field"]
-    )
-    params["category_format"] = request.args.get(
-        "category_pattern", default=params["category_format"]
-    )
-    params["category_type"] = request.args.get(
-        "category_type", default=params["category_type"]
-    )
-    params["category_histogram"] = request.args.get(
-        "category_histogram", default=params["category_histogram"]
-    )
-    if params["category_histogram"] in ("true", "True", "TRUE"):
-        params["category_histogram"] = True
-    elif params["category_histogram"] in ("false", "False", "False"):
-        params["category_histogram"] = False
-    else:
-        params["category_histogram"] = None
-
-    params["highlight"] = request.args.get("highlight")
-
-    params["spread"] = normalize_spread(request.args.get("spread"))
-    params["resolution"] = request.args.get("resolution", default=params["resolution"])
-    params["use_centroid"] = request.args.get("use_centroid", default=params["use_centroid"])
-    
-    params["cmap"] = request.args.get("cmap", default=params["cmap"])
-    if params["cmap"] is None:
-        if params["category_field"] is None:
-            params["cmap"] = "bmy"
-        else:
-            params["cmap"] = "glasbey_category10"
-
-    params["span_range"] = request.args.get("span", default="auto")
-    params["geopoint_field"] = request.args.get(
-        "geopoint_field", default=params["geopoint_field"]
-    )
-    params["timestamp_field"] = request.args.get(
-        "timestamp_field", default=params["timestamp_field"]
-    )
-
-    # Handle dumb javascript on the client side
-    if params["category_field"] == "null":
-        params["category_field"] = None
-
-    # Handle time bounding
-    now = datetime.utcnow()
-    params["stop_time"] = now
-    if to_time:
-        try:
-            params["stop_time"] = convert_kibana_time(to_time, now, 'up')
-        except ValueError as err:
-            logger.exception("invalid to_time parameter")
-            raise Exception("invalid to_time parameter") from err
-
-    params["start_time"] = None
-    if from_time:
-        try:
-            params["start_time"] = convert_kibana_time(from_time, now, 'down')
-        except ValueError as err:
-            logger.exception("invalid from_time parameter")
-            raise Exception("invalid from_time parameter") from err
-
-    if params.get("start_time") and params.get("stop_time"):
-        params["start_time"], params["stop_time"] = quantize_time_range(
-            params["start_time"], params["stop_time"]
-        )
+    params["filter_distance"] = get_filter_distance(query_params.get("track_filter", None))
+    params["category_field"] = category_field
+    params["category_format"] = query_params.get("category_pattern", params["category_format"])
+    params["category_type"] = query_params.get("category_type", params["category_type"])
+    params["category_histogram"] = get_category_histogram(query_params.get("category_histogram", None))
+    params["highlight"] = query_params.get("highlight")
+    params["spread"] = normalize_spread(query_params.get("spread"))
+    params["resolution"] = query_params.get("resolution", params["resolution"])
+    params["use_centroid"] = query_params.get("use_centroid", default=params["use_centroid"])
+    params["cmap"] = get_cmap(query_params.get("cmap", None), category_field)
+    params["span_range"] = query_params.get("span", "auto")
+    params["geopoint_field"] = query_params.get("geopoint_field", params["geopoint_field"])
+    params["timestamp_field"] = query_params.get("timestamp_field", params["timestamp_field"])
+    params.update(get_time_bounds(from_time, to_time))
+    params["debug"] = (query_params.get("debug", False) == 'true')
 
     if params["geopoint_field"] is None:
         logger.error("missing geopoint_field")
         raise Exception("missing geopoint_field")
 
-    params["debug"] = ( request.args.get("debug", default=False) == 'true' )
+    parameter_hash = get_parameter_hash(params)
+    all_params = {**params, **unhashed_params}
+    logger.debug("Parameters: %s (%s)", all_params, parameter_hash)
+    return parameter_hash, all_params
 
-    # Calculate a hash value for the specific parameter set
-    parameter_hash = hashlib.md5()
-
-    for _, p in sorted(params.items()):
-        if isinstance(p, datetime):
-            p = p.isoformat()
-        parameter_hash.update(str(p).encode("utf-8"))
-
-    parameter_hash = parameter_hash.hexdigest()
-
-    # Unhashed parameters
-    params["mapZoom"] = arg_params.get("zoom", None)
-    params["extent"] = arg_params.get("extent", None)
-    
-    logger.debug("Parameters: %s (%s)", params, parameter_hash)
-    return parameter_hash, params
-
-def update_params(params, updates=None):
-    if updates:
-        params.update(updates)
-    
-    # Calculate a hash value for the specific parameter set
-    parameter_hash = hashlib.md5()
-
-    for _, p in sorted(params.items()):
-        if isinstance(p, datetime):
-            p = p.isoformat()
-        parameter_hash.update(str(p).encode("utf-8"))
-
-    parameter_hash = parameter_hash.hexdigest()
-
-    logger.debug("Parameters: %s (%s)", params, parameter_hash)
-    return parameter_hash, params
-
-def generate_global_params(params, idx):
+def generate_global_params(headers, params, idx):
     geopoint_field = params["geopoint_field"]
     category_field = params["category_field"]
     category_type = params["category_type"]
@@ -303,7 +299,7 @@ def generate_global_params(params, idx):
     field_max = None
 
     # Create base search
-    base_s = get_search_base(config.elastic_hosts, params, idx)
+    base_s = get_search_base(config.elastic_hosts, headers, params, idx)
 
     # west, south, east, north
     global_bounds = [-180, -90, 180, 90]
@@ -407,7 +403,7 @@ def generate_global_params(params, idx):
     return generated_params
 
 
-def merge_generated_parameters(params, idx, param_hash):
+def merge_generated_parameters(headers, params, idx, param_hash):
     layer_id = "%s_%s" % (param_hash, gethostname())
     es = Elasticsearch(
         config.elastic_hosts.split(","),
@@ -450,6 +446,7 @@ def merge_generated_parameters(params, idx, param_hash):
 
     #Loop-check if the generated params are in missing/in-process/complete
     timeout_at = datetime.now()+timedelta(seconds=45)
+
     while doc.to_dict().get("generated_params", {}).get("complete", False) == False:
         if datetime.now() > timeout_at:
             logger.info("Hit timeout waiting for generated parameters to be placed into database")
@@ -472,7 +469,7 @@ def merge_generated_parameters(params, idx, param_hash):
                 break
             #Generate and save off parameters
             logger.warn("Discovering generated params")
-            generated_params.update(generate_global_params(params, idx))
+            generated_params.update(generate_global_params(headers, params, idx))
             generated_params["generation_complete_time"] = datetime.now()
             generated_params["complete"] = True
             #Store off generated params

@@ -1,8 +1,31 @@
+from datetime import datetime
 from logging import getLogger
+from os import getpid
+from socket import gethostname
+from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from elasticsearch import Elasticsearch
+from elasticsearch_dsl import Document
+from elasticsearch.exceptions import NotFoundError
+from fastapi import APIRouter, HTTPException, Request, Response
 
+from ..cache import (
+    check_cache_dir,
+    get_cache,
+    set_cache,
+    tile_id,
+    tile_name,
+)
 from ..config import config
+from ..drawing import gen_error
+from ..elastic import get_es_headers
+from ..parameters import extract_parameters, merge_generated_parameters
+from ..tilegen import (
+    TILE_HEIGHT_PX,
+    TILE_WIDTH_PX,
+    generate_nonaggregated_tile,
+    generate_tile,
+)
 
 logger = getLogger(__name__)
 
@@ -11,6 +34,20 @@ router = APIRouter(
     tags=["tms"],
     responses={404: {"description": "Not found"}},
 )
+
+def error_tile_response(ex: Exception) -> Response:
+    img = gen_error(TILE_HEIGHT_PX, TILE_WIDTH_PX)
+
+    return Response(
+        img,
+        status_code=200,
+        headers={
+            "Cache-Control": "max-age=60",
+            "Content-Type": "image/png",
+            "Access-Control-Allow-Origin": "*",
+            "Error": str(ex),
+        }
+    )
 
 def check_proxy_key(tms_proxy_key: Optional[str]) -> None:
     '''
@@ -32,8 +69,8 @@ def create_datashader_tiles_entry(es, **kwargs) -> None:
     '''
     doc_info = {
          **kwargs,
-        'host': socket.gethostname(),
-        'pid': os.getpid(),
+        'host': gethostname(),
+        'pid': getpid(),
         'timestamp': datetime.now(),
     }
 
@@ -41,21 +78,25 @@ def create_datashader_tiles_entry(es, **kwargs) -> None:
     doc.save(using=es, index=".datashader_tiles")
 
 def make_image_response(img, params, parameter_hash, cache_max_seconds) -> Response:
-    resp = Response(img, status=200)
-    resp.headers["Content-Type"] = "image/png"
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Datashader-Parameter-Hash"] = parameter_hash
-    resp.headers["Datashader-RunAs-User"] = params.get("user", "")
-    resp.cache_control.max_age = cache_max_seconds
-    return resp
+    return Response(
+        img,
+        status_code=200,
+        headers={
+            "Cache-Control": f"max-age={cache_max_seconds}",
+            "Content-Type": "image/png",
+            "Access-Control-Allow-Origin": "*",
+            "Datashader-Parameter-Hash": parameter_hash,
+            "Datashader-RunAs-User": params.get("user", ""),
+         }
+    )
 
 def cached_response(es, idx, x, y, z, params, parameter_hash) -> Optional[Response]:
-    cache_path = Path(current_app.config["CACHE_DIRECTORY"])
-    c = get_cache(cache_path, tile_name(idx, x, y, z, parameter_hash))
+    c = get_cache(config.cache_path, tile_name(idx, x, y, z, parameter_hash))
 
     if c is not None:
-        current_app.logger.info("Hit cache (%s), returning", parameter_hash)
+        logger.info("Hit cache (%s), returning", parameter_hash)
         img = c
+
         try:
             es.update(  # pylint: disable=E1123
                 ".datashader_tiles",
@@ -64,19 +105,19 @@ def cached_response(es, idx, x, y, z, params, parameter_hash) -> Optional[Respon
                 retry_on_conflict=5,
             )
         except NotFoundError:
-            current_app.logger.warn("Unable to find cached tile entry in .datashader_tiles")
+            logger.warning("Unable to find cached tile entry in .datashader_tiles")
 
         return make_image_response(img, params, parameter_hash, 60)
 
     return None
 
-def generate_tile_response(es, idx, x, y, z, params, parameter_hash) -> Response:
+def generate_tile_response(es, idx, x, y, z, params, parameter_hash, request: Request) -> Response:
     headers = get_es_headers(request_headers=request.headers, user=params["user"])
-    current_app.logger.debug("Loaded input headers %s", request.headers)
-    current_app.logger.debug("Loaded elasticsearch headers %s", headers)
+    logger.debug("Loaded input headers %s", request.headers)
+    logger.debug("Loaded elasticsearch headers %s", headers)
 
     # Get or generate extended parameters
-    params = merge_generated_parameters(params, idx, parameter_hash)
+    params = merge_generated_parameters(request.headers, params, idx, parameter_hash)
 
     base_tile_info = {
         'hash': parameter_hash,
@@ -92,11 +133,11 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash) -> Response
 
     try:
         if params["render_mode"] in ("ellipses", "tracks"):
-            img, metrics = generate_nonaggregated_tile(idx, x, y, z, params)
+            img, metrics = generate_nonaggregated_tile(idx, x, y, z, request.headers, params)
         else:
-            img, metrics = generate_tile(idx, x, y, z, params)
+            img, metrics = generate_tile(idx, x, y, z, request.headers, params)
     except Exception as ex:  # pylint: disable=W0703
-        logging.exception("Exception Generating Tile for request %s", request)
+        logger.exception("Exception Generating Tile for request %s", request)
         error_info = {**base_tile_info, 'error': repr(ex)}
         create_datashader_tiles_entry(es, **error_info)
 
@@ -115,19 +156,12 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash) -> Response
     create_datashader_tiles_entry(es, **new_tile_info)
 
     # Store image as well
-    cache_path = Path(current_app.config["CACHE_DIRECTORY"])
-    check_cache_dir(cache_path, idx)
-    set_cache(cache_path, tile_name(idx, x, y, z, parameter_hash), img)
+    check_cache_dir(config.cache_path, idx)
+    set_cache(config.cache_path, tile_name(idx, x, y, z, parameter_hash), img)
     return make_image_response(img, params, parameter_hash, 60)
 
-@router.get("/{idx}/{z}/{x}/{int:y}.png")
-async def get_tms(
-    idx: str,
-    x: int,
-    y: int,
-    z: int,
-    request: Request
-):
+@router.get("/{idx}/{z}/{x}/{y}.png")
+async def get_tms(idx: str, x: int, y: int, z: int, request: Request):
     check_proxy_key(request.headers.get('tms-proxy-key'))
 
     es = Elasticsearch(
@@ -138,9 +172,9 @@ async def get_tms(
 
     # Get hash and parameters
     try:
-        parameter_hash, params = extract_parameters(request)
+        parameter_hash, params = extract_parameters(request.headers, request.query_params)
     except Exception as ex:  # pylint: disable=W0703
-        current_app.logger.exception("Error while extracting parameters")
+        logger.exception("Error while extracting parameters")
         params = {"user": request.headers.get("es-security-runas-user", None)}
         error_info = {
             'idx': idx,
@@ -155,11 +189,11 @@ async def get_tms(
         create_datashader_tiles_entry(es, **error_info)
         return error_tile_response(ex)
 
-    use_cache = request.args.get("force") is None
+    cache_enabled = request.query_params.get("force") is None
 
-    # Try to use a cached response
-    if use_cache and (response := cached_response(es, idx, x, y, z, params, parameter_hash)) is not None:
+    # Try to use a cached response if the cache is enabled
+    if cache_enabled and (response := cached_response(es, idx, x, y, z, params, parameter_hash)) is not None:
         return response
 
     # Cache miss, or cache disabled, so generate a tile
-    return generate_tile_response(es, idx, x, y, z, params, parameter_hash)
+    return generate_tile_response(es, idx, x, y, z, params, parameter_hash, request)

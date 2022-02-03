@@ -1,4 +1,5 @@
 from functools import lru_cache
+from logging import getLogger
 
 import copy
 import math
@@ -13,13 +14,12 @@ import pandas as pd
 from datashader import reductions as rd, transfer_functions as tf
 from elasticsearch_dsl import AttrList, AttrDict, A
 from elasticsearch_dsl.aggs import Bucket
-from flask import current_app
 from numpy import pi
 from datashader.utils import lnglat_to_meters
 import numpy as np
 
-import elastic_datashader.helpers.mercantile_util as mu
-from elastic_datashader.helpers.drawing import (
+from . import mercantile_util as mu
+from .drawing import (
     ellipse,
     gen_empty,
     gen_overlay,
@@ -27,7 +27,7 @@ from elastic_datashader.helpers.drawing import (
     gen_debug_overlay,
     generate_ellipse_points
 )
-from elastic_datashader.helpers.elastic import (
+from .elastic import (
     get_search_base,
     convert_composite,
     split_fieldname_to_list,
@@ -38,6 +38,10 @@ from elastic_datashader.helpers.elastic import (
     scan
 )
 from elastic_datashader.helpers.pandas_util import simplify_categories
+
+from .config import config
+
+logger = getLogger(__name__)
 
 NAN_LINE = {"x": None, "y": None, "c": "None"}
 TILE_HEIGHT_PX = 256
@@ -87,13 +91,13 @@ def create_datashader_ellipses_from_search(
         category_field = split_fieldname_to_list(category_field)
 
     timeout_at = None
-    if current_app.config["QUERY_TIMEOUT"]:
-        timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
-        search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
+    if config.query_timeout_seconds:
+        timeout_at = time.time() + config.query_timeout_seconds
+        search = search.params(timeout="%ds" % config.query_timeout_seconds)
 
-    for i, hit in enumerate(scan(search, use_scroll=current_app.config.get("USE_SCROLL", False))):
+    for i, hit in enumerate(scan(search, use_scroll=config.use_scroll)):
         if timeout_at and (time.time() > timeout_at):
-            current_app.logger.warning("ellipse generation hit query timeout")
+            logger.warning("ellipse generation hit query timeout")
             metrics["aborted"] = True
             break
 
@@ -114,16 +118,16 @@ def create_datashader_ellipses_from_search(
 
         # Check that we have all the fields
         if locs is None:
-            current_app.logger.debug("hit field %s has no values", geopoint_center)
+            logger.debug("hit field %s has no values", geopoint_center)
             continue
         if majors is None:
-            current_app.logger.debug("hit field %s has no values", ellipse_major)
+            logger.debug("hit field %s has no values", ellipse_major)
             continue
         if minors is None:
-            current_app.logger.debug("hit field %s has no values", ellipse_minor)
+            logger.debug("hit field %s has no values", ellipse_minor)
             continue
         if angles is None:
-            current_app.logger.debug("hit field %s has no values", ellipse_tilt)
+            logger.debug("hit field %s has no values", ellipse_tilt)
             continue
 
         # If its a list determine if there are multiple geos or just a single geo in list format
@@ -146,7 +150,7 @@ def create_datashader_ellipses_from_search(
 
         # verify same length
         if not (len(locs) == len(majors) == len(minors) == len(angles)):
-            current_app.logger.warning(
+            logger.warning(
                 "ellipse parameters and length are not consistent"
             )
             continue
@@ -157,7 +161,7 @@ def create_datashader_ellipses_from_search(
 
             if isinstance(loc, str):
                 if "," not in loc:
-                    current_app.logger.warning(
+                    logger.warning(
                         "skipping loc with invalid str format %s", loc
                     )
                     continue
@@ -165,14 +169,14 @@ def create_datashader_ellipses_from_search(
                 loc = dict(lat=float(lat), lon=float(lon))
             elif isinstance(loc, list) or isinstance(loc, AttrList):
                 if len(loc) != 2:
-                    current_app.logger.warning(
+                    logger.warning(
                         "skipping loc with invalid list format %s", loc
                     )
                     continue
                 lon, lat = loc
                 loc = dict(lat=float(lat), lon=float(lon))
             elif not (isinstance(loc, dict) or isinstance(loc, AttrDict)):
-                current_app.logger.warning(
+                logger.warning(
                     "skipping loc with invalid format %s %s %s",
                     loc,
                     isinstance(loc, list),
@@ -187,7 +191,7 @@ def create_datashader_ellipses_from_search(
             try:
                 major = float(major)
             except ValueError:
-                current_app.logger.warning(
+                logger.warning(
                     "skipping major with invalid major %s %s",
                     major,
                     type(major),
@@ -197,7 +201,7 @@ def create_datashader_ellipses_from_search(
             try:
                 minor = float(minor)
             except ValueError:
-                current_app.logger.warning(
+                logger.warning(
                     "skipping minor with invalid minor %s %s",
                     minor,
                     type(minor),
@@ -207,7 +211,7 @@ def create_datashader_ellipses_from_search(
             try:
                 angle = float(angle)
             except ValueError:
-                current_app.logger.warning(
+                logger.warning(
                     "skipping angle with invalid angle %s %s",
                     angle,
                     type(angle),
@@ -231,7 +235,7 @@ def create_datashader_ellipses_from_search(
             if major > search_meters or minor > search_meters:
                 continue
 
-            ellipse_render_mode = current_app.config["ELLIPSE_RENDER_MODE"]
+            ellipse_render_mode = config.ellipse_render_mode
             if ellipse_render_mode == "simple":
                 angle_rad = angle * ((2.0 * pi) / 360.0)  # Convert degrees to radians
                 Y, X = ellipse(
@@ -244,7 +248,7 @@ def create_datashader_ellipses_from_search(
                     major / 2.0,
                     minor / 2.0,
                     tilt=angle,
-                    n_points=current_app.config["NUM_ELLIPSE_POINTS"]
+                    n_points=config.num_ellipse_points
                 )
                 X, Y = lnglat_to_meters(LON, LAT)
             else:
@@ -290,7 +294,7 @@ def create_datashader_ellipses_from_search(
                 C = [ "None" ]
 
             if len(C) > 100:
-                current_app.logger.warning("truncating category list of size %s to first 100 categories", len(C))
+                logger.warning("truncating category list of size %s to first 100 categories", len(C))
                 C = C[0:100]
             
             for c in C:
@@ -336,13 +340,13 @@ def create_datashader_tracks_from_search(
         track_connection = split_fieldname_to_list(track_connection)
 
     timeout_at = None
-    if current_app.config["QUERY_TIMEOUT"]:
-        timeout_at = time.time() + current_app.config["QUERY_TIMEOUT"]
-        search = search.params(timeout="%ds" % current_app.config["QUERY_TIMEOUT"])
+    if config.query_timeout_seconds:
+        timeout_at = time.time() + config.query_timeout_seconds
+        search = search.params(timeout="%ds" % config.query_timeout_seconds)
 
-    for i, hit in enumerate(scan(search, use_scroll=current_app.config.get("USE_SCROLL", False))):
+    for i, hit in enumerate(scan(search, use_scroll=config.use_scroll)):
         if timeout_at and (time.time() > timeout_at):
-            current_app.logger.warning("track generation hit query timeout")
+            logger.warning("track generation hit query timeout")
             metrics["aborted"] = True
             break
 
@@ -360,7 +364,7 @@ def create_datashader_tracks_from_search(
 
         # Check that we have all the fields
         if locs is None:
-            current_app.logger.debug("hit field %s has no values", geopoint_center)
+            logger.debug("hit field %s has no values", geopoint_center)
             continue
 
         # If its a list determine if there are multiple geos or just a single geo in list format
@@ -380,7 +384,7 @@ def create_datashader_tracks_from_search(
             loc = locs[ii]
             if isinstance(loc, str):
                 if "," not in loc:
-                    current_app.logger.warning(
+                    logger.warning(
                         "skipping loc with invalid str format %s", loc
                     )
                     continue
@@ -388,14 +392,14 @@ def create_datashader_tracks_from_search(
                 loc = dict(lat=float(lat), lon=float(lon))
             elif isinstance(loc, list) or isinstance(loc, AttrList):
                 if len(loc) != 2:
-                    current_app.logger.warning(
+                    logger.warning(
                         "skipping loc with invalid list format %s", loc
                     )
                     continue
                 lon, lat = loc
                 loc = dict(lat=float(lat), lon=float(lon))
             elif not (isinstance(loc, dict) or isinstance(loc, AttrDict)):
-                current_app.logger.warning(
+                logger.warning(
                     "skipping loc with invalid format %s %s %s",
                     loc,
                     isinstance(loc, list),
@@ -431,7 +435,7 @@ def create_datashader_tracks_from_search(
             else:
                 C = [ "None" ]
             if len(C) > 100:
-                current_app.logger.warning("truncating category list of size %s to first 100 categories", len(C))
+                logger.warning("truncating category list of size %s to first 100 categories", len(C))
                 C = C[0:100]
 
             #Handle tracking field
@@ -457,7 +461,7 @@ def create_datashader_tracks_from_search(
     #    yield {"x": None, "y": None, "c": c, "t": None}
 
 def generate_nonaggregated_tile(
-    idx, x, y, z, params, tile_height_px=256, tile_width_px=256
+    idx, x, y, z, headers, params, tile_height_px=256, tile_width_px=256
 ):
     # Handle legacy parameters
     geopoint_field = params["geopoint_field"]
@@ -489,20 +493,18 @@ def generate_nonaggregated_tile(
     field_min = params.get("generated_params", {}).get("field_min", None)
     render_mode = params["render_mode"]
 
-    current_app.logger.info(
-        "Generating non-aggegated (%s) tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"
-        % (
-            render_mode,
-            idx,
-            z,
-            x,
-            y,
-            geopoint_field,
-            timestamp_field,
-            category_field,
-            start_time,
-            stop_time,
-        )
+    logger.info(
+        "Generating non-aggegated (%s) tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s",
+        render_mode,
+        idx,
+        z,
+        x,
+        y,
+        geopoint_field,
+        timestamp_field,
+        category_field,
+        start_time,
+        stop_time,
     )
     try:
         # Get the web mercador bounds for the tile
@@ -545,7 +547,7 @@ def generate_nonaggregated_tile(
         }
 
         # Create base search
-        base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx).params(
+        base_s = get_search_base(config.elastic_hosts, headers, params, idx).params(
             size=max_batch
         )
 
@@ -675,7 +677,7 @@ def generate_nonaggregated_tile(
             df_points = pd.DataFrame.from_dict(start_points_dicts)
         s2 = time.time()
 
-        current_app.logger.debug(
+        logger.debug(
             "ES took %s for locations: %s   hits: %s",
             (s2 - s1),
             metrics.get("locations", 0),
@@ -689,7 +691,7 @@ def generate_nonaggregated_tile(
             if global_bounds:
                 num_tiles_at_level = mu.num_tiles(*global_bounds, z)
                 estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-                current_app.logger.debug(
+                logger.debug(
                     "Doc Bounds %s %s %s %s",
                     global_bounds,
                     z,
@@ -697,14 +699,14 @@ def generate_nonaggregated_tile(
                     estimated_points_per_tile,
                 )
             else:
-                current_app.logger.warning(
+                logger.warning(
                     "Cannot estimate points per tile because bounds are missing"
                 )
                 estimated_points_per_tile = 100000
 
         # If count is zero then return a null image
         if len(df) == 0:
-            current_app.logger.debug("No points in bounding box")
+            logger.debug("No points in bounding box")
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("over_max"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
@@ -810,7 +812,7 @@ def generate_nonaggregated_tile(
             img = img.to_bytesio().read()
             if metrics.get("over_max"):
                 # Put hashing on image to indicate that it is over maximum
-                current_app.logger.info("Generating overlay for tile")
+                logger.info("Generating overlay for tile")
                 img = gen_overlay(img, color=(128, 128, 128, 128))
             elif metrics.get("aborted"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
@@ -820,7 +822,7 @@ def generate_nonaggregated_tile(
         # Set headers and return data
         return img, metrics
     except Exception:
-        current_app.logger.exception(
+        logger.exception(
             "An exception occured while attempting to generate a tile:"
         )
         raise
@@ -831,7 +833,7 @@ def calculate_pixel_spread(geotile_precision: int) -> int:
     Pixel spread is the number of pixels to put around each
     data point.
     '''
-    current_app.logger.debug('calculate_pixel_spread(%d)', geotile_precision)
+    logger.debug('calculate_pixel_spread(%d)', geotile_precision)
 
     if geotile_precision >= 20:
         return geotile_precision // 4
@@ -848,14 +850,14 @@ def apply_spread(img, spread):
     '''
     Applies the pixel spreading transform, if any.
     '''
-    current_app.logger.debug('apply_spread(%d)', spread)
+    logger.debug('apply_spread(%d)', spread)
 
     if spread > 0:
         return tf.spread(img, spread)
 
     return img
 
-def generate_tile(idx, x, y, z, params):
+def generate_tile(idx, x, y, z, headers, params):
     '''
     idx: ElasticSearch index to search
     x, y: TMS tile coordinates
@@ -887,19 +889,17 @@ def generate_tile(idx, x, y, z, params):
 
     metrics = dict()
 
-    current_app.logger.debug(
-        "Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s"
-        % (
-            idx,
-            z,
-            x,
-            y,
-            geopoint_field,
-            timestamp_field,
-            category_field,
-            start_time,
-            stop_time,
-        )
+    logger.debug(
+        "Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s",
+        idx,
+        z,
+        x,
+        y,
+        geopoint_field,
+        timestamp_field,
+        category_field,
+        start_time,
+        stop_time,
     )
     try:
         # Preconfigured tile size
@@ -932,19 +932,19 @@ def generate_tile(idx, x, y, z, params):
         }
 
         # Create base search
-        base_s = get_search_base(current_app.config.get("ELASTIC"), params, idx)
+        base_s = get_search_base(config.elastic_hosts, headers, params, idx)
 
         # Now find out how many documents
         count_s = copy.copy(base_s)
         count_s = count_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
 
         doc_cnt = count_s.count()
-        current_app.logger.info("Document Count: %s", doc_cnt)
+        logger.info("Document Count: %s", doc_cnt)
         metrics['doc_cnt'] = doc_cnt
 
         # If count is zero then return a null image
         if doc_cnt == 0:
-            current_app.logger.debug("No points in bounding box")
+            logger.debug("No points in bounding box")
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("aborted"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
@@ -1023,10 +1023,10 @@ def generate_tile(idx, x, y, z, params):
                     category_tile.z,
                     geopoint_field,
                     category_field,
-                    int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]),
+                    config.max_legend_items_per_tile,
                 )
 
-                if len(category_filters) >= int(current_app.config["MAX_LEGEND_ITEMS_PER_TILE"]):
+                if len(category_filters) >= config.max_legend_items_per_tile:
                     agg_zooms -= 1
 
                 # to avoid max bucket errors we need space for two
@@ -1080,7 +1080,7 @@ def generate_tile(idx, x, y, z, params):
                 {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
                 inner_aggs,
                 size=composite_agg_size,
-                timeout=current_app.config["QUERY_TIMEOUT"]
+                timeout=config.query_timeout_seconds
             )
 
             partial_data = False # TODO can we get partial data?
@@ -1096,7 +1096,7 @@ def generate_tile(idx, x, y, z, params):
             )
             
             s2 = time.time()
-            current_app.logger.info("ES took %s (%s) for %s with %s searches" % ((s2 - s1), resp.total_took, len(df), resp.num_searches))
+            logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)
             metrics["query_time"] = (s2 - s1)
             metrics["query_took"] = resp.total_took
             metrics["num_searches"] = resp.num_searches
@@ -1105,7 +1105,7 @@ def generate_tile(idx, x, y, z, params):
             metrics["shards_skipped"] = resp.total_skipped
             metrics["shards_successful"] = resp.total_successful
             metrics["shards_failed"] = resp.total_failed
-            current_app.logger.info("%s", metrics)
+            logger.info("%s", metrics)
 
             # Estimate the number of points per tile assuming uniform density
             estimated_points_per_tile = None
@@ -1113,7 +1113,7 @@ def generate_tile(idx, x, y, z, params):
                 if global_bounds:
                     num_tiles_at_level = mu.num_tiles(*global_bounds, z)
                     estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-                    current_app.logger.debug(
+                    logger.debug(
                         "Doc Bounds %s %s %s %s",
                         global_bounds,
                         z,
@@ -1121,7 +1121,7 @@ def generate_tile(idx, x, y, z, params):
                         estimated_points_per_tile,
                     )
                 else:
-                    current_app.logger.warning(
+                    logger.warning(
                         "Cannot estimate poins per tile because bounds ar missing"
                     )
                     estimated_points_per_tile = 100000
@@ -1194,7 +1194,7 @@ def generate_tile(idx, x, y, z, params):
                         alpha_span = int(span[1]) * 25
                         min_alpha = 255 - min(alpha_span, 225)
 
-                    current_app.logger.debug("MinAlpha:%s Span:%s", min_alpha, span)
+                    logger.debug("MinAlpha:%s Span:%s", min_alpha, span)
                     img = tf.shade(
                         agg,
                         cmap=cc.palette[cmap],
@@ -1231,7 +1231,7 @@ def generate_tile(idx, x, y, z, params):
                         assert estimated_points_per_tile != None
                         span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
 
-                    current_app.logger.debug("Span %s %s", span, span_range)
+                    logger.debug("Span %s %s", span, span_range)
                     img = tf.shade(agg, cmap=cc.palette[cmap], how="log", span=span)
 
                 ###############################################################
@@ -1240,7 +1240,7 @@ def generate_tile(idx, x, y, z, params):
                 img = img.to_bytesio().read()
 
                 if partial_data:
-                    current_app.logger.info(
+                    logger.info(
                         "Generating overlay for tile due to partial category data"
                     )
                     img = gen_overlay(img, color=(128, 128, 128, 128))
@@ -1255,7 +1255,7 @@ def generate_tile(idx, x, y, z, params):
         # Set headers and return data
         return img, metrics
     except Exception:
-        current_app.logger.exception(
+        logger.exception(
             "An exception occured while attempting to generate a tile:"
         )
         raise

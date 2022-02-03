@@ -1,3 +1,4 @@
+from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -9,11 +10,13 @@ import time
 from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import AttrDict, Search
-from flask import current_app, request
 
-import elastic_datashader.helpers.mercantile_util as mu
 import yaml
 
+from . import mercantile_util as mu
+from .config import config
+
+logger = getLogger(__name__)
 
 def to_32bit_float(number):
     return struct.unpack("f", struct.pack("f", float(number)))[0]
@@ -36,13 +39,13 @@ def scan(search, use_scroll=False, size=10000):
                 _search = None
 
 
-def verify_datashader_indices(elasticsearch_uri: str):
+def verify_datashader_indices(elasticsearch_hosts: str):
     """Verify the ES indices exist
 
-    :param elasticsearch_uri:
+    :param elasticsearch_hosts:
     """
     es = Elasticsearch(
-        elasticsearch_uri.split(","),
+        elasticsearch_hosts.split(","),
         verify_certs=False,
         timeout=120
     )
@@ -137,13 +140,14 @@ def verify_datashader_indices(elasticsearch_uri: str):
     )
 
 def get_search_base(
-    elastic_uri: str,
+    elastic_hosts: str,
+    headers: Optional[str],
     params: Dict[str, Any],
     idx: int,
 ) -> Search:
     """
 
-    :param elastic_uri:
+    :param elastic_hosts:
     :param params:
     :param idx:
     :param header_file:
@@ -159,7 +163,7 @@ def get_search_base(
 
     # Connect to Elasticsearch
     es = Elasticsearch(
-        elastic_uri.split(","),
+        elastic_hosts.split(","),
         verify_certs=False,
         timeout=900,
         headers=get_es_headers(request.headers, user),
@@ -226,7 +230,7 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
     filter_dict = {"filter": [{"match_all": {}}], "must_not": []}
 
     for f in filter_inputs:
-        current_app.logger.info("Filter %s\n %s", f.get("meta").get("type"), f)
+        logger.info("Filter %s\n %s", f.get("meta").get("type"), f)
         # Skip disabled filters
         if f.get("meta").get("disabled") in ("true", True):
             continue
@@ -296,7 +300,7 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
                     filter_dict["filter"].append( { filter_key: f.get(filter_key) } )
         else:
             raise ValueError("unsupported filter type %s" % f.get("meta").get("type"))
-    current_app.logger.info("Filter output %s", filter_dict)
+    logger.info("Filter output %s", filter_dict)
     return filter_dict
 
 def load_datashader_headers(header_file_path_str: Optional[str]) -> Dict[Any, Any]:
@@ -327,12 +331,13 @@ def get_es_headers(request_headers=None, user=None):
     """
 
     # Copy so we don't mutate the headers in the config
-    result = copy.deepcopy(current_app.config.get("DATASHADER_HEADERS"))  
+    result = copy.deepcopy(config.datashader_headers)
 
     # Figure out what headers are allowed to pass-through
-    whitelist_headers = current_app.config.get("WHITELIST_HEADERS")
-    if whitelist_headers and request_headers:
-        for hh in whitelist_headers.split(","):
+    allowlist_headers = config.allowlist_headers
+
+    if allowlist_headers and request_headers:
+        for hh in allowlist_headers.split(","):
             if hh in request_headers:
                 result[hh] = request_headers[hh]
 
