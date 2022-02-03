@@ -153,14 +153,14 @@ def scheduled_cache_check_task(id_: str, cache_dir: Union[Path, str]) -> None:
         _log.info("Cache check complete (%s)", id_)
 
 
-def build_layer_info(cache_dir: Union[str, Path]) -> Dict[str, OrderedDict]:
+def build_layer_info(cache_path: Path) -> Dict[str, OrderedDict]:
     """Build up dictionary of layer info
 
-    :param cache_dir: Cache directory
+    :param cache_path: Cache directory
     :return: Dictionary containing parameters for each layer and hash
     """
     layer_info = {}
-    for layer in Path(cache_dir).iterdir():
+    for layer in cache_path.iterdir():
         # We only care if the layer isn't a file
         if layer.is_file():
             continue

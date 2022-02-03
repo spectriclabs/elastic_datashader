@@ -63,6 +63,13 @@ def get_ssl_context() -> Optional[Union[SSLContext, str]]:
 
     return None
 
+def check_config(config: Config) -> None:
+    if not config.cache_path.exists():
+        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{config.cache_path}' does not exist")
+
+    if not config.cache_path.is_dir():
+        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{config.cache_path}' is not a directory")
+
 def config_from_env() -> Config:
     return Config(
         allowlist_headers=environ.get("DATASHADER_ALLOWLIST_HEADERS", None),
@@ -90,3 +97,4 @@ def config_from_env() -> Config:
     )
 
 config = config_from_env()
+check_config(config)
