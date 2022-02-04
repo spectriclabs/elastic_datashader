@@ -166,7 +166,7 @@ def get_search_base(
         elastic_hosts.split(","),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(request.headers, user),
+        headers=get_es_headers(headers, user),
     )
 
     # Create base search

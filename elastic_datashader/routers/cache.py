@@ -1,4 +1,5 @@
 from logging import getLogger
+from shutil import rmtree
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -27,8 +28,8 @@ async def clear_cache(request: Request):
 
     # Check if it exists
     if tile_cache_path.exists():
-        shutil.rmtree(tile_cache_path)
-        current_app.logger.info("Clearing hash/layer: %s", tile_cache_path)
+        rmtree(tile_cache_path)
+        logger.info("Clearing hash/layer: %s", tile_cache_path)
 
     return RedirectResponse(request.headers.get('HTTP_REFERER'))
 

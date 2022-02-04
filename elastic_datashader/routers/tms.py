@@ -77,7 +77,7 @@ def create_datashader_tiles_entry(es, **kwargs) -> None:
     doc = Document(**doc_info)
     doc.save(using=es, index=".datashader_tiles")
 
-def make_image_response(img, params, parameter_hash, cache_max_seconds) -> Response:
+def make_image_response(img: bytes, user: str, parameter_hash: str, cache_max_seconds: int) -> Response:
     return Response(
         img,
         status_code=200,
@@ -86,16 +86,15 @@ def make_image_response(img, params, parameter_hash, cache_max_seconds) -> Respo
             "Content-Type": "image/png",
             "Access-Control-Allow-Origin": "*",
             "Datashader-Parameter-Hash": parameter_hash,
-            "Datashader-RunAs-User": params.get("user", ""),
+            "Datashader-RunAs-User": user,
          }
     )
 
 def cached_response(es, idx, x, y, z, params, parameter_hash) -> Optional[Response]:
-    c = get_cache(config.cache_path, tile_name(idx, x, y, z, parameter_hash))
+    img = get_cache(config.cache_path, tile_name(idx, x, y, z, parameter_hash))
 
-    if c is not None:
+    if img is not None:
         logger.info("Hit cache (%s), returning", parameter_hash)
-        img = c
 
         try:
             es.update(  # pylint: disable=E1123
@@ -107,7 +106,7 @@ def cached_response(es, idx, x, y, z, params, parameter_hash) -> Optional[Respon
         except NotFoundError:
             logger.warning("Unable to find cached tile entry in .datashader_tiles")
 
-        return make_image_response(img, params, parameter_hash, 60)
+        return make_image_response(img, params.get("user") or "", parameter_hash, 60)
 
     return None
 
@@ -125,7 +124,7 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash, request: Re
         'x': x,
         'y': y,
         'z': z,
-        'url': request.url,
+        'url': str(request.url),
         'params': params,
     }
 
@@ -136,6 +135,7 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash, request: Re
             img, metrics = generate_nonaggregated_tile(idx, x, y, z, request.headers, params)
         else:
             img, metrics = generate_tile(idx, x, y, z, request.headers, params)
+
     except Exception as ex:  # pylint: disable=W0703
         logger.exception("Exception Generating Tile for request %s", request)
         error_info = {**base_tile_info, 'error': repr(ex)}
@@ -158,7 +158,7 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash, request: Re
     # Store image as well
     check_cache_dir(config.cache_path, idx)
     set_cache(config.cache_path, tile_name(idx, x, y, z, parameter_hash), img)
-    return make_image_response(img, params, parameter_hash, 60)
+    return make_image_response(img, params.get("user") or "", parameter_hash, 60)
 
 @router.get("/{idx}/{z}/{x}/{y}.png")
 async def get_tms(idx: str, x: int, y: int, z: int, request: Request):
@@ -181,7 +181,7 @@ async def get_tms(idx: str, x: int, y: int, z: int, request: Request):
             'x': x,
             'y': y,
             'z': z,
-            'url': request.url,
+            'url': str(request.url),
             'params': params,
             'error': repr(ex)
         }

@@ -183,14 +183,12 @@ def get_category_histogram(category_histogram: Optional[str]) -> Optional[bool]:
 
     return None
 
-def get_cmap(cmap: Optional[str], category_field: Optional[str]) -> Optional[str]:
+def get_cmap(cmap: Optional[str], category_field: Optional[str]) -> str:
     if cmap is None:
         if category_field is None:
             return "bmy"
 
-        return "glasbey_category10"
-
-    return None
+    return "glasbey_category10"
 
 def get_category_field(category_field: Optional[str]) -> Optional[str]:
     # Handle dumb javascript on the client side

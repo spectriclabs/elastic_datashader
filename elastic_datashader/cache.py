@@ -50,27 +50,29 @@ def du(path: Path) -> str:
     return naturalsize(directory_size(path), gnu=True)
 
 
-def get_cache(cache_dir: Union[Path, str], tile: str) -> Optional[bytes]:
+def get_cache(cache_path: Path, tile: str) -> Optional[bytes]:
     """Retrieve data from the cache
 
-    :param cache_dir: Cache directory
+    :param cache_path: Cache directory
     :param tile: Tile to attempt to retrieve
     :return: Tile from cache or None if not in cache
     """
     # Check if tile exists
-    tile_path = Path(cache_dir) / tile
+    tile_path = cache_path / tile
+
     if tile_path.exists():
         return tile_path.read_bytes()
 
+    return None
 
-def set_cache(cache_dir: Union[Path, str], tile: str, img: bytes) -> None:
+def set_cache(cache_path: Path, tile: str, img: bytes) -> None:
     """Add the tile image to the cache
 
     :param tile: Tile name
     :param img: Tile image data
-    :param cache_dir: Cache directory
+    :param cache_path: Cache directory
     """
-    tile_path = Path(cache_dir) / tile
+    tile_path = cache_path / tile
 
     # Make the directory if it doesn't already exist
     tile_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,25 +80,23 @@ def set_cache(cache_dir: Union[Path, str], tile: str, img: bytes) -> None:
     # Write the file to the cache
     tile_path.write_bytes(img)
 
-
-def check_cache_dir(cache_dir: Path, layer_name: str) -> None:
+def check_cache_dir(cache_path: Path, layer_name: str) -> None:
     """
-    Ensure the folder ``cache_dir``/``layer_name`` exists
+    Ensure the folder ``cache_path``/``layer_name`` exists
 
-    :param cache_dir: Top level directory
+    :param cache_path: Top level directory
     :param layer_name: Specific layer in cache
     """
-    tile_cache_path = cache_dir / layer_name
+    tile_cache_path = cache_path / layer_name
     tile_cache_path.mkdir(parents=True, exist_ok=True)
 
-def check_cache_age(cache_dir: Union[Path, str], age_limit: int) -> None:
+def check_cache_age(cache_path: Path, age_limit: int) -> None:
     """Check for and delete any cache files older than ``age_limit``
 
-    :param cache_dir: Directory where the cache is (where the subdirectory
+    :param cache_path: Directory where the cache is (where the subdirectory
                       is layers)
     :param age_limit: The age limit in seconds above which to delete files
     """
-    cache_path = Path(cache_dir)
     for layer_dir in cache_path.iterdir():
         # Skip if ``layer_dir`` is a file
         if layer_dir.is_file():
@@ -121,21 +121,20 @@ def check_cache_age(cache_dir: Union[Path, str], age_limit: int) -> None:
                 )
 
 
-def scheduled_cache_check_task(id_: str, cache_dir: Union[Path, str]) -> None:
+def scheduled_cache_check_task(id_: str, cache_path: Path) -> None:
     """Cache check task callback that will be run every 5 minutes
 
     :param id_: Job thread ID
-    :param cache_dir: Cache directory to check
+    :param cache_path: Cache directory to check
     """
     # See last update file
-    _log.info("Checking for old cache %s (%s)", cache_dir, id_)
+    _log.info("Checking for old cache %s (%s)", cache_path, id_)
 
-    cache_path = Path(cache_dir)
     check_file = cache_path / "cache.age.check"
 
     # If the file doesn't exist, create it
     if not check_file.exists():
-        _log.info("Had to recreate check file %s (%s)", cache_dir, id_)
+        _log.info("Had to recreate check file %s (%s)", cache_path, id_)
         check_file.touch()
 
     check_age = time.time() - check_file.stat().st_mtime
@@ -148,7 +147,7 @@ def scheduled_cache_check_task(id_: str, cache_dir: Union[Path, str]) -> None:
         _log.info("Doing age check (%s)", id_)
 
         # Setup 24 hour cleanup (86400 == 24 * 60 * 60)
-        check_cache_age(cache_dir, 86400)
+        check_cache_age(cache_path, 86400)
 
         _log.info("Cache check complete (%s)", id_)
 
