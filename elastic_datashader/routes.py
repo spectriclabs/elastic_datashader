@@ -440,50 +440,6 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash) -> Response
     set_cache(cache_path, tile_name(idx, x, y, z, parameter_hash), img)
     return make_image_response(img, params, parameter_hash, 60)
 
-@api_blueprints.route("/tms/<idx>/<int:z>/<int:x>/<int:y>.png", methods=["GET"])
-def get_tms(idx, x: int, y: int, z: int) -> Response:
-    if response := check_tms_key(request.headers) is not None:
-        return response
-
-    # TMS tile coordinates
-    x = int(x)
-    y = int(y)
-    z = int(z)
-
-    es = Elasticsearch(
-        current_app.config.get("ELASTIC").split(","),
-        verify_certs=False,
-        timeout=120,
-    )
-
-    # Get hash and parameters
-    try:
-        parameter_hash, params = extract_parameters(request)
-    except Exception as ex:  # pylint: disable=W0703
-        current_app.logger.exception("Error while extracting parameters")
-        params = {"user": request.headers.get("es-security-runas-user", None)}
-        error_info = {
-            'idx': idx,
-            'x': x,
-            'y': y,
-            'z': z,
-            'url': request.url,
-            'params': params,
-            'error': repr(ex)
-        }
-
-        create_datashader_tiles_entry(es, **error_info)
-        return error_tile_response(ex)
-
-    use_cache = request.args.get("force") is None
-
-    # Try to use a cached response
-    if use_cache and (response := cached_response(es, idx, x, y, z, params, parameter_hash)) is not None:
-        return response
-
-    # Cache miss, or cache disabled, so generate a tile
-    return generate_tile_response(es, idx, x, y, z, params, parameter_hash)
-
 @api_blueprints.route("/indices", methods=["GET"])
 def retrieve_indices():
     es = Elasticsearch(
