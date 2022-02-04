@@ -15,7 +15,7 @@ router = APIRouter(
 )
 
 @router.get("")
-def retrieve_indices():
+async def retrieve_indices():
     es = Elasticsearch(
         config.elastic_hosts.split(","),
         verify_certs=False,
@@ -33,7 +33,7 @@ def retrieve_indices():
     )
 
 @router.get("/{index}/field_caps")
-def retrieve_field_caps(index: str):
+async def retrieve_field_caps(index: str):
     es = Elasticsearch(
         config.elastic_hosts.split(","), verify_certs=False, timeout=120
     )
@@ -55,7 +55,7 @@ def retrieve_field_caps(index: str):
     )
 
 @router.get("/{index}/mapping")
-def retrieve_index_mapping(index: str):
+async def retrieve_index_mapping(index: str):
     es = Elasticsearch(
         config.elastic_hosts.split(","), verify_certs=False, timeout=120
     )
