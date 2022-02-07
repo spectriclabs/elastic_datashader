@@ -1,4 +1,3 @@
-from logging import getLogger
 from shutil import rmtree
 
 from fastapi import APIRouter, HTTPException, Request
@@ -6,8 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from ..cache import check_cache_age
 from ..config import config
-
-logger = getLogger(__name__)
+from ..logger import logger
 
 router = APIRouter()
 

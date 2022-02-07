@@ -1,4 +1,3 @@
-from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,8 +14,7 @@ import yaml
 
 from . import mercantile_util as mu
 from .config import config
-
-logger = getLogger(__name__)
+from .logger import logger
 
 def to_32bit_float(number):
     return struct.unpack("f", struct.pack("f", float(number)))[0]

@@ -1,5 +1,4 @@
 from functools import lru_cache
-from logging import getLogger
 
 import copy
 import math
@@ -40,8 +39,7 @@ from .elastic import (
 from elastic_datashader.helpers.pandas_util import simplify_categories
 
 from .config import config
-
-logger = getLogger(__name__)
+from .logger import logger
 
 NAN_LINE = {"x": None, "y": None, "c": "None"}
 TILE_HEIGHT_PX = 256

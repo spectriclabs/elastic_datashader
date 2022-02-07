@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from hashlib import md5
 from json import loads
-from logging import getLogger
 from socket import gethostname
 from time import sleep
 from typing import Any, Dict, Optional, Tuple
@@ -18,9 +17,9 @@ from elasticsearch.exceptions import NotFoundError, ConflictError
 
 from .config import config
 from .elastic import get_search_base, build_dsl_filter
+from .logger import logger
 from .timeutil import quantize_time_range, convert_kibana_time
 
-logger = getLogger(__name__)
 
 def create_default_params() -> Dict[str, Any]:
     return {

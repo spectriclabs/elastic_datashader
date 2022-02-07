@@ -1,13 +1,11 @@
 from json import dumps
-from logging import getLogger
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from ..config import config
 from ..elastic import get_search_base
+from ..logger import logger
 from ..parameters import extract_parameters
-
-logger = getLogger(__name__)
 
 router = APIRouter(
     prefix="/data",

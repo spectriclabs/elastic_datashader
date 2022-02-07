@@ -1,5 +1,4 @@
 from datetime import datetime
-from logging import getLogger
 from os import getpid
 from socket import gethostname
 from typing import Optional
@@ -19,6 +18,7 @@ from ..cache import (
 from ..config import config
 from ..drawing import gen_error
 from ..elastic import get_es_headers
+from ..logger import logger
 from ..parameters import extract_parameters, merge_generated_parameters
 from ..tilegen import (
     TILE_HEIGHT_PX,
@@ -26,8 +26,6 @@ from ..tilegen import (
     generate_nonaggregated_tile,
     generate_tile,
 )
-
-logger = getLogger(__name__)
 
 router = APIRouter(
     prefix="/tms",

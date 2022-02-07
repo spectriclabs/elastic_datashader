@@ -7,24 +7,21 @@ from typing import Any, Dict, Optional, Union
 
 import yaml
 
-@dataclass
+@dataclass(frozen=True)
 class Config:
     allowlist_headers: Optional[str]
     cache_path: Path
     cache_timeout_seconds: int
     csrf_secret_key: str
     datashader_headers: Dict[Any, Any]
-    debug: bool
     elastic_hosts: str
     ellipse_render_mode: str
     hostname: str
-    log_level: Optional[int]
     max_batch: int
     max_bins: int
     max_ellipses_per_tile: int
     max_legend_items_per_tile: int
     num_ellipse_points: int
-    port: Optional[int]
     proxy_host: Optional[str]
     proxy_prefix: str
     query_timeout_seconds: int
@@ -77,11 +74,9 @@ def config_from_env() -> Config:
         cache_timeout_seconds=int(environ.get("DATASHADER_CACHE_TIMEOUT", 60*60)),
         csrf_secret_key=environ.get("DATASHADER_CSRF_SECRET_KEY", "CSRFProtectionKey"),
         datashader_headers=load_datashader_headers(environ.get("DATASHADER_HEADER_FILE", "headers.yaml")),
-        debug=(environ.get("DATASHADER_DEBUG", None) is not None),
         elastic_hosts=environ.get("DATASHADER_ELASTIC", "http://localhost:9200"),
         ellipse_render_mode=environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix"),
         hostname=getfqdn(),
-        log_level=environ.get("DATASHADER_LOG_LEVEL", None),
         max_batch=int(environ.get("DATASHADER_MAX_BATCH", 10_000)),
         max_bins=int(environ.get("DATASHADER_MAX_BINS", 10_000)),
         max_ellipses_per_tile=int(environ.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100_000)),
@@ -89,7 +84,6 @@ def config_from_env() -> Config:
         num_ellipse_points=int(environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)),
         proxy_host=environ.get("DATASHADER_PROXY_HOST", None),
         proxy_prefix=environ.get("DATASHADER_PROXY_PREFIX", ""),
-        port=None,
         query_timeout_seconds=int(environ.get("DATASHADER_QUERY_TIMEOUT", 0)),
         ssl_context=get_ssl_context(),
         tms_key=environ.get("DATASHADER_TMS_KEY", None),

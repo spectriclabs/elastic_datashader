@@ -1,12 +1,10 @@
 from json import dumps
-from logging import getLogger
 
 from elasticsearch import Elasticsearch
 from fastapi import APIRouter, Response
 
 from ..config import config
-
-logger = getLogger(__name__)
+from ..logger import logger
 
 router = APIRouter(
     prefix="/indices",

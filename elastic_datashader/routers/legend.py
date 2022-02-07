@@ -1,6 +1,5 @@
 from copy import copy
 from json import dumps, loads
-from logging import getLogger
 from typing import Optional
 
 from fastapi import APIRouter, Request, Response
@@ -15,9 +14,8 @@ from ..elastic import (
     to_32bit_float,
     get_tile_categories
 )
+from ..logger import logger
 from ..parameters import extract_parameters, merge_generated_parameters
-
-logger = getLogger(__name__)
 
 router = APIRouter()
 
