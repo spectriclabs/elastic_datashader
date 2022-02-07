@@ -7,7 +7,6 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import unquote
 
 import copy
-import hashlib
 import math
 import os
 
@@ -467,7 +466,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
                 logger.debug("Abandoned generating parameters due to conflict, will wait for other process to complete.")
                 break
             #Generate and save off parameters
-            logger.warn("Discovering generated params")
+            logger.warning("Discovering generated params")
             generated_params.update(generate_global_params(headers, params, idx))
             generated_params["generation_complete_time"] = datetime.now()
             generated_params["complete"] = True

@@ -1,6 +1,6 @@
 import pytest
-from elastic_datashader.helpers import elastic
 
+from elastic_datashader import elastic
 
 def test_get_search_base():
     pass
@@ -17,7 +17,6 @@ def test_get_es_headers():
 def test_convert():
     pass
 
-
 @pytest.mark.parametrize(
     "field,expected",
     (
@@ -28,7 +27,6 @@ def test_convert():
 )
 def test_split_fieldname_to_list(field, expected):
     assert expected == elastic.split_fieldname_to_list(field)
-
 
 def test_get_nested_field_from_hit():
     pass

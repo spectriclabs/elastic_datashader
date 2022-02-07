@@ -2,10 +2,8 @@ from json import loads
 from pprint import pformat
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..cache import du, build_layer_info
 from ..config import config
 
 router = APIRouter()

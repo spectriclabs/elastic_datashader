@@ -2,7 +2,7 @@ import os
 import time
 from unittest import mock
 import pytest
-from elastic_datashader.helpers import cache
+from elastic_datashader import cache
 
 
 def test_du_fail(tmp_path):

@@ -1,8 +1,4 @@
-from pprint import pformat
-import json
-
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from ..cache import du, build_layer_info

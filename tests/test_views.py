@@ -4,43 +4,25 @@ import json
 
 import pytest
 
-from elastic_datashader.cli import create_app
-from elastic_datashader.helpers.cache import du
+from fastapi.testclient import TestClient
 
+from elastic_datashader.main import app
+from elastic_datashader.cache import du
+
+client = TestClient(app)
 
 def setup_cache(cache_path: Path):
     """Helper method to setup cache directory for tests"""
     hash_dir = cache_path / "foo" / "abcdef"
     hash_dir.mkdir(exist_ok=True, parents=True)
-    with (hash_dir / "params.json").open("w") as f:
-        json.dump({"foo": "bar", "baz": 300}, f)
+    (hash_dir / "params.json").write_text(json.dumps({"foo": "bar", "baz": 300}))
 
-
-@pytest.fixture
-def client_and_cache(tmp_path):
-    cache_path = tmp_path / "tms_cache"
-    app = create_app(verify_indices=False)
-    app.config.update(
-        {
-            "TESTING": True,
-            "ELASTIC_DATASHADER_SETTINGS": "",
-            "LOG_LEVEL": "info",
-            "CACHE_DIRECTORY": str(cache_path)
-        }
-    )
-
-    with app.test_client() as client:
-        yield client, cache_path
-
-
-def test_index_no_cache(client_and_cache):
-    client, _ = client_and_cache
+def test_index_no_cache():
     with pytest.raises(FileNotFoundError):
         _ = client.get("/")
 
-
-def test_index_cache(client_and_cache):
-    client, cache_path = client_and_cache
+def test_index_cache(tmp_path):
+    cache_path = tmp_path / "tms_cache"
     setup_cache(cache_path)
     size = du(cache_path)
 
@@ -49,9 +31,7 @@ def test_index_cache(client_and_cache):
     assert b"abcdef" in rv.data
     assert b"foo" in rv.data
 
-
-def test_display_parameters_no_params_json(client_and_cache):
-    client, cache_path = client_and_cache
+def test_display_parameters_no_params_json():
     rv = client.get("/parameters?name=foo&hash=abcdef")
     expected = b"""<html>
     <head>
@@ -83,8 +63,8 @@ def test_display_parameters_no_params_json(client_and_cache):
     assert expected == rv.data
 
 
-def test_display_parameters_with_params_json(client_and_cache):
-    client, cache_path = client_and_cache
+def test_display_parameters_with_params_json(tmp_path):
+    cache_path = tmp_path / "tms_cache"
     setup_cache(cache_path)
 
     rv = client.get("/parameters?name=foo&hash=abcdef")

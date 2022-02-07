@@ -5,19 +5,22 @@ import math
 import time
 import json
 
-import mercantile
-import pynumeral
-import colorcet as cc
-import datashader as ds
-import pandas as pd
 from datashader import reductions as rd, transfer_functions as tf
 from elasticsearch_dsl import AttrList, AttrDict, A
 from elasticsearch_dsl.aggs import Bucket
 from numpy import pi
 from datashader.utils import lnglat_to_meters
+
+import colorcet as cc
+import datashader as ds
+import mercantile
 import numpy as np
+import pynumeral
+import pandas as pd
 
 from . import mercantile_util as mu
+
+from .config import config
 from .drawing import (
     ellipse,
     gen_empty,
@@ -36,10 +39,8 @@ from .elastic import (
     get_tile_categories,
     scan
 )
-from elastic_datashader.helpers.pandas_util import simplify_categories
-
-from .config import config
 from .logger import logger
+from .pandas_util import simplify_categories
 
 NAN_LINE = {"x": None, "y": None, "c": "None"}
 TILE_HEIGHT_PX = 256

@@ -4,7 +4,6 @@ from elasticsearch import Elasticsearch
 from fastapi import APIRouter, Response
 
 from ..config import config
-from ..logger import logger
 
 router = APIRouter(
     prefix="/indices",

@@ -8,7 +8,10 @@ from .routers import cache, data, index, indices, legend, parameters, tms
 
 logger.info("Loaded configuration %s", config)
 logger.setLevel(config.log_level)
-verify_datashader_indices(config.elastic_hosts)
+
+if config.verify_indices:
+    verify_datashader_indices(config.elastic_hosts)
+
 initialize_custom_color_maps()
 
 app = FastAPI()

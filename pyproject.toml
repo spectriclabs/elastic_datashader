@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "elastic_datashader"
-version = "0.0.5"
+version = "0.0.6"
 description = "Elastic-Datashader TMS Server"
 authors = ["Spectric Labs <foss@spectric.com>"]
 license = "Apache-2.0"
@@ -66,9 +66,13 @@ python =
 	3.9: py39
 
 [testenv]
+setenv =
+	DATASHADER_VERIFY_INDICES = false
+
 deps =
 	pylint
 	pytest
+	requests
 
 commands =
 	pylint --disable=R,C,fixme elastic_datashader

@@ -30,6 +30,7 @@ class Config:
     ssl_context: Optional[Union[SSLContext, str]]
     tms_key: Optional[str]
     use_scroll: bool
+    verify_indices: bool
 
 def load_datashader_headers(header_path_str: str) -> Dict[Any, Any]:
     header_path = Path(header_path_str)
@@ -73,12 +74,21 @@ def get_ssl_context() -> Optional[Union[SSLContext, str]]:
 
     return None
 
-def check_config(config: Config) -> None:
-    if not config.cache_path.exists():
-        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{config.cache_path}' does not exist")
+def get_verify_indices(val: Optional[str]) -> bool:
+    if val is None:
+        return True
 
-    if not config.cache_path.is_dir():
-        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{config.cache_path}' is not a directory")
+    if val.lower() in ("no", "false"):
+        return False
+
+    return True
+
+def check_config(c: Config) -> None:
+    if not c.cache_path.exists():
+        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' does not exist")
+
+    if not c.cache_path.is_dir():
+        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' is not a directory")
 
 def config_from_env() -> Config:
     return Config(
@@ -101,7 +111,8 @@ def config_from_env() -> Config:
         query_timeout_seconds=int(environ.get("DATASHADER_QUERY_TIMEOUT", 0)),
         ssl_context=get_ssl_context(),
         tms_key=environ.get("DATASHADER_TMS_KEY", None),
-        use_scroll=(environ.get("DATASHADER_USE_SCROLL", None) is not None),
+        use_scroll=(environ.get("DATASHADER_USE_SCROLL", None) is not None),  # default True
+        verify_indices=get_verify_indices(environ.get("DATASHADER_VERIFY_INDICES", None)),
     )
 
 config = config_from_env()

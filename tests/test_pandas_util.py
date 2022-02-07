@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
-from elastic_datashader.helpers import pandas_util
 
+from elastic_datashader import pandas_util
 
 def test_simplify_categories_not_categorical():
     df = pd.DataFrame({"foo": [1, 2, 2, 3, 4, 4]})

@@ -1,7 +1,7 @@
 from collections import OrderedDict
 from os import scandir
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 
 import json
 import logging

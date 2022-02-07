@@ -1,8 +1,11 @@
-import numpy as np
-from PIL import Image
-import pytest
-from elastic_datashader.helpers import drawing
+from pathlib import Path
 
+from PIL import Image
+
+import numpy as np
+import pytest
+
+from elastic_datashader import drawing
 
 @pytest.mark.parametrize(
     "categories,expected",
@@ -14,7 +17,6 @@ from elastic_datashader.helpers import drawing
 def test_create_color_key(categories, expected):
     assert drawing.create_color_key(categories) == expected
 
-
 def test_gen_overlay_img():
     width = 256
     height = 256
@@ -23,7 +25,6 @@ def test_gen_overlay_img():
     img = drawing.gen_overlay_img(width, height, thickness)
 
     np.testing.assert_equal(np.array(expected), np.array(img))
-
 
 def test_gen_debug_img():
     width = 256
@@ -35,36 +36,27 @@ def test_gen_debug_img():
 
     np.testing.assert_equal(np.array(expected), np.array(img))
 
-
 def test_gen_overlay():
     img = drawing.gen_empty(256, 256)
-    with open("./tests/dat/gen_overlay.txt", "rb") as expected_file:
-        expected = expected_file.read()
+    expected = Path("./tests/dat/gen_overlay.txt").read_bytes()
     actual = drawing.gen_overlay(img)
     assert expected == actual
 
-
 def test_gen_debug_overlay():
     img = drawing.gen_empty(256, 256)
-    with open("./tests/dat/gen_debug_overlay.txt", "rb") as expected_file:
-        expected = expected_file.read()
+    expected = Path("./tests/dat/gen_debug_overlay.txt").read_bytes()
     actual = drawing.gen_debug_overlay(img, "hello, world!")
     assert expected == actual
 
-
 def test_gen_error():
-    with open("./tests/dat/gen_error.txt", "rb") as expected_file:
-        expected = expected_file.read()
+    expected = Path("./tests/dat/gen_error.txt").read_bytes()
     actual = drawing.gen_error(256, 256, 5)
     assert expected == actual
 
-
 def test_gen_empty():
-    with open("./tests/dat/gen_empty.txt", "rb") as expected_file:
-        expected = expected_file.read()
+    expected = Path("./tests/dat/gen_empty.txt").read_bytes()
     actual = drawing.gen_empty(256, 256)
     assert expected == actual
-
 
 def test_ellipse():
     # Verify tilt of 0 means North
