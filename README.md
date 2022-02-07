@@ -37,29 +37,17 @@ First enter the virtualenv created by poetry.
 poetry shell
 ```
 
-#### Debug development mode
-
-```sh
-$ python -m elastic_datashader --debug -p 6002 -e http://user:password@host:9200
-```
-
-#### Quasi-production mode
-
-```sh
-$ python -m elastic_datashader -p 6002 -e http://user:password@host:9200
-```
-
-#### Gunicorn
+#### Uvicorn
 First you need to install the `localwebserver` optional extra.
 
 ```sh
 poetry install --extras localwebserver
 ```
 
-Gunicorn is now available for you within the virtualenv (you can reenter with `poetry shell`).
+uvicorn is now available for you within the virtualenv (you can reenter with `poetry shell`).  Note that the log level for the `datashader` logger can be set within the `logging_config.yml` or by setting the `DATASHADER_LOG_LEVEL` environment variable; the latter takes precedence.
 
 ```sh
-gunicorn -c deployment/gunicorn_config.py -b 0.0.0.0:6002 -w 24 -t 120 -e DATASHADER_ELASTIC=http://user:password@host:9200 "elastic_datashader:create_app()"
+DATASHADER_ELASTIC=http://user:password@localhost:9200 uvicorn elastic_datashader:app --reload --port 6002 --log-config logging_config.yml 
 ```
 
 ### Docker
@@ -70,33 +58,17 @@ First build the Docker container by running 'make' within the folder:
 make
 ```
 
-To run in production mode via Docker+Gunicorn:
+To run in production mode via Docker+Uvicorn:
 
 ```sh
 $ docker run -it --rm=true -p 5000:5000 \
-    elastic_datashader:0.0.5 \
+    elastic_datashader:0.0.6 \
     --log-level=debug \
     -b :5000 \
     --workers 32 \
     --env DATASHADER_ELASTIC=http://user:passwordt@host:9200 \
     --env DATASHADER_LOG_LEVEL=DEBUG
 ```
-
-### Elastic APM support (EXPERIMENTAL)
-To add Elastic APM support run the following.
-
-```sh
-poetry install --extras apm
-```
-
-You'll also need to set some environment variables.
-
-```sh
-export ELASTIC_APM_SERVICE_NAME=elastic_datashader
-export ELASTIC_APM_SERVER_URL=http://localhost:7200
-```
-
-Then run as normal.  IMPORTANT, this only works in --debug or Gunicorn mode.  The Elastic APM module does not work correctly with Flask when multiple worker processes are run.
 
 ### Running behind NGINX
 

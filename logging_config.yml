@@ -30,6 +30,6 @@ loggers:
       - access
     propagate: no
   datashader:
-    level: DEBUG
+    level: INFO
     handlers:
       - default

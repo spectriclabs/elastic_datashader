@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from logging import getLevelName, INFO
 from os import environ
 from pathlib import Path
 from socket import getfqdn
@@ -17,6 +18,7 @@ class Config:
     elastic_hosts: str
     ellipse_render_mode: str
     hostname: str
+    log_level: int
     max_batch: int
     max_bins: int
     max_ellipses_per_tile: int
@@ -44,6 +46,17 @@ def load_datashader_headers(header_path_str: str) -> Dict[Any, Any]:
         raise ValueError(f"HEADER_FILE YAML should be a dict mapping, but received {loaded_yaml}")
 
     return loaded_yaml
+
+def get_log_level(level_name: Optional[str]) -> int:
+    if level_name is None:
+        return INFO
+
+    level_value = getLevelName(level_name.upper())
+
+    if type(level_value) is not int:
+        raise Exception(f"Invalid logging level {level_name}")
+
+    return level_value
 
 def get_ssl_context() -> Optional[Union[SSLContext, str]]:
     if environ.get("DATASHADER_SSL_ADHOC", None) is not None:
@@ -77,6 +90,7 @@ def config_from_env() -> Config:
         elastic_hosts=environ.get("DATASHADER_ELASTIC", "http://localhost:9200"),
         ellipse_render_mode=environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix"),
         hostname=getfqdn(),
+        log_level=get_log_level(environ.get("DATASHADER_LOG_LEVEL", None)),
         max_batch=int(environ.get("DATASHADER_MAX_BATCH", 10_000)),
         max_bins=int(environ.get("DATASHADER_MAX_BINS", 10_000)),
         max_ellipses_per_tile=int(environ.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100_000)),
