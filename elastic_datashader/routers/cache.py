@@ -3,7 +3,7 @@ from shutil import rmtree
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
-from ..cache import check_cache_age
+from ..cache import age_off_cache
 from ..config import config
 from ..logger import logger
 
@@ -44,5 +44,5 @@ async def age_cache(request: Request):
         raise HTTPException(detail=f"Unknown request: {name} / {hash_}", status_code=400)
 
     age_limit = int(age)
-    check_cache_age(config.cache_path, age_limit)
+    age_off_cache(config.cache_path, age_limit)
     return RedirectResponse(request.headers.get('HTTP_REFERER'))

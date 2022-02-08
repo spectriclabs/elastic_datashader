@@ -4,9 +4,10 @@ from pathlib import Path
 import os
 import socket
 
-def test_config_defaults():
-    from elastic_datashader.config import config
+from elastic_datashader.config import config_from_env
 
+def test_config_defaults():
+    config = config_from_env()
     assert config.log_level is INFO
     assert config.cache_path == Path("tms-cache")
     assert config.cache_timeout_seconds == 3600
@@ -38,8 +39,7 @@ def test_config_env():
         "DATASHADER_QUERY_TIMEOUT": "1",
     })
 
-    from elastic_datashader.config import config
-
+    config = config_from_env()
     assert config.log_level == INFO
     assert config.cache_path == Path("tms-cache-foo")
     assert config.cache_timeout_seconds== 60

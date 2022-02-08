@@ -42,25 +42,3 @@ def test_simplify_categories_list():
     )
     expected_df["foo"] = expected_df.foo.astype("category")
     assert expected_df.equals(actual_df)
-
-
-@pytest.mark.parametrize(
-    "threshold,last,exception", ((None, None, ValueError), (5, 10, ValueError))
-)
-def test_replace_low_freq_inplace_errors(threshold, last, exception):
-    s = pd.Series([3, 1, 2, 3, 4]).astype("category")
-    with pytest.raises(exception):
-        pandas_util.replace_low_freq_inplace(s, threshold=threshold, last=last)
-
-
-@pytest.mark.parametrize(
-    "threshold,last,expected",
-    (
-        (2, None, pd.Series([3, "Other", "Other", 3, 4, 4, 3]).astype("category")),
-        (None, 2, pd.Series([3, "Other", "Other", 3, 4, 4, 3]).astype("category")),
-    ),
-)
-def test_replace_low_freq_inplace(threshold, last, expected):
-    s = pd.Series([3, 1, 2, 3, 4, 4, 3]).astype("category")
-    pandas_util.replace_low_freq_inplace(s, threshold=threshold, last=last)
-    assert expected.equals(s)
