@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from os import scandir
 from pathlib import Path
+from shutil import rmtree
 from time import time
 from typing import Dict, Optional
 
@@ -88,8 +89,17 @@ def check_cache_dir(cache_path: Path, layer_name: str) -> None:
     tile_cache_path = cache_path / layer_name
     tile_cache_path.mkdir(parents=True, exist_ok=True)
 
-def age_off_cache(cache_path: Path, max_age_seconds: int) -> None:
-    file_paths = cache_path.glob('*/*/*/*/*.png')  # idx/hash/z/x/y.png
+def clear_hash_cache(cache_path: Path, idx_name: str, param_hash: Optional[str]) -> None:
+    target_path = cache_path / idx_name
+
+    if param_hash:
+        target_path = target_path / param_hash
+
+    if target_path.exists():
+        rmtree(target_path, ignore_errors=True)
+
+def age_off_cache(cache_path: Path, idx_name: str, max_age_seconds: int) -> None:
+    file_paths = cache_path.glob(f'{idx_name}/*/*/*/*.png')  # idx/hash/z/x/y.png
 
     for file_path in file_paths:
         file_age = time() - file_path.stat().st_mtime

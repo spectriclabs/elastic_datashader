@@ -10,40 +10,22 @@
 <tr>
     <th></th>
     <th>Index Name / Hash</th>
-    <th>User</th>
     <th>Size</th>
     <th>Age</th>
-    <th>Start</th>
-    <th>Stop</th>
-    <th>Category</th>
-    <th>Ellipse</th>
-    <th>Params</th>
 </tr>
-{% for l,hashes in layer_info.items() %}
+{% for idx_name,param_hashes in layer_info.items() %}
 <tr>
-    <td><a href="./clear_cache?name={{ l }}">Clear</a></td>
-    <td>{{ l }}</td>
-    <td></td>
-    <td></td>
-    <td></td>
-    <td></td>
-    <td></td>
-    <td></td>
+    <td><a href="/clear_cache?name={{ idx_name }}">Clear Index</a></td>
+    <td>{{ idx_name }}</td>
     <td></td>
     <td></td>
 </tr>
-{% for h,params in hashes.items() %}
+{% for param_hash,params in param_hashes.items() %}
 <tr>
-    <td><a href="./clear_cache?name={{ l }}&hash={{ h }}">Clear</a></td>
-    <td>&nbsp;&nbsp;&nbsp;&nbsp;{{ h }}</td>
-    <td>{{ params['user'] }}</td> 
+    <td><a href="/clear_cache?name={{ idx_name }}&param_hash={{ param_hash }}">Clear Index Hash</a></td>
+    <td style="text-align:right">{{ idx_name  }}/{{ param_hash }}</td>
     <td>{{ params['size'] }}</td>
     <td>{{ params['age'] }}</td>
-    <td>{{ params['start_time'] }}</td>
-    <td>{{ params['stop_time'] }}</td>
-    <td>{{ params['category_field'] }}</td>
-    <td>{{ params['ellipses'] }}</td>
-    <td><a href="./parameters?name={{l}}&hash={{h}}">Params</a></td>
 </tr>
 {% endfor %}
 {% endfor %}
