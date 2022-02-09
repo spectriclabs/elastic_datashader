@@ -18,7 +18,7 @@ def tile_name(idx, x, y, z, parameter_hash) -> str:
     return f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
 
 def tile_id(idx, x, y, z, parameter_hash) -> str:
-    return "%s_%s_%s_%s_%s" % (idx, parameter_hash, z, x, y)
+    return f"{idx}_{parameter_hash}_{z}_{x}_{y}"
 
 def directory_size(path: Path) -> int:
     '''
@@ -47,7 +47,6 @@ def du(path: Path) -> str:
     :return: Disk usage in human readable form
     """
     return naturalsize(directory_size(path), gnu=True)
-
 
 def get_cache(cache_path: Path, tile: str) -> Optional[bytes]:
     """Retrieve data from the cache
@@ -127,7 +126,7 @@ def build_layer_info(cache_path: Path) -> Dict[str, OrderedDict]:
         for hash_dir in layer.iterdir():
             # Check age of hash
             params["age_timestamp"] = hash_dir.stat().st_mtime
-            params["age"] = pretty_time_delta(time() - params["age_timestamp"])
+            params["age"] = pretty_time_delta(seconds=time()-params["age_timestamp"])
 
             # Check size of hash
             try:
