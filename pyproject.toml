@@ -72,9 +72,10 @@ setenv =
 deps =
 	pylint
 	pytest
+	pytest-cov
 	requests
 
 commands =
 	pylint --disable=R,C,fixme elastic_datashader
-	pytest
+	pytest --cov=elastic_datashader
 """
