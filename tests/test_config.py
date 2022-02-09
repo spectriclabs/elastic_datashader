@@ -4,27 +4,29 @@ from pathlib import Path
 import os
 import socket
 
-from elastic_datashader.config import config_from_env
+import pytest
+
+import elastic_datashader.config as config
 
 def test_config_defaults():
-    config = config_from_env()
-    assert config.log_level is INFO
-    assert config.cache_path == Path("tms-cache")
-    assert config.cache_timeout_seconds == 3600
-    assert config.elastic_hosts == "http://localhost:9200"
-    assert config.proxy_host is None
-    assert config.proxy_prefix == ""
-    assert config.tms_key is None
-    assert config.max_bins == 10000
-    assert config.max_batch == 10000
-    assert config.max_ellipses_per_tile == 100000
-    assert config.allowlist_headers is None
-    assert config.query_timeout_seconds == 0
-    assert config.hostname == socket.getfqdn()
+    cfg = config.config_from_env({})
+    assert cfg.log_level is INFO
+    assert cfg.cache_path == Path("tms-cache")
+    assert cfg.cache_timeout_seconds == 3600
+    assert cfg.elastic_hosts == "http://localhost:9200"
+    assert cfg.proxy_host is None
+    assert cfg.proxy_prefix == ""
+    assert cfg.tms_key is None
+    assert cfg.max_bins == 10000
+    assert cfg.max_batch == 10000
+    assert cfg.max_ellipses_per_tile == 100000
+    assert cfg.allowlist_headers is None
+    assert cfg.query_timeout_seconds == 0
+    assert cfg.hostname == socket.getfqdn()
 
 
 def test_config_env():
-    os.environ.update({
+    env = {
         "DATASHADER_LOG_LEVEL": "info",
         "DATASHADER_CACHE_DIRECTORY": "tms-cache-foo",
         "DATASHADER_CACHE_TIMEOUT": "60",
@@ -37,19 +39,70 @@ def test_config_env():
         "DATASHADER_ALLOWLIST_HEADERS": "blah",
         "DATASHADER_DEBUG_TILES": "True",
         "DATASHADER_QUERY_TIMEOUT": "1",
-    })
+    }
 
-    config = config_from_env()
-    assert config.log_level == INFO
-    assert config.cache_path == Path("tms-cache-foo")
-    assert config.cache_timeout_seconds== 60
-    assert config.elastic_hosts == "http://localhost:9201"
-    assert config.proxy_host == "http://localhost:1337"
-    assert config.proxy_prefix == "foo"
-    assert config.tms_key == "bar"
-    assert config.max_bins == 10
-    assert config.max_batch == 1000
-    assert config.max_ellipses_per_tile == 100000
-    assert config.allowlist_headers == "blah"
-    assert config.query_timeout_seconds == 1
-    assert config.hostname == socket.getfqdn()
+    cfg = config.config_from_env(env)
+    assert cfg.log_level == INFO
+    assert cfg.cache_path == Path("tms-cache-foo")
+    assert cfg.cache_timeout_seconds== 60
+    assert cfg.elastic_hosts == "http://localhost:9201"
+    assert cfg.proxy_host == "http://localhost:1337"
+    assert cfg.proxy_prefix == "foo"
+    assert cfg.tms_key == "bar"
+    assert cfg.max_bins == 10
+    assert cfg.max_batch == 1000
+    assert cfg.max_ellipses_per_tile == 100000
+    assert cfg.allowlist_headers == "blah"
+    assert cfg.query_timeout_seconds == 1
+    assert cfg.hostname == socket.getfqdn()
+
+def test_get_log_level():
+    with pytest.raises(Exception):
+        config.get_log_level("foo")
+
+def test_true_if_none():
+    assert config.true_if_none(None) == True
+    assert config.true_if_none("off") == False
+    assert config.true_if_none("on") == True
+
+def test_check_config(tmp_path):
+    cache_path = tmp_path / "foo"
+    cfg = config.config_from_env({"DATASHADER_CACHE_DIRECTORY": cache_path})
+
+    with pytest.raises(Exception):
+        config.check_config(cfg)
+
+    cache_path.touch()  # make file not directory
+
+    with pytest.raises(Exception):
+        config.check_config(cfg)
+
+def test_load_datashader_headers(tmp_path):
+    yaml_path = tmp_path / "foo.yaml"
+    assert len(config.load_datashader_headers(str(yaml_path))) == 0
+
+    yaml_path.write_text("""
+=invalid
+:yaml
+""")
+
+    with pytest.raises(Exception):
+        config.load_datashader_headers(str(yaml_path))
+
+    yaml_path.write_text("""
+- foo
+- bar
+- baz
+""")
+
+    with pytest.raises(Exception):
+        config.load_datashader_headers(str(yaml_path))
+
+    yaml_path.write_text("""
+foo: 1
+bar: 2
+baz: 3
+""")
+
+    loaded_yaml = config.load_datashader_headers(str(yaml_path))
+    assert "foo" in loaded_yaml

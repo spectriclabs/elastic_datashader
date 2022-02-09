@@ -80,7 +80,7 @@ def test_age_off_cache(tmp_path):
     yfile = xdir / "2.png"
     yfile.write_text("a picture as the quick brown fox jumps over the lazy dog")
 
-    sleep(4)
+    sleep(3)
 
     yfile_after = xdir / "3.png"
     yfile_after.write_text("a picture as the quick brown fox jumps over the lazy dog")
@@ -109,11 +109,11 @@ def test_build_layer_info(tmp_path):
 
     bar_idx_path.touch()  # file not directory, which should be skipped in output
 
-    sleep(4)
+    sleep(3)
 
     layer_info = cache.build_layer_info(tmp_path)
-    assert layer_info["foo"]["somehash"]["age"].startswith("4")
+    assert layer_info["foo"]["somehash"]["age"].startswith("3")
     assert "B" in layer_info["foo"]["somehash"]["size"]
-    assert layer_info["foo"]["otherhash"]["age"].startswith("4")
+    assert layer_info["foo"]["otherhash"]["age"].startswith("3")
     assert "B" in layer_info["foo"]["otherhash"]["size"]
     assert layer_info.get("bar") is None

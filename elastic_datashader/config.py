@@ -3,8 +3,7 @@ from logging import getLevelName, INFO
 from os import environ
 from pathlib import Path
 from socket import getfqdn
-from ssl import PROTOCOL_TLSv1_2, SSLContext
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -27,7 +26,6 @@ class Config:
     proxy_host: Optional[str]
     proxy_prefix: str
     query_timeout_seconds: int
-    ssl_context: Optional[Union[SSLContext, str]]
     tms_key: Optional[str]
     use_scroll: bool
     verify_indices: bool
@@ -59,26 +57,11 @@ def get_log_level(level_name: Optional[str]) -> int:
 
     return level_value
 
-def get_ssl_context() -> Optional[Union[SSLContext, str]]:
-    if environ.get("DATASHADER_SSL_ADHOC", None) is not None:
-        return "adhoc"
-
-    if environ.get("DATASHADER_SSL", None) is not None:
-        context = SSLContext(PROTOCOL_TLSv1_2)
-        context.load_verify_locations(environ.get("SSL_CA_CHAIN"))
-        context.load_cert_chain(
-            environ.get("SSL_SERVER_CERT"),
-            environ.get("SSL_SERVER_KEY"),
-        )
-        return context
-
-    return None
-
-def get_verify_indices(val: Optional[str]) -> bool:
+def true_if_none(val: Optional[str]) -> bool:
     if val is None:
         return True
 
-    if val.lower() in ("no", "false"):
+    if val.lower() in ("no", "false", "off"):
         return False
 
     return True
@@ -90,30 +73,29 @@ def check_config(c: Config) -> None:
     if not c.cache_path.is_dir():
         raise Exception(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' is not a directory")
 
-def config_from_env() -> Config:
+def config_from_env(env) -> Config:
     return Config(
-        allowlist_headers=environ.get("DATASHADER_ALLOWLIST_HEADERS", None),
-        cache_path=Path(environ.get("DATASHADER_CACHE_DIRECTORY", "tms-cache")),
-        cache_timeout_seconds=int(environ.get("DATASHADER_CACHE_TIMEOUT", 60*60)),
-        csrf_secret_key=environ.get("DATASHADER_CSRF_SECRET_KEY", "CSRFProtectionKey"),
-        datashader_headers=load_datashader_headers(environ.get("DATASHADER_HEADER_FILE", "headers.yaml")),
-        elastic_hosts=environ.get("DATASHADER_ELASTIC", "http://localhost:9200"),
-        ellipse_render_mode=environ.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix"),
+        allowlist_headers=env.get("DATASHADER_ALLOWLIST_HEADERS", None),
+        cache_path=Path(env.get("DATASHADER_CACHE_DIRECTORY", "tms-cache")),
+        cache_timeout_seconds=int(env.get("DATASHADER_CACHE_TIMEOUT", 60*60)),
+        csrf_secret_key=env.get("DATASHADER_CSRF_SECRET_KEY", "CSRFProtectionKey"),
+        datashader_headers=load_datashader_headers(env.get("DATASHADER_HEADER_FILE", "headers.yaml")),
+        elastic_hosts=env.get("DATASHADER_ELASTIC", "http://localhost:9200"),
+        ellipse_render_mode=env.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix"),
         hostname=getfqdn(),
-        log_level=get_log_level(environ.get("DATASHADER_LOG_LEVEL", None)),
-        max_batch=int(environ.get("DATASHADER_MAX_BATCH", 10_000)),
-        max_bins=int(environ.get("DATASHADER_MAX_BINS", 10_000)),
-        max_ellipses_per_tile=int(environ.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100_000)),
-        max_legend_items_per_tile=int(environ.get("MAX_LEGEND_ITEMS_PER_TILE", 20)),
-        num_ellipse_points=int(environ.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)),
-        proxy_host=environ.get("DATASHADER_PROXY_HOST", None),
-        proxy_prefix=environ.get("DATASHADER_PROXY_PREFIX", ""),
-        query_timeout_seconds=int(environ.get("DATASHADER_QUERY_TIMEOUT", 0)),
-        ssl_context=get_ssl_context(),
-        tms_key=environ.get("DATASHADER_TMS_KEY", None),
-        use_scroll=(environ.get("DATASHADER_USE_SCROLL", None) is not None),  # default True
-        verify_indices=get_verify_indices(environ.get("DATASHADER_VERIFY_INDICES", None)),
+        log_level=get_log_level(env.get("DATASHADER_LOG_LEVEL", None)),
+        max_batch=int(env.get("DATASHADER_MAX_BATCH", 10_000)),
+        max_bins=int(env.get("DATASHADER_MAX_BINS", 10_000)),
+        max_ellipses_per_tile=int(env.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100_000)),
+        max_legend_items_per_tile=int(env.get("MAX_LEGEND_ITEMS_PER_TILE", 20)),
+        num_ellipse_points=int(env.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)),
+        proxy_host=env.get("DATASHADER_PROXY_HOST", None),
+        proxy_prefix=env.get("DATASHADER_PROXY_PREFIX", ""),
+        query_timeout_seconds=int(env.get("DATASHADER_QUERY_TIMEOUT", 0)),
+        tms_key=env.get("DATASHADER_TMS_KEY", None),
+        use_scroll=true_if_none(env.get("DATASHADER_USE_SCROLL", None)),
+        verify_indices=true_if_none(env.get("DATASHADER_VERIFY_INDICES", None)),
     )
 
-config = config_from_env()
+config = config_from_env(environ)
 check_config(config)
