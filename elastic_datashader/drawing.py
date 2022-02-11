@@ -9,8 +9,35 @@ from colorcet import palette
 from numba import njit
 import colorcet as cc
 
-def get_unique_color_cnt(cmap):
-    return len(palette[cmap])
+def force_within_range(val: int, lower_inclusive: int, upper_exclusive: int) -> int:
+    return max(lower_inclusive, min(val, upper_exclusive-1))
+
+def get_categorical_color_index(category: str, num_colors: int) -> int:
+    """
+    If the field doesn't have a min/max range we simply take the hash
+    and then map it to a color-index.  This ensures colors are consistent
+    across independent tile generations, but can result in situations where
+    colors are reused before exhausting the color palette.
+    """
+    category_hash = md5(bytes(category, encoding="utf-8")).hexdigest()
+    number = int(category_hash[0:2], 16)
+    return number % num_colors
+
+def get_ramp_color_index(category: str, field_min: float, field_max: float, num_colors: int) -> int:
+    """
+    For ramp cmaps, we map the field range across the palette
+    """
+    number_str = category.replace(",", "")  # remove commas from large number
+    lower_val = float(number_str)
+    color_index = int(((lower_val - field_min) / (field_max - field_min)) * num_colors)
+    return force_within_range(color_index, 0, num_colors)
+
+def get_histogram_color_index(category: str, field_min: float, field_max: float, num_colors: int):
+    number_str, _ = category.rsplit("-", 1)
+    number_str = number_str.replace(",", "")  # remove comma from large number
+    lower_val = float(number_str)
+    color_index = int(((lower_val - field_min) / (field_max - field_min)) * num_colors)
+    return force_within_range(color_index, 0, num_colors)
 
 def create_color_key(
     categories: Iterable,
@@ -25,6 +52,9 @@ def create_color_key(
     :param categories: Categories to encode as different colors
     :param cmap: Colorcet color-map name (defaults to "glasbey_category10")
     :param highlight: Only colorize this category and make all others a default grey color
+    :param field_min: The minimum numerical value for that field
+    :param field_max: The maximum numerical value for that field
+    :param histogram_interval:
     :return: Dictionary containing each category and their respective color
 
     :Example:
@@ -32,49 +62,47 @@ def create_color_key(
     {'foo': '#9a0390', 'bar': '#8a9500', 'baz': '#870062'}
     """
     mapping = {}
-    for k in categories:
-        if (k == "Other"):
-            mapping[k] = '#AAAAAA' # Light Grey
-        elif (k == "N/A"):
-            mapping[k] = '#666666' # Dark Grey
+
+    for category in categories:
+        if category == "Other":
+            mapping[category] = '#AAAAAA' # Light Grey
+        elif category == "N/A":
+            mapping[category] = '#666666' # Dark Grey
         else:
-            ii = None
-            if (field_min is None) or (field_max is None):
-                # If the field doesn't have a min/max range we simply take the hash
-                # and then map it to a color-index.  This ensures colors are consistent
-                # across independent tile generations, but can result in situations where
-                # colors are reused before exhausting the color palette.
-                ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+            color_index = None
+
+            if field_min is None or field_max is None:
+                color_index = get_categorical_color_index(category, len(palette[cmap]))
             else:
-                if float(field_max - field_min) <= 0.0:
+                if field_max - field_min <= 0.0:
                     # If there is a range but it's zero or less, simply map to the last color
-                    ii = len(palette[cmap])-1
+                    color_index = len(palette[cmap]) - 1
                 else:
                     try:
-                        if (histogram_interval is None):
+                        if histogram_interval is None:
                             if is_categorical_cmap(cmap):
                                 # for categorical color maps, we want nearby colors to not map to the same index
-                                ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+                                color_index = get_categorical_color_index(category, len(palette[cmap]))
                             else:
                                 # For ramp cmaps, we map the field range across the palette
-                                ii = int(((float(k.replace(",", "")) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+                                color_index = get_ramp_color_index(category, field_min, field_max, len(palette[cmap]))
                         else:
-                            # If there is a histogram internal, map the color based off the histogram bin
-                            lower_val = float(k.rsplit("-", 1)[0].replace(",", ""))
-                            ii = int(((float(lower_val) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
-                        ii = max(0, min(ii, len(palette[cmap])-1))
+                            # If there is a histogram interval, map the color based off the histogram bin
+                            color_index = get_histogram_color_index(category, field_min, field_max, len(palette[cmap]))
+
                     except ValueError:
-                        ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+                        color_index = get_categorical_color_index(category, len(palette[cmap]))
 
             if highlight:
-                if k == highlight:
-                    mapping[k] = palette[cmap][ii]
+                if category == highlight:
+                    mapping[category] = palette[cmap][color_index]
                 else:
-                    mapping[k] = '#D3D3D3' # Light Grey
-            elif ii is not None:
-                mapping[k] = palette[cmap][ii]
+                    mapping[category] = '#D3D3D3' # Light Grey
+            elif color_index is not None:
+                mapping[category] = palette[cmap][color_index]
             else:
-                mapping[k] = '#D3D3D3' # Light Grey
+                mapping[category] = '#D3D3D3' # Light Grey
+
     return mapping
 
 

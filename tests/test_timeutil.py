@@ -1,5 +1,4 @@
-from datetime import datetime
-from dateutil.tz import tzutc
+from datetime import datetime, timezone
 import pytest
 
 from elastic_datashader import timeutil
@@ -45,30 +44,35 @@ def test_quantize_time_range(start, stop, expected):
 @pytest.mark.parametrize(
     "time_string,current_time,round_direction,expected",
     (
-        ("now-3d", datetime(2020, 5, 11, 12), "down", datetime(2020, 5, 8, 12, tzinfo=tzutc())),
         (
             "now-3d",
             datetime(2020, 5, 11, 12),
             "down",
-            datetime(2020, 5, 8, 12, tzinfo=tzutc())
+            datetime(2020, 5, 8, 12, tzinfo=timezone.utc)
+        ),
+        (
+            "now-3d",
+            datetime(2020, 5, 11, 12),
+            "down",
+            datetime(2020, 5, 8, 12, tzinfo=timezone.utc)
         ),
         (
             "now+3d",
             datetime(2020, 5, 11, 12),            
             "down",
-            datetime(2020, 5, 14, 12, tzinfo=tzutc())
+            datetime(2020, 5, 14, 12, tzinfo=timezone.utc)
         ),
         (
             "now-1d/d",
             datetime(2020, 5, 11, 12, 4, 20, 0),
             "down",
-            datetime(2020, 5, 10, tzinfo=tzutc())
+            datetime(2020, 5, 10, tzinfo=timezone.utc)
         ),
         (
             "now-1d/d",
             datetime(2020, 5, 11, 12, 4, 20, 0),
             "up",
-            datetime(2020, 5, 10, 23, 59, 59, 999999, tzinfo=tzutc())
+            datetime(2020, 5, 10, 23, 59, 59, 999999, tzinfo=timezone.utc)
         ),
     ),
 )

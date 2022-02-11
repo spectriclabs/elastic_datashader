@@ -42,11 +42,13 @@ def quantize_time_range(
     return truncated_start_time, truncated_stop_time
 
 
-def convert_kibana_time(time_string, current_time, round_direction='down'):
-    """Convert Kibana/ES date math into Python datetimes
+def convert_kibana_time(time_string: str, current_time: datetime, round_direction='down'):
+    """
+    Convert Kibana/ES date math into Python datetimes
 
     :param time_string: Time-string following
     :param current_time: Reference point for date math
+    :param round_direction: Whether to round up or down (default: "down")
     :return: Datetime object based on ``time_string`` math
 
     :Examples:
@@ -54,12 +56,11 @@ def convert_kibana_time(time_string, current_time, round_direction='down'):
     >>> convert_kibana_time("now-3m", now)
     datetime.datetime(2020, 5, 12, 14, 57, tzinfo=tzutc())
     """
-    if isinstance(current_time, datetime):
-        current_time = arrow.get(current_time)
+    current_time = arrow.get(current_time)
     result = arrow.get(datemath.datemath(time_string, now=current_time))
 
-    if isinstance(time_string, str) and round_direction=='up':
-        #Kibana treats time rounding different than elasticsearch
+    if round_direction == 'up':
+        # Kibana treats time rounding different than elasticsearch
         if time_string.endswith("/s"):
             result = result.shift(seconds=1, microseconds=-1)
         elif time_string.endswith("/m"):
@@ -74,6 +75,7 @@ def convert_kibana_time(time_string, current_time, round_direction='down'):
             result = result.shift(months=1, microseconds=-1)
         elif time_string.endswith("/y"):
             result = result.shift(years=1, microseconds=-1)
+
     return result.datetime
 
 

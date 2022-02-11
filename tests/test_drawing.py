@@ -10,7 +10,16 @@ from elastic_datashader import drawing
 @pytest.mark.parametrize(
     "categories,expected",
     (
-        (("foo", "bar", "baz"), {"bar": "#8a9500", "baz": "#870062", "foo": "#9a0390"}),
+        (
+            ("foo", "bar", "baz", "Other", "N/A"),
+            {
+                "bar": "#8a9500",
+                "baz": "#870062",
+                "foo": "#9a0390",
+                "Other": "#AAAAAA",
+                "N/A": "#666666",
+            }
+        ),
         ([], {}),
     ),
 )
