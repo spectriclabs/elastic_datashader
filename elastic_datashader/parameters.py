@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from hashlib import md5
 from json import loads
 from socket import gethostname
@@ -198,7 +198,7 @@ def get_category_field(category_field: Optional[str]) -> Optional[str]:
     return category_field
 
 def get_time_bounds(from_time: Optional[str], to_time: Optional[str]) -> Dict[str, datetime]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     start_time = None
     stop_time = now
 
@@ -421,7 +421,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
             doc = Document(_id=layer_id,
                             creating_host=gethostname(),
                             creating_pid=os.getpid(),
-                            creating_timestamp=datetime.now(),
+                            creating_timestamp=datetime.now(timezone.utc),
                             generated_params=None,
                             params=params)
             doc.save(using=es, index=".datashader_layers", op_type="create", skip_empty=False)
@@ -434,7 +434,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
 
     #Check for generator timeouts:
     if doc.to_dict().get("generated_params", {}).get("generation_start_time") and \
-                datetime.now() > datetime.strptime(doc.to_dict().get("generated_params", {}).get("generation_start_time"),"%Y-%m-%dT%H:%M:%S.%f")+timedelta(seconds=5*60):
+                datetime.now(timezone.utc) > datetime.strptime(doc.to_dict().get("generated_params", {}).get("generation_start_time"),"%Y-%m-%dT%H:%M:%S.%f")+timedelta(seconds=5*60):
         #Something caused the worker generating the params to time out so clear that entry
         try:
             doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \
@@ -443,10 +443,10 @@ def merge_generated_parameters(headers, params, idx, param_hash):
             logger.debug("Abandoned resetting parameters due to conflict, other process has completed.")
 
     #Loop-check if the generated params are in missing/in-process/complete
-    timeout_at = datetime.now()+timedelta(seconds=45)
+    timeout_at = datetime.now(timezone.utc)+timedelta(seconds=45)
 
     while doc.to_dict().get("generated_params", {}).get("complete", False) == False:
-        if datetime.now() > timeout_at:
+        if datetime.now(timezone.utc) > timeout_at:
             logger.info("Hit timeout waiting for generated parameters to be placed into database")
             break
         #If missing, mark them as in generation
@@ -456,7 +456,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
             logger.info("Discovering generated parameters")
             generated_params = dict()
             generated_params["complete"] = False
-            generated_params["generation_start_time"] = datetime.now()
+            generated_params["generation_start_time"] = datetime.now(timezone.utc)
             generated_params["generating_host"] = gethostname()
             generated_params["generating_pid"] = os.getpid()
             try:
@@ -468,7 +468,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
             #Generate and save off parameters
             logger.warning("Discovering generated params")
             generated_params.update(generate_global_params(headers, params, idx))
-            generated_params["generation_complete_time"] = datetime.now()
+            generated_params["generation_complete_time"] = datetime.now(timezone.utc)
             generated_params["complete"] = True
             #Store off generated params
             doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \

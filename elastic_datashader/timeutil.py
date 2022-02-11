@@ -54,7 +54,7 @@ def convert_kibana_time(time_string: str, current_time: datetime, round_directio
     :Examples:
     >>> now = datetime(2020, 5, 12, 15, 0, 0)
     >>> convert_kibana_time("now-3m", now)
-    datetime.datetime(2020, 5, 12, 14, 57, tzinfo=tzutc())
+    datetime.datetime(2020, 5, 12, 14, 57, tzinfo=timezone.utc)
     """
     current_time = arrow.get(current_time)
     result = arrow.get(datemath.datemath(time_string, now=current_time))

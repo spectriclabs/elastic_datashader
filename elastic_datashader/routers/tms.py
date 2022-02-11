@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from os import getpid
 from socket import gethostname
 from typing import Optional
@@ -69,7 +69,7 @@ def create_datashader_tiles_entry(es, **kwargs) -> None:
          **kwargs,
         'host': gethostname(),
         'pid': getpid(),
-        'timestamp': datetime.now(),
+        'timestamp': datetime.now(timezone.utc),
     }
 
     doc = Document(**doc_info)
@@ -126,7 +126,7 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash, request: Re
         'params': params,
     }
 
-    render_time_start = datetime.now()
+    render_time_start = datetime.now(timezone.utc)
 
     try:
         if params["render_mode"] in ("ellipses", "tracks"):
@@ -142,7 +142,7 @@ def generate_tile_response(es, idx, x, y, z, params, parameter_hash, request: Re
         # generate an error tile/don't cache cache it
         return error_tile_response(ex)
 
-    elapsed_time = (datetime.now() - render_time_start).total_seconds()
+    elapsed_time = (datetime.now(timezone.utc) - render_time_start).total_seconds()
     new_tile_info = {
         **base_tile_info,
         '_id': tile_id(idx, x, y, z, parameter_hash),
