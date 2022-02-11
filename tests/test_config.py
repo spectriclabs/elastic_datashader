@@ -1,3 +1,4 @@
+from datetime import timedelta
 from logging import INFO
 from pathlib import Path
 
@@ -12,7 +13,7 @@ def test_config_defaults():
     cfg = config.config_from_env({})
     assert cfg.log_level is INFO
     assert cfg.cache_path == Path("tms-cache")
-    assert cfg.cache_timeout_seconds == 3600
+    assert cfg.cache_timeout == timedelta(seconds=3600)
     assert cfg.elastic_hosts == "http://localhost:9200"
     assert cfg.proxy_host is None
     assert cfg.proxy_prefix == ""
@@ -44,7 +45,7 @@ def test_config_env():
     cfg = config.config_from_env(env)
     assert cfg.log_level == INFO
     assert cfg.cache_path == Path("tms-cache-foo")
-    assert cfg.cache_timeout_seconds== 60
+    assert cfg.cache_timeout == timedelta(seconds=60)
     assert cfg.elastic_hosts == "http://localhost:9201"
     assert cfg.proxy_host == "http://localhost:1337"
     assert cfg.proxy_prefix == "foo"

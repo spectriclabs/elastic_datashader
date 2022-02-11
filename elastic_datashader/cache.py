@@ -1,21 +1,26 @@
 from collections import OrderedDict
+from datetime import datetime, timedelta, timezone
 from os import scandir
 from pathlib import Path
 from shutil import rmtree
 from time import time
 from typing import Dict, Optional
 
-import logging
-
 from humanize import naturalsize
 
+from .config import config
+from .logger import logger
 from .timeutil import pretty_time_delta
 
-_log = logging.getLogger("apscheduler.scheduler.cache")
-_log.addHandler(logging.NullHandler())
+def path_age(now: datetime, path: Path) -> timedelta:
+    path_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    return now - path_dt
 
 def tile_name(idx, x, y, z, parameter_hash) -> str:
     return f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
+
+def rendering_tile_name(idx, x, y, z, parameter_hash) -> str:
+    return f"{idx}/{parameter_hash}/{z}/{x}/{y}.rendering"
 
 def tile_id(idx, x, y, z, parameter_hash) -> str:
     return f"{idx}_{parameter_hash}_{z}_{x}_{y}"
@@ -48,6 +53,17 @@ def du(path: Path) -> str:
     """
     return naturalsize(directory_size(path), gnu=True)
 
+def cache_entry_exists(cache_path: Path, tile: str) -> bool:
+    tile_path = cache_path / tile
+
+    if not tile_path.exists():
+        return False
+
+    if path_age(datetime.now(timezone.utc), tile_path) > config.cache_timeout:
+        return False
+
+    return True
+
 def get_cache(cache_path: Path, tile: str) -> Optional[bytes]:
     """Retrieve data from the cache
 
@@ -78,6 +94,39 @@ def set_cache(cache_path: Path, tile: str, img: bytes) -> None:
     # Write the file to the cache
     tile_path.write_bytes(img)
 
+def claim_cache_placeholder(cache_path: Path, tile: str) -> bool:
+    """
+    Adds an empty placeholder file to the cache to
+    claim the associated task.
+    Returns True if this call created the file.
+    Returns False if the file already existed.
+    """
+    tile_path = cache_path / tile
+    tile_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Return false if the placeholder was already set by another process,
+    # but don't worry about it if the placeholder is old.
+    try:
+        if path_age(datetime.now(timezone.utc), tile_path) > config.render_timeout:
+            tile_path.touch(exist_ok=True)
+        else:
+            tile_path.touch(exist_ok=False)
+
+    except FileExistsError:
+        return False
+
+    return True
+
+def cache_placeholder_exists(cache_path: Path, tile: str) -> None:
+    tile_path = cache_path / tile
+    return tile_path.exists()
+
+def release_cache_placeholder(cache_path: Path, tile: str) -> None:
+    tile_path = cache_path / tile
+
+    if tile_path.exists():
+        tile_path.unlink(missing_ok=True)
+
 def check_cache_dir(cache_path: Path, layer_name: str) -> None:
     """
     Ensure the folder ``cache_path``/``layer_name`` exists
@@ -97,14 +146,14 @@ def clear_hash_cache(cache_path: Path, idx_name: str, param_hash: Optional[str])
     if target_path.exists():
         rmtree(target_path, ignore_errors=True)
 
-def age_off_cache(cache_path: Path, idx_name: str, max_age_seconds: int) -> None:
+def age_off_cache(cache_path: Path, idx_name: str, max_age: timedelta) -> None:
     file_paths = cache_path.glob(f'{idx_name}/*/*/*/*.png')  # idx/hash/z/x/y.png
 
     for file_path in file_paths:
-        file_age = time() - file_path.stat().st_mtime
+        file_age = path_age(datetime.now(timezone.utc), file_path)
 
-        if file_age > max_age_seconds:
-            logging.info("Aging off %s at %d sec old", file_path, file_age)
+        if file_age > max_age:
+            logger.info("Aging off %s at %d sec old", file_path, file_age.total_seconds())
             # set missing_ok=True in case another process deleted the same file
             file_path.unlink(missing_ok=True)
 

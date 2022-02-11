@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import timedelta
 from logging import getLevelName, INFO
 from os import environ
 from pathlib import Path
@@ -11,7 +12,7 @@ import yaml
 class Config:
     allowlist_headers: Optional[str]
     cache_path: Path
-    cache_timeout_seconds: int
+    cache_timeout: timedelta
     csrf_secret_key: str
     datashader_headers: Dict[Any, Any]
     elastic_hosts: str
@@ -26,6 +27,7 @@ class Config:
     proxy_host: Optional[str]
     proxy_prefix: str
     query_timeout_seconds: int
+    render_timeout: timedelta
     tms_key: Optional[str]
     use_scroll: bool
     verify_indices: bool
@@ -77,7 +79,7 @@ def config_from_env(env) -> Config:
     return Config(
         allowlist_headers=env.get("DATASHADER_ALLOWLIST_HEADERS", None),
         cache_path=Path(env.get("DATASHADER_CACHE_DIRECTORY", "tms-cache")),
-        cache_timeout_seconds=int(env.get("DATASHADER_CACHE_TIMEOUT", 60*60)),
+        cache_timeout=timedelta(seconds=int(env.get("DATASHADER_CACHE_TIMEOUT", 60*60))),
         csrf_secret_key=env.get("DATASHADER_CSRF_SECRET_KEY", "CSRFProtectionKey"),
         datashader_headers=load_datashader_headers(env.get("DATASHADER_HEADER_FILE", "headers.yaml")),
         elastic_hosts=env.get("DATASHADER_ELASTIC", "http://localhost:9200"),
@@ -92,6 +94,7 @@ def config_from_env(env) -> Config:
         proxy_host=env.get("DATASHADER_PROXY_HOST", None),
         proxy_prefix=env.get("DATASHADER_PROXY_PREFIX", ""),
         query_timeout_seconds=int(env.get("DATASHADER_QUERY_TIMEOUT", 0)),
+        render_timeout=timedelta(seconds=int(env.get("DATASHADER_RENDER_TIMEOUT", 30))),
         tms_key=env.get("DATASHADER_TMS_KEY", None),
         use_scroll=true_if_none(env.get("DATASHADER_USE_SCROLL", None)),
         verify_indices=true_if_none(env.get("DATASHADER_VERIFY_INDICES", None)),

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 from time import sleep
 from unittest import mock
@@ -85,7 +86,7 @@ def test_age_off_cache(tmp_path):
     yfile_after = xdir / "3.png"
     yfile_after.write_text("a picture as the quick brown fox jumps over the lazy dog")
 
-    cache.age_off_cache(tmp_path, "fooindex", 2)
+    cache.age_off_cache(tmp_path, "fooindex", timedelta(seconds=2))
 
     assert not yfile.exists()
     assert yfile_after.exists()
