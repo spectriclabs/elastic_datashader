@@ -434,7 +434,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
 
     #Check for generator timeouts:
     if doc.to_dict().get("generated_params", {}).get("generation_start_time") and \
-                datetime.now(timezone.utc) > datetime.strptime(doc.to_dict().get("generated_params", {}).get("generation_start_time"),"%Y-%m-%dT%H:%M:%S.%f")+timedelta(seconds=5*60):
+                datetime.now(timezone.utc) > datetime.strptime(doc.to_dict().get("generated_params", {}).get("generation_start_time"),"%Y-%m-%dT%H:%M:%S.%f%z")+timedelta(seconds=5*60):
         #Something caused the worker generating the params to time out so clear that entry
         try:
             doc.update(using=es, index=".datashader_layers", retry_on_conflict=0, refresh=True, \

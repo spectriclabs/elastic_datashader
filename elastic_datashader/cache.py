@@ -13,7 +13,11 @@ from .logger import logger
 from .timeutil import pretty_time_delta
 
 def path_age(now: datetime, path: Path) -> timedelta:
-    path_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    try:
+        path_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except FileNotFoundError:
+        return timedelta(seconds=0)
+
     return now - path_dt
 
 def tile_name(idx, x, y, z, parameter_hash) -> str:

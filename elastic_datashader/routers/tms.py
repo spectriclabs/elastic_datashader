@@ -185,7 +185,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         )
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
         release_cache_placeholder(config.cache_path, rendering_tile_name(idx, x, y, z, parameter_hash))
-        return
+        raise
 
     # Render the tile image.
     # If we fail, then make sure to remove the cache placeholder and unclaim the task.
@@ -211,7 +211,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         )
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
         release_cache_placeholder(config.cache_path, rendering_tile_name(idx, x, y, z, parameter_hash))
-        return
+        raise
 
     # Add tile info to ElasticSearch.
     # If we fail, then make sure to remove the cache placeholder and unclaim the task.
@@ -239,7 +239,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         )
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
         release_cache_placeholder(config.cache_path, rendering_tile_name(idx, x, y, z, parameter_hash))
-        return
+        raise
 
     # Finally, write the rendered tile to the cache.
     # Regardless of the outcome, make sure to remove the cache placeholder and unclaim the task.
