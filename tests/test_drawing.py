@@ -57,9 +57,9 @@ def test_gen_debug_overlay():
     actual = drawing.gen_debug_overlay(img, "hello, world!")
     assert expected == actual
 
-def test_gen_error():
+def test_generate_x_tile():
     expected = Path("./tests/dat/gen_error.txt").read_bytes()
-    actual = drawing.gen_error(256, 256, 5)
+    actual = drawing.generate_x_tile(256, 256, 5)
     assert expected == actual
 
 def test_gen_empty():

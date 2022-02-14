@@ -107,7 +107,7 @@ def create_color_key(
 
 
 @lru_cache(10)
-def gen_overlay_img(width: int, height: int, thickness: int, color: tuple = (255, 0, 0, 64)) -> Image:
+def gen_overlay_img(width: int, height: int, thickness: int, color: Tuple[int, int, int, int]=(255, 0, 0, 64)) -> Image:
     """Create an overlay hash image, using an lru_cache since the same
     overlay can be generated once and then reused indefinitely
 
@@ -142,7 +142,7 @@ def gen_debug_img(width: int, height: int, text: str, thickness: int = 2) -> Ima
     return overlay
 
 
-def gen_overlay(img, thickness: int = 8, color: tuple = (255, 0, 0, 64)) -> bytes:
+def gen_overlay(img, thickness: int = 8, color: Tuple[int, int, int, int]=(255, 0, 0, 64)) -> bytes:
     """Generate and overlay to image
 
     :param img: Image over which to add an overlay
@@ -173,27 +173,6 @@ def gen_debug_overlay(img: bytes, text: str) -> bytes:
 
 
 @lru_cache(10)
-def gen_error(width: int, height: int, thickness: int = 8, color: tuple = (255, 0, 0, 255)) -> bytes:
-    """Generate error image
-
-    :param width: Width of image
-    :param height: Height of image
-    :param thickness: Thickness of border
-    :return: Error image
-    """
-    overlay = Image.new("RGBA", (width, height))
-    draw = ImageDraw.Draw(overlay)
-
-    # Draw a red border
-    draw.line([(0, 0), (width, height)], color, thickness)
-    draw.line([(width, 0), (0, height)], color, thickness)
-
-    with io.BytesIO() as output:
-        overlay.save(output, format="PNG")
-        return output.getvalue()
-
-
-@lru_cache(10)
 def gen_empty(width: int, height: int) -> bytes:
     """Generate empty image
 
@@ -202,6 +181,30 @@ def gen_empty(width: int, height: int) -> bytes:
     :return: Empty image
     """
     overlay = Image.new("RGBA", (width, height))
+    with io.BytesIO() as output:
+        overlay.save(output, format="PNG")
+        return output.getvalue()
+
+
+@lru_cache(10)
+def generate_x_tile(width: int, height: int, thickness: int=8, color: Tuple[int, int, int, int]=(255, 0, 0, 255)) -> bytes:
+    """
+    Generate a tile with an X drawn over it.
+    This can be used to indicate an error (red),
+    or temporarily unavailable (gray X).
+
+    :param width: Width of image
+    :param height: Height of image
+    :param thickness: Thickness of the stroke to draw the X
+    :return: image
+    """
+    overlay = Image.new("RGBA", (width, height))
+    draw = ImageDraw.Draw(overlay)
+
+    # Draw a red X
+    draw.line([(0, 0), (width, height)], color, thickness)
+    draw.line([(width, 0), (0, height)], color, thickness)
+
     with io.BytesIO() as output:
         overlay.save(output, format="PNG")
         return output.getvalue()
