@@ -81,7 +81,8 @@ def get_from_time(params: Optional[Dict[Any, Any]]) -> Optional[str]:
 
 def get_to_time(params: Optional[Dict[Any, Any]]) -> Optional[str]:
     if params:
-        return params.get("timeFilters", {}).get("to")
+        if found := params.get("timeFilters", {}).get("to", None):
+            return found
 
     return "now"
 
@@ -95,10 +96,10 @@ def get_query(params: Optional[Dict[Any, Any]]) -> Dict[str, Any]:
     query = params.get("query", {})
 
     if query and query.get("language", None) in ("lucene", "kuery"):
-        # accept 'kuery' for backwords compatibility...
+        # accept 'kuery' for backward compatibility...
         return {"lucene_query": query.get("query")}
 
-    if query and query.get("langauge", None) == "dsl":
+    if query and query.get("language", None) == "dsl":
         return {"dsl_query": query.get("query")}
 
     return {}

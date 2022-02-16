@@ -69,10 +69,46 @@ def test_quantize_time_range(start, stop, expected):
             datetime(2020, 5, 10, tzinfo=timezone.utc)
         ),
         (
+            "now-1s/s",
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 11, 12, 4, 19, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1m/m",
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 11, 12, 3, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1h/h",
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 11, 11, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
             "now-1d/d",
             datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
             "up",
             datetime(2020, 5, 10, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1w/w",
+            datetime(2020, 5, 15, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 10, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1M/M",
+            datetime(2020, 5, 15, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 4, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1y/y",
+            datetime(2020, 5, 15, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2019, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
         ),
     ),
 )
