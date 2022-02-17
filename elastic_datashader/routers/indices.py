@@ -17,7 +17,8 @@ async def retrieve_indices():
         config.elastic_hosts.split(","),
         verify_certs=False,
         timeout=120)
-    indices = [idx for idx in sorted(es.indices.get_alias("*")) if not idx.startswith(".")]
+    aliases = es.indices.get_alias("*")  # pylint: disable=E1121
+    indices = [idx for idx in sorted(aliases) if not idx.startswith(".")]
     indices_json = dumps({"indices": indices})
     return Response(
         indices_json,
@@ -34,7 +35,7 @@ async def retrieve_field_caps(index: str):
     es = Elasticsearch(
         config.elastic_hosts.split(","), verify_certs=False, timeout=120
     )
-    field_caps = es.field_caps(  # pylint: disable=E1123
+    field_caps = es.field_caps(  # pylint: disable=E1121,E1123
         index,
         fields='*',
         ignore_unavailable=True,
@@ -56,7 +57,7 @@ async def retrieve_index_mapping(index: str):
     es = Elasticsearch(
         config.elastic_hosts.split(","), verify_certs=False, timeout=120
     )
-    index_mapping = es.indices.get_mapping(index)
+    index_mapping = es.indices.get_mapping(index)  # pylint: disable=E1121
     mapping = [
         {"name": field, "type": props["type"]}
         for field, props in index_mapping[index]["mappings"]["properties"].items()

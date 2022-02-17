@@ -29,7 +29,7 @@ pynumeral = "*"
 arrow = "*"
 python-datemath = "*"
 numba = "*"
-numpy = ">=1.19"
+numpy = ">=1.19,<=1.21"
 PyYAML = "*"
 humanize = "*"
 uvicorn = {extras = ["standard"], version = "*", optional = true}
