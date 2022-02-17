@@ -174,17 +174,17 @@ def get_filter_distance(track_filter: Optional[str]) -> Optional[int]:
     return None
 
 def get_category_histogram(category_histogram: Optional[str]) -> Optional[bool]:
-    if category_histogram in ("true", "True", "TRUE"):
+    if category_histogram and category_histogram.lower() == "true":
         return True
     
-    if category_histogram in ("false", "False", "FALSE"):
+    if category_histogram and category_histogram.lower() == "false":
         return False
 
     return None
 
 def get_cmap(cmap: Optional[str], category_field: Optional[str]) -> str:
-    if cmap is None:
-        if category_field is None:
+    if cmap is None or cmap == "":
+        if category_field is None or category_field == "":
             return "bmy"
         else:
             return "glasbey_category10"
