@@ -74,7 +74,11 @@ deps =
 	pytest-cov
 	requests
 
+whitelist_externals =
+	mkdir
+
 commands =
 	pylint --disable=R,C,fixme elastic_datashader
+	mkdir -p {toxinidir}/tms-cache
 	pytest --cov-report term-missing --cov=elastic_datashader
 """
