@@ -130,7 +130,7 @@ def create_datashader_ellipses_from_search(
             continue
 
         # If its a list determine if there are multiple geos or just a single geo in list format
-        if isinstance(locs, list) or isinstance(locs, AttrList):
+        if isinstance(locs, (AttrList, list)):
             if (
                 len(locs) == 2
                 and isinstance(locs[0], float)
@@ -166,7 +166,7 @@ def create_datashader_ellipses_from_search(
                     continue
                 lat, lon = loc.split(",", 1)
                 loc = dict(lat=float(lat), lon=float(lon))
-            elif isinstance(loc, list) or isinstance(loc, AttrList):
+            elif isinstance(loc, (AttrList, list)):
                 if len(loc) != 2:
                     logger.warning(
                         "skipping loc with invalid list format %s", loc
@@ -174,7 +174,7 @@ def create_datashader_ellipses_from_search(
                     continue
                 lon, lat = loc
                 loc = dict(lat=float(lat), lon=float(lon))
-            elif not (isinstance(loc, dict) or isinstance(loc, AttrDict)):
+            elif not isinstance(loc, (AttrDict, dict)):
                 logger.warning(
                     "skipping loc with invalid format %s %s %s",
                     loc,
@@ -367,7 +367,7 @@ def create_datashader_tracks_from_search(
             continue
 
         # If its a list determine if there are multiple geos or just a single geo in list format
-        if isinstance(locs, list) or isinstance(locs, AttrList):
+        if isinstance(locs, (AttrList, list)):
             if (
                 len(locs) == 2
                 and isinstance(locs[0], float)
@@ -389,7 +389,7 @@ def create_datashader_tracks_from_search(
                     continue
                 lat, lon = loc.split(",", 1)
                 loc = dict(lat=float(lat), lon=float(lon))
-            elif isinstance(loc, list) or isinstance(loc, AttrList):
+            elif isinstance(loc, (AttrList, list)):
                 if len(loc) != 2:
                     logger.warning(
                         "skipping loc with invalid list format %s", loc
@@ -397,7 +397,7 @@ def create_datashader_tracks_from_search(
                     continue
                 lon, lat = loc
                 loc = dict(lat=float(lat), lon=float(lon))
-            elif not (isinstance(loc, dict) or isinstance(loc, AttrDict)):
+            elif not isinstance(loc, (AttrDict, dict)):
                 logger.warning(
                     "skipping loc with invalid format %s %s %s",
                     loc,
@@ -886,7 +886,7 @@ def generate_tile(idx, x, y, z, headers, params):
     field_max = params.get("generated_params", {}).get("field_max", None)
     field_min = params.get("generated_params", {}).get("field_min", None)
 
-    metrics = dict()
+    metrics = {}
 
     logger.debug(
         "Generating tile for: %s - %s/%s/%s.png, geopoint:%s timestamp:%s category:%s start:%s stop:%s",
@@ -950,301 +950,301 @@ def generate_tile(idx, x, y, z, headers, params):
             if params.get("debug"):
                 img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
             return img, metrics
+
+        # Find number of pixels in required image
+        total_tile_pixel_count = tile_height_px * tile_width_px
+
+        current_zoom = z
+
+        # Calculate the geo precision that ensure we have at most one bin per 'pixel'.
+        # Every zoom level halves the number of pixels per bin assuming a square tile.
+        max_agg_zooms = math.ceil(math.log(total_tile_pixel_count, 4))
+        agg_zooms = max_agg_zooms
+
+        # TODO consider adding 'grid resolution' coarse, fine, finest (pixel-lock)
+        # In category-mode, zoom out if max_bins has not been increased
+
+        if category_field and max_bins < total_tile_pixel_count:
+            agg_zooms -= 1
+
+        if resolution == "coarse":
+            agg_zooms -= 2
+        elif resolution == "fine":
+            agg_zooms -= 1
+        elif resolution == "finest":
+            if category_field:
+                if doc_cnt > 5e3:
+                    agg_zooms -= 2
+                elif doc_cnt > 1e6:
+                    agg_zooms -= 3
+                elif doc_cnt > 5e6:
+                    agg_zooms -= 4
         else:
-            # Find number of pixels in required image
-            total_tile_pixel_count = tile_height_px * tile_width_px
+            raise ValueError("invalid resolution value")
 
-            current_zoom = z
+        # don't allow geotile precision to be any worse than current zoom
+        geotile_precision = max(current_zoom, current_zoom + agg_zooms)
+        
+        tile_bbox = {
+            "top_left": {
+                "lat": bb_dict["top_left"]["lat"],
+                "lon": bb_dict["top_left"]["lon"]
+            },
+            "bottom_right": {
+                "lat": bb_dict["bottom_right"]["lat"],
+                "lon": bb_dict["bottom_right"]["lon"],
+            },
+        }
 
-            # Calculate the geo precision that ensure we have at most one bin per 'pixel'.
-            # Every zoom level halves the number of pixels per bin assuming a square tile.
-            max_agg_zooms = math.ceil(math.log(total_tile_pixel_count, 4))
-            agg_zooms = max_agg_zooms
+        tile_s = copy.copy(base_s)
+        tile_s = tile_s.params(size=0, track_total_hits=False)
+        tile_s = tile_s.filter(
+            "geo_bounding_box", **{geopoint_field: tile_bbox}
+        )
 
-            # TODO consider adding 'grid resolution' coarse, fine, finest (pixel-lock)
-            # In category-mode, zoom out if max_bins has not been increased
+        s1 = time.time()
 
-            if category_field and max_bins < total_tile_pixel_count:
-                agg_zooms -= 1
-
-            if resolution == "coarse":
-                agg_zooms -= 2
-            elif resolution == "fine":
-                agg_zooms -= 1
-            elif resolution == "finest":
-                if category_field:
-                    if doc_cnt > 5e3:
-                        agg_zooms -= 2
-                    elif doc_cnt > 1e6:
-                        agg_zooms -= 3
-                    elif doc_cnt > 5e6:
-                        agg_zooms -= 4
-            else:
-                raise ValueError("invalid resolution value")
-
-            # don't allow geotile precision to be any worse than current zoom
-            geotile_precision = max(current_zoom, current_zoom + agg_zooms)
-            
-            tile_bbox = {
-                "top_left": {
-                    "lat": bb_dict["top_left"]["lat"],
-                    "lon": bb_dict["top_left"]["lon"]
-                },
-                "bottom_right": {
-                    "lat": bb_dict["bottom_right"]["lat"],
-                    "lon": bb_dict["bottom_right"]["lon"],
-                },
-            }
-
-            tile_s = copy.copy(base_s)
-            tile_s = tile_s.params(size=0, track_total_hits=False)
-            tile_s = tile_s.filter(
-                "geo_bounding_box", **{geopoint_field: tile_bbox}
+        inner_aggs = {}
+        # TODO if we are pixel locked, calcuating a centriod seems unnecessary
+        category_filters = None
+        inner_agg_size = None
+        if category_field and histogram_interval == None: # Category Mode
+            # We calculate the categories to show based on the mapZoom (which is usually
+            # a lower number then the requested tile)
+            category_tile = mercantile.Tile(x, y, z)
+            if category_tile.z > int(params.get("mapZoom")):
+                category_tile = mercantile.parent(category_tile, zoom=int(params["mapZoom"]))
+                
+            category_filters, _category_legend = get_tile_categories(
+                base_s,
+                category_tile.x,
+                category_tile.y,
+                category_tile.z,
+                geopoint_field,
+                category_field,
+                config.max_legend_items_per_tile,
             )
 
-            s1 = time.time()
+            if len(category_filters) >= config.max_legend_items_per_tile:
+                agg_zooms -= 1
 
-            inner_aggs = {}
-            # TODO if we are pixel locked, calcuating a centriod seems unnecessary
-            category_filters = None
-            inner_agg_size = None
-            if category_field and histogram_interval == None: # Category Mode
-                # We calculate the categories to show based on the mapZoom (which is usually
-                # a lower number then the requested tile)
-                category_tile = mercantile.Tile(x, y, z)
-                if category_tile.z > int(params.get("mapZoom")):
-                    category_tile = mercantile.parent(category_tile, zoom=int(params["mapZoom"]))
-                    
-                category_filters, _category_legend = get_tile_categories(
-                    base_s,
-                    category_tile.x,
-                    category_tile.y,
-                    category_tile.z,
-                    geopoint_field,
-                    category_field,
-                    config.max_legend_items_per_tile,
+            # to avoid max bucket errors we need space for two
+            # additional buckets (one for Other and one for something else
+            # internal to Elastic)
+            inner_agg_size = len(category_filters) + 2
+            inner_agg = A(
+                "filters",
+                filters=category_filters,
+                other_bucket_key="Other"
+            )
+            if use_centroid:
+                inner_agg = inner_agg.metric(
+                    "centroid",
+                    "geo_centroid",
+                    field=geopoint_field
                 )
+            inner_aggs = { "categories": inner_agg }
+        elif category_field and histogram_interval != None: # Histogram Mode
+            inner_agg_size = histogram_cnt
 
-                if len(category_filters) >= config.max_legend_items_per_tile:
-                    agg_zooms -= 1
+            inner_agg = A(
+                "histogram",
+                field=category_field,
+                interval=histogram_interval,
+                min_doc_count=1
+            )
 
-                # to avoid max bucket errors we need space for two
-                # additional buckets (one for Other and one for something else
-                # internal to Elastic)
-                inner_agg_size = len(category_filters) + 2
-                inner_agg = A(
-                    "filters",
-                    filters=category_filters,
-                    other_bucket_key="Other"
+            if use_centroid:
+                inner_agg = inner_agg.metric(
+                    "centroid",
+                    "geo_centroid",
+                    field=geopoint_field
                 )
-                if use_centroid:
-                    inner_agg = inner_agg.metric(
-                        "centroid",
+            inner_aggs = { "categories": inner_agg }
+        else:
+            inner_agg_size = 1
+            if use_centroid:
+                inner_aggs = {
+                    "centroid": A(
                         "geo_centroid",
                         field=geopoint_field
                     )
-                inner_aggs = { "categories": inner_agg }
-            elif category_field and histogram_interval != None: # Histogram Mode
-                inner_agg_size = histogram_cnt
+                }
 
-                inner_agg = A(
-                    "histogram",
-                    field=category_field,
-                    interval=histogram_interval,
-                    min_doc_count=1
+        # the composite needs one bin for 'after_key'
+        composite_agg_size = int(max_bins / inner_agg_size) - 1
+
+        resp = ScanAggs(
+            tile_s,
+            {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
+            inner_aggs,
+            size=composite_agg_size,
+            timeout=config.query_timeout_seconds
+        )
+
+        partial_data = False # TODO can we get partial data?
+        df = pd.DataFrame(
+            convert_composite(
+                resp.execute(),
+                (category_field != None),
+                bool(category_filters),
+                histogram_interval,
+                category_type,
+                category_format
+            )
+        )
+        
+        s2 = time.time()
+        logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)
+        metrics["query_time"] = (s2 - s1)
+        metrics["query_took"] = resp.total_took
+        metrics["num_searches"] = resp.num_searches
+        metrics["aborted"] = resp.aborted
+        metrics["shards_total"] = resp.total_shards
+        metrics["shards_skipped"] = resp.total_skipped
+        metrics["shards_successful"] = resp.total_successful
+        metrics["shards_failed"] = resp.total_failed
+        logger.info("%s", metrics)
+
+        # Estimate the number of points per tile assuming uniform density
+        estimated_points_per_tile = None
+        if (span_range == "auto" or span_range is None):
+            if global_bounds:
+                num_tiles_at_level = mu.num_tiles(*global_bounds, z)
+                estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
+                logger.debug(
+                    "Doc Bounds %s %s %s %s",
+                    global_bounds,
+                    z,
+                    num_tiles_at_level,
+                    estimated_points_per_tile,
                 )
-
-                if use_centroid:
-                    inner_agg = inner_agg.metric(
-                        "centroid",
-                        "geo_centroid",
-                        field=geopoint_field
-                    )
-                inner_aggs = { "categories": inner_agg }
             else:
-                inner_agg_size = 1
-                if use_centroid:
-                    inner_aggs = {
-                        "centroid": A(
-                            "geo_centroid",
-                            field=geopoint_field
-                        )
-                    }
+                logger.warning(
+                    "Cannot estimate poins per tile because bounds ar missing"
+                )
+                estimated_points_per_tile = 100000
 
-            # the composite needs one bin for 'after_key'
-            composite_agg_size = int(max_bins / inner_agg_size) - 1
+        if len(df.index) == 0:
+            img = gen_empty(tile_width_px, tile_height_px)
+            if metrics.get("aborted"):
+                img = gen_overlay(img, color=(128, 128, 128, 128))
+            if params.get("debug"):
+                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+            return img, metrics
 
-            resp = ScanAggs(
-                tile_s,
-                {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
-                inner_aggs,
-                size=composite_agg_size,
-                timeout=config.query_timeout_seconds
+        ###############################################################
+        # Category Mode
+        if category_field:
+            # TODO it would be nice if datashader honored the category orders
+            # in z-order, then we could make "Other" drawn underneath the less
+            # promenent colors
+            categories = list( df["t"].unique() )
+            metrics["categories"] = json.dumps(categories)
+            try:
+                categories.insert(0, categories.pop(categories.index("Other")))
+            except ValueError:
+                pass
+            cat_dtype = pd.api.types.CategoricalDtype(categories=categories, ordered=True)
+            df["t"] = df["t"].astype(cat_dtype)
+
+            # When the number of categories exceeds the number of colors, we can simply
+            # replaced the category name with the desired color (i.e. use the color as the category)
+            # field.  This is especially important in highly categorical data where the number of
+            # categories can be very large and thus cause huge memory allocations in `_colorize`
+            #   _, color_key = simplify_categories(
+            #       df,
+            #       "t",
+            #       create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight),
+            #       inplace=True,
+            #   )
+
+            color_key=create_color_key(
+                df["t"].cat.categories,
+                cmap=cmap,
+                highlight=highlight,
+                field_min=field_min,
+                field_max=field_max,
+                histogram_interval=histogram_interval
             )
 
-            partial_data = False # TODO can we get partial data?
-            df = pd.DataFrame(
-                convert_composite(
-                    resp.execute(),
-                    (category_field != None),
-                    bool(category_filters),
-                    histogram_interval,
-                    category_type,
-                    category_format
-                )
-            )
-            
-            s2 = time.time()
-            logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)
-            metrics["query_time"] = (s2 - s1)
-            metrics["query_took"] = resp.total_took
-            metrics["num_searches"] = resp.num_searches
-            metrics["aborted"] = resp.aborted
-            metrics["shards_total"] = resp.total_shards
-            metrics["shards_skipped"] = resp.total_skipped
-            metrics["shards_successful"] = resp.total_successful
-            metrics["shards_failed"] = resp.total_failed
-            logger.info("%s", metrics)
+            agg = ds.Canvas(
+                plot_width=tile_width_px,
+                plot_height=tile_height_px,
+                x_range=x_range,
+                y_range=y_range,
+            ).points(df, "x", "y", agg=ds.by("t", ds.sum("c")))
 
-            # Estimate the number of points per tile assuming uniform density
-            estimated_points_per_tile = None
-            if (span_range == "auto" or span_range is None):
-                if global_bounds:
-                    num_tiles_at_level = mu.num_tiles(*global_bounds, z)
-                    estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-                    logger.debug(
-                        "Doc Bounds %s %s %s %s",
-                        global_bounds,
-                        z,
-                        num_tiles_at_level,
-                        estimated_points_per_tile,
-                    )
-                else:
-                    logger.warning(
-                        "Cannot estimate poins per tile because bounds ar missing"
-                    )
-                    estimated_points_per_tile = 100000
-
-            if len(df.index) == 0:
-                img = gen_empty(tile_width_px, tile_height_px)
-                if metrics.get("aborted"):
-                    img = gen_overlay(img, color=(128, 128, 128, 128))
-                if params.get("debug"):
-                    img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
-                return img, metrics
+            span = None
+            if span_range == "flat":
+                min_alpha = 255
+            elif span_range == "narrow":
+                span = [0, math.log(1e3)]
+                min_alpha = 200
+            elif span_range == "normal":
+                span = [0, math.log(1e6)]
+                min_alpha = 100
+            elif span_range == "wide":
+                span = [0, math.log(1e9)]
+                min_alpha = 50
             else:
-                ###############################################################
-                # Category Mode
-                if category_field:
-                    # TODO it would be nice if datashader honored the category orders
-                    # in z-order, then we could make "Other" drawn underneath the less
-                    # promenent colors
-                    categories = list( df["t"].unique() )
-                    metrics["categories"] = json.dumps(categories)
-                    try:
-                        categories.insert(0, categories.pop(categories.index("Other")))
-                    except ValueError:
-                        pass
-                    cat_dtype = pd.api.types.CategoricalDtype(categories=categories, ordered=True)
-                    df["t"] = df["t"].astype(cat_dtype)
+                assert estimated_points_per_tile is not None
+                span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
+                alpha_span = int(span[1]) * 25
+                min_alpha = 255 - min(alpha_span, 225)
 
-                    # When the number of categories exceeds the number of colors, we can simply
-                    # replaced the category name with the desired color (i.e. use the color as the category)
-                    # field.  This is especially important in highly categorical data where the number of
-                    # categories can be very large and thus cause huge memory allocations in `_colorize`
-                    #   _, color_key = simplify_categories(
-                    #       df,
-                    #       "t",
-                    #       create_color_key(df["t"].cat.categories, cmap=cmap, highlight=highlight),
-                    #       inplace=True,
-                    #   )
+            logger.debug("MinAlpha:%s Span:%s", min_alpha, span)
+            img = tf.shade(
+                agg,
+                cmap=cc.palette[cmap],
+                color_key=color_key,
+                min_alpha=min_alpha,
+                how="log",
+                span=span,
+            )
 
-                    color_key=create_color_key(
-                        df["t"].cat.categories,
-                        cmap=cmap,
-                        highlight=highlight,
-                        field_min=field_min,
-                        field_max=field_max,
-                        histogram_interval=histogram_interval
-                    )
+        ###############################################################
+        # Heat Mode
+        else:  # Heat Mode
+            agg = ds.Canvas(
+                plot_width=tile_width_px,
+                plot_height=tile_height_px,
+                x_range=x_range,
+                y_range=y_range,
+            ).points(df, "x", "y", agg=ds.sum("c"))
 
-                    agg = ds.Canvas(
-                        plot_width=tile_width_px,
-                        plot_height=tile_height_px,
-                        x_range=x_range,
-                        y_range=y_range,
-                    ).points(df, "x", "y", agg=ds.by("t", ds.sum("c")))
+            # Handle span range, the span applies the color map across
+            # the span range, so for example, if span is narrow, any
+            # bins that have 1000 or more items will be colored full
+            # scale
+            span = None
+            if span_range == "flat":
+                span = [0, 0]
+            elif span_range == "narrow":
+                span = [0, math.log(1e3)]
+            elif span_range == "normal":
+                span = [0, math.log(1e6)]
+            elif span_range == "wide":
+                span = [0, math.log(1e9)]
+            else:
+                assert estimated_points_per_tile != None
+                span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
 
-                    span = None
-                    if span_range == "flat":
-                        min_alpha = 255
-                    elif span_range == "narrow":
-                        span = [0, math.log(1e3)]
-                        min_alpha = 200
-                    elif span_range == "normal":
-                        span = [0, math.log(1e6)]
-                        min_alpha = 100
-                    elif span_range == "wide":
-                        span = [0, math.log(1e9)]
-                        min_alpha = 50
-                    else:
-                        assert estimated_points_per_tile is not None
-                        span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
-                        alpha_span = int(span[1]) * 25
-                        min_alpha = 255 - min(alpha_span, 225)
+            logger.debug("Span %s %s", span, span_range)
+            img = tf.shade(agg, cmap=cc.palette[cmap], how="log", span=span)
 
-                    logger.debug("MinAlpha:%s Span:%s", min_alpha, span)
-                    img = tf.shade(
-                        agg,
-                        cmap=cc.palette[cmap],
-                        color_key=color_key,
-                        min_alpha=min_alpha,
-                        how="log",
-                        span=span,
-                    )
+        ###############################################################
+        # Common
+        img = apply_spread(img, spread or calculate_pixel_spread(geotile_precision))
+        img = img.to_bytesio().read()
 
-                ###############################################################
-                # Heat Mode
-                else:  # Heat Mode
-                    agg = ds.Canvas(
-                        plot_width=tile_width_px,
-                        plot_height=tile_height_px,
-                        x_range=x_range,
-                        y_range=y_range,
-                    ).points(df, "x", "y", agg=ds.sum("c"))
-
-                    # Handle span range, the span applies the color map across
-                    # the span range, so for example, if span is narrow, any
-                    # bins that have 1000 or more items will be colored full
-                    # scale
-                    span = None
-                    if span_range == "flat":
-                        span = [0, 0]
-                    elif span_range == "narrow":
-                        span = [0, math.log(1e3)]
-                    elif span_range == "normal":
-                        span = [0, math.log(1e6)]
-                    elif span_range == "wide":
-                        span = [0, math.log(1e9)]
-                    else:
-                        assert estimated_points_per_tile != None
-                        span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
-
-                    logger.debug("Span %s %s", span, span_range)
-                    img = tf.shade(agg, cmap=cc.palette[cmap], how="log", span=span)
-
-                ###############################################################
-                # Common
-                img = apply_spread(img, spread or calculate_pixel_spread(geotile_precision))
-                img = img.to_bytesio().read()
-
-                if partial_data:
-                    logger.info(
-                        "Generating overlay for tile due to partial category data"
-                    )
-                    img = gen_overlay(img, color=(128, 128, 128, 128))
-                elif metrics.get("aborted"):
-                    img = gen_overlay(img, color=(128, 128, 128, 128))
+        if partial_data:
+            logger.info(
+                "Generating overlay for tile due to partial category data"
+            )
+            img = gen_overlay(img, color=(128, 128, 128, 128))
+        elif metrics.get("aborted"):
+            img = gen_overlay(img, color=(128, 128, 128, 128))
 
         if params.get("debug"):
             img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
@@ -1253,6 +1253,7 @@ def generate_tile(idx, x, y, z, headers, params):
 
         # Set headers and return data
         return img, metrics
+
     except Exception:
         logger.exception(
             "An exception occured while attempting to generate a tile:"

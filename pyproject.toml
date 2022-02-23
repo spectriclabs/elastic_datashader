@@ -1,3 +1,7 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
 [tool.poetry]
 name = "elastic_datashader"
 version = "0.0.6"
@@ -49,15 +53,19 @@ testpaths = ["tests"]
 apm = ["elasticapm"]
 localwebserver = ["uvicorn"]
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.pylint.'MESSAGES CONTROL']
+max-line-length = 150
+disable = "too-many-nested-blocks,too-many-branches,too-many-statements,R0801,R0902,R0903,R0911,R0913,R0914,C0103,C0114,C0116,C0123,C0301,fixme"
+
+[tool.black]
+line-length = 150
 
 [tool.tox]
 legacy_tox_ini = """
 [tox]
 envlist = py38
 isolated_build = true
+recreate = true
 
 [gh-actions]
 python =
@@ -78,7 +86,7 @@ whitelist_externals =
 	mkdir
 
 commands =
-	pylint --disable=R,C,fixme elastic_datashader
+	pylint elastic_datashader
 	mkdir -p {toxinidir}/tms-cache
 	pytest --cov-report term-missing --cov=elastic_datashader
 """

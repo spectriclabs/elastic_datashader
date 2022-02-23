@@ -455,44 +455,37 @@ def split_fieldname_to_list(field: str) -> List[str]:
     :param field: Field name to split
     :return: List containing field name
     """
-    field = field.split(".")
+    field_list = field.split(".")
+
     # .raw and .keyword are common conventions, but the
     # only way to actually do this right is to lookup the
     # mapping
-    if field[-1] in ("raw", "keyword"):
-        field.pop()
-    return field
+    if field_list[-1] in ("raw", "keyword"):
+        field_list = field_list[:-1]
 
+    return field_list
 
-def get_nested_field_from_hit(hit, field, default=None):
-    """
+def get_nested_field_from_hit(hit, field_parts: List[str], default=None):
+    if len(field_parts) == 1:
+        return getattr(hit, field_parts[0], default)
 
-    :param hit:
-    :param field:
-    :param default:
-    :return:
-    """
-    # make it safe to call with a string or a list of strings
-    if isinstance(field, str):
-        field = [field]
-
-    if len(field) == 0:
-        raise ValueError("field must be provided")
-    elif len(field) == 1:
-        return getattr(hit, field[0], default)
-    elif len(field) > 1:
+    if len(field_parts) > 1:
         # iterate being careful if the field and the hit are not consistent
         v = hit.to_dict()
-        f = ".".join(field)
+        f = ".".join(field_parts)
+
         if f in v:
             return v.get(f)
-        else:
-            for f in field:
-                if isinstance(v, dict) or isinstance(v, AttrDict):
-                    v = v.get(f, None)
-                else:
-                    return default
+
+        for f in field_parts:
+            if isinstance(v, (AttrDict, dict)):
+                v = v.get(f, None)
+            else:
+                return default
+
         return v
+
+    raise ValueError("field must be provided")
 
 def chunk_iter(iterable, chunk_size):
     chunks = [ None ] * chunk_size
@@ -508,7 +501,7 @@ def chunk_iter(iterable, chunk_size):
         last_written_idx =( i % chunk_size)
         yield (False, chunks[0:last_written_idx+1])
 
-class ScanAggs(object):
+class ScanAggs:
     def __init__(self, search, source_aggs, inner_aggs=None, size=10, timeout=None):
         self.search = search
         self.source_aggs = source_aggs
