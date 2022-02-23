@@ -11,8 +11,8 @@ import math
 import os
 
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Document
 from elasticsearch.exceptions import NotFoundError, ConflictError
+from elasticsearch_dsl import Document
 
 from .config import config
 from .elastic import get_search_base, build_dsl_filter
@@ -55,10 +55,17 @@ def create_default_params() -> Dict[str, Any]:
 
 def normalize_spread(spread: Optional[str]) -> Optional[int]:
     # Handle text-value spread in both legacy and new format
-    if spread in ("coarse", "large"): return 10
-    if spread in ("fine", "medium"): return 3
-    if spread in ("finest", "small"): return 1
-    if spread == "auto": return None
+    if spread in ("coarse", "large"):
+        return 10
+
+    if spread in ("fine", "medium"):
+        return 3
+
+    if spread in ("finest", "small"):
+        return 1
+
+    if spread == "auto":
+        return None
 
     try:
         return int(spread)
@@ -176,7 +183,7 @@ def get_filter_distance(track_filter: Optional[str]) -> Optional[int]:
 def get_category_histogram(category_histogram: Optional[str]) -> Optional[bool]:
     if category_histogram and category_histogram.lower() == "true":
         return True
-    
+
     if category_histogram and category_histogram.lower() == "false":
         return False
 
@@ -403,7 +410,7 @@ def generate_global_params(headers, params, idx):
 
 
 def merge_generated_parameters(headers, params, idx, param_hash):
-    layer_id = "%s_%s" % (param_hash, gethostname())
+    layer_id = f"{param_hash}_{gethostname()}"
     es = Elasticsearch(
         config.elastic_hosts.split(","),
         verify_certs=False,
@@ -453,7 +460,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
     #Loop-check if the generated params are in missing/in-process/complete
     timeout_at = datetime.now(timezone.utc)+timedelta(seconds=45)
 
-    while doc.to_dict().get("generated_params", {}).get("complete", False) == False:
+    while doc.to_dict().get("generated_params", {}).get("complete", False) is False:
         if datetime.now(timezone.utc) > timeout_at:
             logger.info("Hit timeout waiting for generated parameters to be placed into database")
             break

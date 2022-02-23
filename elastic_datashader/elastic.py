@@ -3,18 +3,27 @@ from typing import Any, Dict, List, Optional
 
 import copy
 import struct
-import pynumeral
 import time
 
 from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import AttrDict, Search
 
+import pynumeral
 import yaml
 
 from . import mercantile_util as mu
 from .config import config
 from .logger import logger
+
+def make_label(raw, histogram_interval, category_format) -> str:
+    # Use pynumeral if format is provided
+    if category_format:
+        raw_format = pynumeral.format(raw, category_format)
+        raw_hist_format = pynumeral.format(raw + histogram_interval, category_format)
+        return f"{raw_format}-{raw_hist_format}"
+
+    return f"{raw}-{histogram_interval}"
 
 def to_32bit_float(number):
     return struct.unpack("f", struct.pack("f", float(number)))[0]
@@ -234,9 +243,9 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
             continue
 
         is_spatial_filter = (
-            f.get("meta").get("type") == "spatial_filter" or 
-            f.get("geo_polygon") or 
-            f.get("geo_bounding_box") or 
+            f.get("meta").get("type") == "spatial_filter" or
+            f.get("geo_polygon") or
+            f.get("geo_bounding_box") or
             f.get("geo_shape") or
             f.get("geo_distance")
         )
@@ -297,7 +306,7 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
                 else:
                     filter_dict["filter"].append( { filter_key: f.get(filter_key) } )
         else:
-            raise ValueError("unsupported filter type %s" % f.get("meta").get("type"))
+            raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
     logger.info("Filter output %s", filter_dict)
     return filter_dict
 
@@ -374,7 +383,7 @@ def convert(response, category_formatter=str):
             yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
 
 def convert_composite(response, categorical, filter_buckets, histogram_interval, category_type, category_format):
-    if categorical and filter_buckets == False:
+    if categorical and filter_buckets is False:
         # Convert a regular terms aggregation
         for bucket in response:
             for category in bucket.categories:
@@ -384,20 +393,13 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                 raw = category.key
                 # Bin the data
                 if histogram_interval is not None:
-                    # Format with pynumeral if provided
-                    if category_format:
-                        label = "%s-%s" % (
-                            pynumeral.format(float(raw), category_format),
-                            pynumeral.format(float(raw) + histogram_interval, category_format),
-                        )
-                    else:
-                        label = "%s-%s" % (float(raw), float(raw) + histogram_interval)
+                    label = make_label(float(raw), histogram_interval, category_format)
                 else:
                     if category_type == "number":
                         try:
                             label = pynumeral.format(to_32bit_float(raw), category_format)
                         except ValueError:
-                            label = str(raw)                        
+                            label = str(raw)
                     else:
                         label = str(raw)
                 yield {
@@ -408,7 +410,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                     "c": category.doc_count,
                     "t": label,
                 }
-    elif categorical and filter_buckets == True:
+    elif categorical and filter_buckets is True:
         # Convert a filter bucket aggregation
         for bucket in response:
             for key in bucket.categories.buckets:
@@ -421,7 +423,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                         try:
                             label = pynumeral.format(to_32bit_float(key), category_format)
                         except ValueError:
-                            label = str(key)                        
+                            label = str(key)
                     else:
                         label = str(key)
 
@@ -496,7 +498,7 @@ def chunk_iter(iterable, chunk_size):
             i = -1
             yield (True, chunks)
         chunks[idx] = v
-    
+
     if i >= 0:
         last_written_idx =( i % chunk_size)
         yield (False, chunks[0:last_written_idx+1])
@@ -529,9 +531,11 @@ class ScanAggs:
         def run_search(**kwargs):
             _timeout_at = kwargs.pop("timeout_at", None)
             s = self.search[:0]
+
             if _timeout_at:
                 _time_remaining = _timeout_at - time.time()
-                s = s.params(timeout="%ds" % _time_remaining)
+                s = s.params(timeout=f"{_time_remaining}s")
+
             s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
 
             for agg_name, agg in self.inner_aggs.items():
@@ -550,7 +554,7 @@ class ScanAggs:
         self.total_skipped += response._shards.skipped  # pylint: disable=W0212
         self.total_successful += response._shards.successful  # pylint: disable=W0212
         self.total_failed += response._shards.failed  # pylint: disable=W0212
-        
+
         while response.aggregations.comp.buckets:
             for b in response.aggregations.comp.buckets:
                 yield b
@@ -558,7 +562,7 @@ class ScanAggs:
                 after = response.aggregations.comp.after_key
             else:
                 after = response.aggregations.comp.buckets[-1].key
-            
+
             if timeout_at and time.time() > timeout_at:
                 self.aborted = True
                 break

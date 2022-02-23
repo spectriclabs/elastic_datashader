@@ -32,8 +32,10 @@ def simplify_categories(
         # the set of keys() in color_key needs to be a superset.
         if missing_colors:
             raise ValueError(
-                "insufficient colors provided (%s) for the categorical fields available (%s)"
-                % (len(cats) - len(missing_colors), len(cats))
+                "insufficient colors provided ({}) for the categorical fields available ({})".format(  # pylint: disable=C0209
+                    len(cats) - len(missing_colors),
+                    len(cats),
+                )
             )
     elif isinstance(color_key, list):
         ncolors = len(color_key)

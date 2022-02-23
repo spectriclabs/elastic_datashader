@@ -11,8 +11,9 @@ from ..config import config
 from ..drawing import create_color_key
 from ..elastic import (
     get_search_base,
+    get_tile_categories,
+    make_label,
     to_32bit_float,
-    get_tile_categories
 )
 from ..logger import logger
 from ..parameters import extract_parameters, merge_generated_parameters
@@ -135,15 +136,7 @@ async def provide_legend(idx: str, field_name: str, request: Request):  # pylint
         # Generate the legend list
         for category in response.aggregations.categories:
             # Bin the data
-            raw = float(category.key)
-            # Format with pynumeral if provided
-            if category_format:
-                label = "%s-%s" % (
-                    pynumeral.format(raw, category_format),
-                    pynumeral.format(raw + histogram_interval, category_format),
-                )
-            else:
-                label = "%s-%s" % (raw, raw + histogram_interval)
+            label = make_label(float(category.key), histogram_interval, category_format)
             legend[label] = category.doc_count
 
     elif category_field:

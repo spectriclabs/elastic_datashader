@@ -4,8 +4,8 @@ from socket import gethostname
 from typing import Optional
 
 from elasticsearch import Elasticsearch
-from elasticsearch_dsl import Document
 from elasticsearch.exceptions import NotFoundError
+from elasticsearch_dsl import Document
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 
 from ..cache import (

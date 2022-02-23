@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import List, Optional
 
 import copy
 import math
@@ -6,10 +7,10 @@ import time
 import json
 
 from datashader import reductions as rd, transfer_functions as tf
+from datashader.utils import lnglat_to_meters
 from elasticsearch_dsl import AttrList, AttrDict, A
 from elasticsearch_dsl.aggs import Bucket
 from numpy import pi
-from datashader.utils import lnglat_to_meters
 
 import colorcet as cc
 import datashader as ds
@@ -22,11 +23,11 @@ from . import mercantile_util as mu
 
 from .config import config
 from .drawing import (
+    create_color_key,
     ellipse,
+    gen_debug_overlay,
     gen_empty,
     gen_overlay,
-    create_color_key,
-    gen_debug_overlay,
     generate_ellipse_points
 )
 from .elastic import (
@@ -92,7 +93,7 @@ def create_datashader_ellipses_from_search(
     timeout_at = None
     if config.query_timeout_seconds:
         timeout_at = time.time() + config.query_timeout_seconds
-        search = search.params(timeout="%ds" % config.query_timeout_seconds)
+        search = search.params(timeout=f"{config.query_timeout_seconds}s")
 
     for i, hit in enumerate(scan(search, use_scroll=config.use_scroll)):
         if timeout_at and (time.time() > timeout_at):
@@ -148,32 +149,32 @@ def create_datashader_ellipses_from_search(
             angles = [angles]
 
         # verify same length
-        if not (len(locs) == len(majors) == len(minors) == len(angles)):
+        if not len(locs) == len(majors) == len(minors) == len(angles):
             logger.warning(
                 "ellipse parameters and length are not consistent"
             )
             continue
 
         # process each ellipse
-        for ii in range(len(locs)):
-            loc = locs[ii]
-
+        for ii, loc in enumerate(locs):
             if isinstance(loc, str):
                 if "," not in loc:
-                    logger.warning(
-                        "skipping loc with invalid str format %s", loc
-                    )
+                    logger.warning("skipping loc with invalid str format %s", loc)
                     continue
+
                 lat, lon = loc.split(",", 1)
                 loc = dict(lat=float(lat), lon=float(lon))
+
             elif isinstance(loc, (AttrList, list)):
                 if len(loc) != 2:
                     logger.warning(
                         "skipping loc with invalid list format %s", loc
                     )
                     continue
+
                 lon, lat = loc
                 loc = dict(lat=float(lat), lon=float(lon))
+
             elif not isinstance(loc, (AttrDict, dict)):
                 logger.warning(
                     "skipping loc with invalid format %s %s %s",
@@ -260,7 +261,7 @@ def create_datashader_ellipses_from_search(
                     if isinstance(raw, list):
                         C = []
                         for v in raw:
-                            if category_type == "number" or type(v) in (int, float):                                
+                            if category_type == "number" or type(v) in (int, float):
                                 quantized = (
                                     math.floor(float(v) / histogram_interval) * histogram_interval
                                 )
@@ -268,7 +269,7 @@ def create_datashader_ellipses_from_search(
                             else:
                                 C.append( str(v) )
                     else:
-                        if category_type == "number" or type(raw) in (int, float):                             
+                        if category_type == "number" or type(raw) in (int, float):
                             quantized = (
                                 math.floor(raw / histogram_interval) * histogram_interval
                             )
@@ -295,7 +296,7 @@ def create_datashader_ellipses_from_search(
             if len(C) > 100:
                 logger.warning("truncating category list of size %s to first 100 categories", len(C))
                 C = C[0:100]
-            
+
             for c in C:
                 for p in zip(X, Y):
                     yield {"x": p[0], "y": p[1], "c": c}
@@ -341,7 +342,7 @@ def create_datashader_tracks_from_search(
     timeout_at = None
     if config.query_timeout_seconds:
         timeout_at = time.time() + config.query_timeout_seconds
-        search = search.params(timeout="%ds" % config.query_timeout_seconds)
+        search = search.params(timeout=f"{config.query_timeout_seconds}s")
 
     for i, hit in enumerate(scan(search, use_scroll=config.use_scroll)):
         if timeout_at and (time.time() > timeout_at):
@@ -379,8 +380,7 @@ def create_datashader_tracks_from_search(
             locs = [locs]
 
         # process each ellipse
-        for ii in range(len(locs)):
-            loc = locs[ii]
+        for loc in locs:
             if isinstance(loc, str):
                 if "," not in loc:
                     logger.warning(
@@ -458,6 +458,74 @@ def create_datashader_tracks_from_search(
 
     #for c in category_set:
     #    yield {"x": None, "y": None, "c": c, "t": None}
+
+def get_estimated_points_per_tile(span_range: Optional[str], global_bounds, zoom_level: int, global_doc_count: int) -> int:
+    '''
+    Estimate the number of points per tile assuming uniform density
+    '''
+    estimated_points_per_tile = None
+
+    if span_range == "auto" or span_range is None:
+        if global_bounds:
+            num_tiles_at_level = mu.num_tiles(*global_bounds, zoom_level)
+            estimated_points_per_tile = global_doc_count / num_tiles_at_level
+            logger.debug(
+                "Doc Bounds %s %s %s %s",
+                global_bounds,
+                zoom_level,
+                num_tiles_at_level,
+                estimated_points_per_tile,
+            )
+        else:
+            logger.warning("Cannot estimate points per tile because bounds are missing")
+            estimated_points_per_tile = 100000
+
+    return estimated_points_per_tile
+
+def get_span_upper_bound(span_range: str, estimated_points_per_tile: Optional[int]) -> Optional[float]:
+    if span_range == "flat":
+        return None
+
+    if span_range == "narrow":
+        return math.log(1e3)
+
+    if span_range == "normal":
+        return math.log(1e6)
+
+    if span_range == "wide":
+        return math.log(1e9)
+
+    assert estimated_points_per_tile is not None
+    return math.log(max(estimated_points_per_tile * 2, 2))
+
+def get_span_none(span_upper_bound: Optional[float]) -> Optional[List[float]]:
+    if span_upper_bound is None:
+        return None
+
+    return [0, span_upper_bound]
+
+def get_span_zero(span_upper_bound: Optional[float]) -> Optional[List[float]]:
+    if span_upper_bound is None:
+        return [0, 0]
+
+    return [0, span_upper_bound]
+
+def get_min_alpha(span_range: str, span_upper_bound: Optional[float]) -> int:
+    if span_range == "flat":
+        return 255
+
+    if span_range == "narrow":
+        return 200
+
+    if span_range == "normal":
+        return 100
+
+    if span_range == "wide":
+        return 50
+
+    assert span_upper_bound is not None
+    alpha_span = int(span_upper_bound) * 25
+    return 255 - min(alpha_span, 225)
 
 def generate_nonaggregated_tile(
     idx, x, y, z, headers, params, tile_height_px=256, tile_width_px=256
@@ -665,7 +733,7 @@ def generate_nonaggregated_tile(
                         track_distance += distance
                 current_track.append(dict(row))
                 old_row = row
-            
+
             #last one is always an end-point if the track was long enough
             if track_distance > filter_meters:
                 split_dicts = split_dicts + current_track
@@ -684,37 +752,21 @@ def generate_nonaggregated_tile(
         )
         metrics["query_time"] = (s2 - s1)
 
-        # Estimate the number of points per tile assuming uniform density
-        estimated_points_per_tile = None
-        if (span_range == "auto" or span_range is None):
-            if global_bounds:
-                num_tiles_at_level = mu.num_tiles(*global_bounds, z)
-                estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-                logger.debug(
-                    "Doc Bounds %s %s %s %s",
-                    global_bounds,
-                    z,
-                    num_tiles_at_level,
-                    estimated_points_per_tile,
-                )
-            else:
-                logger.warning(
-                    "Cannot estimate points per tile because bounds are missing"
-                )
-                estimated_points_per_tile = 100000
+        estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
 
         # If count is zero then return a null image
         if len(df) == 0:
             logger.debug("No points in bounding box")
             img = gen_empty(tile_width_px, tile_height_px)
+
             if metrics.get("over_max"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
             elif metrics.get("aborted"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
             if params.get("debug"):
-                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+                img = gen_debug_overlay(img, f"{z}/{x}/{y}")
         else:
-            categories = [ x for x in df["c"].unique() if x != None ]
+            categories = [x for x in df["c"].unique() if x is not None]
             metrics["categories"] = json.dumps(categories)
 
             # Generate the image
@@ -759,23 +811,9 @@ def generate_nonaggregated_tile(
                     y_range=y_range,
                 ).points(df_points, "x", "y", agg=rd.count_cat("c"))
 
-            span = None
-            if span_range == "flat":
-                min_alpha = 255
-            elif span_range == "narrow":
-                span = [0, math.log(1e3)]
-                min_alpha = 200
-            elif span_range == "normal":
-                span = [0, math.log(1e6)]
-                min_alpha = 100
-            elif span_range == "wide":
-                span = [0, math.log(1e9)]
-                min_alpha = 50
-            else:
-                assert estimated_points_per_tile is not None
-                span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
-                alpha_span = int(span[1]) * 25
-                min_alpha = 255 - min(alpha_span, 225)
+            span_upper_bound = get_span_upper_bound(span_range, estimated_points_per_tile)
+            span = get_span_none(span_upper_bound)
+            min_alpha = get_min_alpha(span_range, span_upper_bound)
 
             img = tf.shade(
                 agg,
@@ -817,7 +855,7 @@ def generate_nonaggregated_tile(
                 img = gen_overlay(img, color=(128, 128, 128, 128))
 
         if params.get("debug"):
-            img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+            img = gen_debug_overlay(img, f"{z}/{x}/{y}")
         # Set headers and return data
         return img, metrics
     except Exception:
@@ -948,7 +986,7 @@ def generate_tile(idx, x, y, z, headers, params):
             if metrics.get("aborted"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
             if params.get("debug"):
-                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+                img = gen_debug_overlay(img, f"{z}/{x}/{y}")
             return img, metrics
 
         # Find number of pixels in required image
@@ -984,7 +1022,7 @@ def generate_tile(idx, x, y, z, headers, params):
 
         # don't allow geotile precision to be any worse than current zoom
         geotile_precision = max(current_zoom, current_zoom + agg_zooms)
-        
+
         tile_bbox = {
             "top_left": {
                 "lat": bb_dict["top_left"]["lat"],
@@ -1008,13 +1046,13 @@ def generate_tile(idx, x, y, z, headers, params):
         # TODO if we are pixel locked, calcuating a centriod seems unnecessary
         category_filters = None
         inner_agg_size = None
-        if category_field and histogram_interval == None: # Category Mode
+        if category_field and histogram_interval is None: # Category Mode
             # We calculate the categories to show based on the mapZoom (which is usually
             # a lower number then the requested tile)
             category_tile = mercantile.Tile(x, y, z)
             if category_tile.z > int(params.get("mapZoom")):
                 category_tile = mercantile.parent(category_tile, zoom=int(params["mapZoom"]))
-                
+
             category_filters, _category_legend = get_tile_categories(
                 base_s,
                 category_tile.x,
@@ -1044,7 +1082,7 @@ def generate_tile(idx, x, y, z, headers, params):
                     field=geopoint_field
                 )
             inner_aggs = { "categories": inner_agg }
-        elif category_field and histogram_interval != None: # Histogram Mode
+        elif category_field and histogram_interval is not None: # Histogram Mode
             inner_agg_size = histogram_cnt
 
             inner_agg = A(
@@ -1086,14 +1124,14 @@ def generate_tile(idx, x, y, z, headers, params):
         df = pd.DataFrame(
             convert_composite(
                 resp.execute(),
-                (category_field != None),
+                (category_field is not None),
                 bool(category_filters),
                 histogram_interval,
                 category_type,
                 category_format
             )
         )
-        
+
         s2 = time.time()
         logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)
         metrics["query_time"] = (s2 - s1)
@@ -1106,31 +1144,14 @@ def generate_tile(idx, x, y, z, headers, params):
         metrics["shards_failed"] = resp.total_failed
         logger.info("%s", metrics)
 
-        # Estimate the number of points per tile assuming uniform density
-        estimated_points_per_tile = None
-        if (span_range == "auto" or span_range is None):
-            if global_bounds:
-                num_tiles_at_level = mu.num_tiles(*global_bounds, z)
-                estimated_points_per_tile = global_doc_cnt / num_tiles_at_level
-                logger.debug(
-                    "Doc Bounds %s %s %s %s",
-                    global_bounds,
-                    z,
-                    num_tiles_at_level,
-                    estimated_points_per_tile,
-                )
-            else:
-                logger.warning(
-                    "Cannot estimate poins per tile because bounds ar missing"
-                )
-                estimated_points_per_tile = 100000
+        estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
 
         if len(df.index) == 0:
             img = gen_empty(tile_width_px, tile_height_px)
             if metrics.get("aborted"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
             if params.get("debug"):
-                img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+                img = gen_debug_overlay(img, f"{z}/{x}/{y}")
             return img, metrics
 
         ###############################################################
@@ -1175,23 +1196,9 @@ def generate_tile(idx, x, y, z, headers, params):
                 y_range=y_range,
             ).points(df, "x", "y", agg=ds.by("t", ds.sum("c")))
 
-            span = None
-            if span_range == "flat":
-                min_alpha = 255
-            elif span_range == "narrow":
-                span = [0, math.log(1e3)]
-                min_alpha = 200
-            elif span_range == "normal":
-                span = [0, math.log(1e6)]
-                min_alpha = 100
-            elif span_range == "wide":
-                span = [0, math.log(1e9)]
-                min_alpha = 50
-            else:
-                assert estimated_points_per_tile is not None
-                span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
-                alpha_span = int(span[1]) * 25
-                min_alpha = 255 - min(alpha_span, 225)
+            span_upper_bound = get_span_upper_bound(span_range, estimated_points_per_tile)
+            span = get_span_none(span_upper_bound)
+            min_alpha = get_min_alpha(span_range, span_upper_bound)
 
             logger.debug("MinAlpha:%s Span:%s", min_alpha, span)
             img = tf.shade(
@@ -1205,7 +1212,7 @@ def generate_tile(idx, x, y, z, headers, params):
 
         ###############################################################
         # Heat Mode
-        else:  # Heat Mode
+        else:
             agg = ds.Canvas(
                 plot_width=tile_width_px,
                 plot_height=tile_height_px,
@@ -1217,19 +1224,8 @@ def generate_tile(idx, x, y, z, headers, params):
             # the span range, so for example, if span is narrow, any
             # bins that have 1000 or more items will be colored full
             # scale
-            span = None
-            if span_range == "flat":
-                span = [0, 0]
-            elif span_range == "narrow":
-                span = [0, math.log(1e3)]
-            elif span_range == "normal":
-                span = [0, math.log(1e6)]
-            elif span_range == "wide":
-                span = [0, math.log(1e9)]
-            else:
-                assert estimated_points_per_tile != None
-                span = [0, math.log(max(estimated_points_per_tile * 2, 2))]
-
+            span_upper_bound = get_span_upper_bound(span_range, estimated_points_per_tile)
+            span = get_span_zero(span_upper_bound)
             logger.debug("Span %s %s", span, span_range)
             img = tf.shade(agg, cmap=cc.palette[cmap], how="log", span=span)
 
@@ -1247,7 +1243,7 @@ def generate_tile(idx, x, y, z, headers, params):
             img = gen_overlay(img, color=(128, 128, 128, 128))
 
         if params.get("debug"):
-            img = gen_debug_overlay(img, "%s/%s/%s" % (z, x, y))
+            img = gen_debug_overlay(img, f"{z}/{x}/{y}")
         elif metrics.get("aborted"):
             img = gen_overlay(img, color=(128, 128, 128, 128))
 
