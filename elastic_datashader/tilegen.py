@@ -1,5 +1,6 @@
+from dataclasses import asdict, dataclass
 from functools import lru_cache
-from typing import List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import copy
 import math
@@ -9,8 +10,6 @@ import json
 from datashader import reductions as rd, transfer_functions as tf
 from datashader.utils import lnglat_to_meters
 from elasticsearch_dsl import AttrList, AttrDict, A
-from elasticsearch_dsl.aggs import Bucket
-from numpy import pi
 
 import colorcet as cc
 import datashader as ds
@@ -24,11 +23,11 @@ from . import mercantile_util as mu
 from .config import config
 from .drawing import (
     create_color_key,
-    ellipse,
+    ellipse_planar_points,
+    ellipse_spheroid_points,
     gen_debug_overlay,
     gen_empty,
     gen_overlay,
-    generate_ellipse_points
 )
 from .elastic import (
     get_search_base,
@@ -47,50 +46,313 @@ NAN_LINE = {"x": None, "y": None, "c": "None"}
 TILE_HEIGHT_PX = 256
 TILE_WIDTH_PX = 256
 
-class GeotileGrid(Bucket):
-    name = "geotile_grid"
+@dataclass
+class EllipseFieldNames:
+    geopoint_center: List[str]
+    ellipse_major: List[str]
+    ellipse_minor: List[str]
+    ellipse_tilt: List[str]
+    category_field: Optional[List[str]]
 
+def get_ellipse_field_names(params: Dict[str, Any]) -> EllipseFieldNames:
+    category_field = params.get('category_field')
+
+    if category_field is not None:
+        category_field = split_fieldname_to_list(category_field)
+
+    return EllipseFieldNames(
+        geopoint_center=split_fieldname_to_list(params['geopoint_field']),
+        ellipse_major=split_fieldname_to_list(params['ellipse_major']),
+        ellipse_minor=split_fieldname_to_list(params['ellipse_minor']),
+        ellipse_tilt=split_fieldname_to_list(params['ellipse_tilt']),
+        category_field=category_field,
+    )
+
+@dataclass
+class TrackFieldNames:
+    geopoint_center: List[str]
+    category_field: Optional[List[str]]
+    track_connection: Optional[List[str]]
+
+def get_track_field_names(params: Dict[str, Any]) -> TrackFieldNames:
+    category_field = params.get('category_field')
+    track_connection = params.get('track_connection')
+
+    if category_field is not None:
+        category_field = split_fieldname_to_list(category_field)
+
+    if track_connection is not None:
+        track_connection = split_fieldname_to_list(track_connection)
+
+    return TrackFieldNames(
+        geopoint_center=split_fieldname_to_list(params['geopoint_field']),
+        category_field=category_field,
+        track_connection=track_connection,
+    )
+
+def populated_field_names(field_names: Union[EllipseFieldNames,TrackFieldNames]) -> List[str]:
+    return [v for v in asdict(field_names).values() if v is not None]
+
+def all_ellipse_fields_have_values(locs, majors, minors, angles, field_names: EllipseFieldNames) -> bool:
+    if locs is None:
+        logger.debug("hit field %s has no values", field_names.geopoint_center)
+        return False
+
+    if majors is None:
+        logger.debug("hit field %s has no values", field_names.ellipse_major)
+        return False
+
+    if minors is None:
+        logger.debug("hit field %s has no values", field_names.ellipse_minor)
+        return False
+
+    if angles is None:
+        logger.debug("hit field %s has no values", field_names.ellipse_tilt)
+        return False
+
+    return True
+
+def normalize_geos_to_list(locs, majors, minors, angles):
+    '''
+    If its a list determine if there are multiple geos or just a single geo in list format
+    '''
+    if isinstance(locs, (AttrList, list)):
+        if (
+            len(locs) == 2
+            and isinstance(locs[0], float)
+            and isinstance(locs[1], float)
+        ):
+            locs = [locs]
+            majors = [majors]
+            minors = [minors]
+            angles = [angles]
+    else:
+        # All other cases are single ellipses
+        locs = [locs]
+        majors = [majors]
+        minors = [minors]
+        angles = [angles]
+
+    return locs, majors, minors, angles
+
+@dataclass
+class Location:
+    lat: float
+    lon: float
+
+@dataclass
+class Ellipse:
+    location: Location
+    major: float
+    minor: float
+    angle: float
+
+def normalize_location(location) -> Optional[Location]:
+    if isinstance(location, str):
+        if "," not in location:
+            logger.warning("skipping location with invalid str format %s", location)
+            return None
+
+        lat, lon = location.split(",", 1)
+        return Location(lat=float(lat), lon=float(lon))
+
+    if isinstance(location, (AttrList, list)):
+        if len(location) != 2:
+            logger.warning("skipping location with invalid list format %s", location)
+            return None
+
+        lon, lat = location
+        return Location(lat=float(lat), lon=float(lon))
+
+    if not isinstance(location, (AttrDict, dict)):
+        logger.warning(
+            "skipping location with invalid format %s %s %s",
+            location,
+            isinstance(location, list),
+            type(location),
+        )
+        return None
+
+    return Location(lat=location["lat"], lon=location["lon"])
+
+def normalize_to_float(value, field_name) -> Optional[float]:
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning(
+            "skipping invalid %s with value %s and type %s",
+            field_name,
+            value,
+            type(value),
+        )
+
+    return None
+
+def convert_to_full_axis_meters(distance: float, units: str) -> float:
+    if units == "majmin_nm":
+        return distance * 1852  # full-axis nautical miles to full-axis meters
+
+    if units == "semi_majmin_nm":
+        return distance * 2 * 1852  # semi-axis nautical miles to full-axis meters
+
+    if units == "semi_majmin_m":
+        return distance * 2  # semi-axis meters to full-axis meters
+
+    # NB. assume "majmin_m" if any others
+    return distance
+
+def ellipse_points(ellipse: Ellipse) -> Tuple[np.array, np.array]:
+    if config.ellipse_render_mode == "simple":
+        x0, y0 = lnglat_to_meters(ellipse.location.lon, ellipse.location.lat)
+        y_points, x_points = ellipse_planar_points(
+            ellipse.major/2,
+            ellipse.minor/2,
+            np.radians(ellipse.angle),
+            y0,
+            x0,
+            num_points=16,
+        )
+        return x_points, y_points
+
+    if config.ellipse_render_mode == "matrix":
+        lats, lons = ellipse_spheroid_points(
+            ellipse.location.lat,
+            ellipse.location.lon,
+            ellipse.major/2,
+            ellipse.minor/2,
+            tilt=ellipse.angle,
+            n_points=config.num_ellipse_points,
+        )
+        x_points, y_points = lnglat_to_meters(lons, lats)
+        return x_points, y_points
+
+    raise ValueError(f"Invalid ellipse render mode {config.ellipse_render_mode}")
+
+def ellipse_generator(hit, field_names: EllipseFieldNames, ellipse_units: str) -> Iterable[Optional[Ellipse]]:
+    # Get all the ellipse fields
+    locations = get_nested_field_from_hit(hit, field_names.geopoint_center, None)
+    majors = get_nested_field_from_hit(hit, field_names.ellipse_major, None)
+    minors = get_nested_field_from_hit(hit, field_names.ellipse_minor, None)
+    angles = get_nested_field_from_hit(hit, field_names.ellipse_tilt, None)
+
+    if not all_ellipse_fields_have_values(locations, majors, minors, angles, field_names):
+        yield None
+
+    locations, majors, minors, angles = normalize_geos_to_list(locations, majors, minors, angles)
+
+    # verify same length
+    if not len(locations) == len(majors) == len(minors) == len(angles):
+        logger.warning(
+            "ellipse parameters and length are not consistent"
+        )
+        yield None
+
+    for location, major, minor, angle in zip(locations, majors, minors, angles):
+        location = normalize_location(location)
+
+        if location is None:
+            continue
+
+        major = normalize_to_float(major, 'major')
+
+        if major is None:
+            continue
+
+        minor = normalize_to_float(minor, 'minor')
+
+        if minor is None:
+            continue
+
+        angle = normalize_to_float(angle, 'angle')
+
+        if angle is None:
+            continue
+
+        yield Ellipse(
+            location=location,
+            major=convert_to_full_axis_meters(major, ellipse_units),
+            minor=convert_to_full_axis_meters(minor, ellipse_units),
+            angle=angle,
+        )
+
+def limit_list_length(input_list: List[Any], max_length: int) -> List[Any]:
+    if len(input_list) > max_length:
+        return input_list[:max_length+1]
+
+    return input_list
+
+def get_quantized_category_list(hit, category_field: str, category_type: Optional[str], histogram_interval) -> List[str]:
+    raw = get_nested_field_from_hit(hit, category_field, 0.0)
+
+    if isinstance(raw, list):
+        category_list = []
+
+        for v in raw:
+            if category_type == "number" or type(v) in (int, float):
+                quantized = math.floor(float(v) / histogram_interval) * histogram_interval
+                category_list.append(str(to_32bit_float(quantized)))
+            else:
+                category_list.append(str(v))
+
+    else:
+        if category_type == "number" or isinstance(raw, (int, float)):
+            quantized = math.floor(raw / histogram_interval) * histogram_interval
+            category_list = [str(to_32bit_float(quantized))]
+        else:
+            category_list = [str(raw)]
+
+    return category_list
+
+def get_float_quantized_category_list(hit, category_field: str, category_type, category_format) -> List[str]:
+    '''
+    If a number type, quantize it down to a 32-bit float so it matches what the legend will show
+    '''
+    raw = get_nested_field_from_hit(hit, category_field, "N/A")
+
+    if category_type == "number" or isinstance(raw, (int, float)):
+        if category_format:
+            category_list = [pynumeral.format(to_32bit_float(raw), category_format)]
+        else:
+            category_list = [str(to_32bit_float(raw))]
+    else:
+        # Just use the value
+        if not isinstance(raw, (list, AttrList)):
+            category_list = [str(raw)]
+        else:
+            category_list = [str(v) for v in raw]
+
+    return category_list
+
+def get_category_list(hit, category_field: Optional[str], category_type: Optional[str], category_format, histogram_interval) -> List[str]:
+    if category_field is None:
+        return ["None"]
+
+    if histogram_interval:
+        return limit_list_length(
+            get_quantized_category_list(hit, category_field, category_type, histogram_interval),
+            100,
+        )
+
+    return limit_list_length(
+        get_float_quantized_category_list(hit, category_field, category_type, category_format),
+        100,
+    )
 
 def create_datashader_ellipses_from_search(
     search,
-    geopoint_fields,
+    field_names: EllipseFieldNames,
+    ellipse_units: str,
     maximum_ellipses_per_tile,
     search_meters,
-    metrics=None,
-    histogram_interval=None,
-    category_format=None
+    histogram_interval,
+    category_type,
+    category_format,
+    metrics: Dict[str, Any],
 ):
-    """
-
-    :param search:
-    :param geopoint_fields:
-    :param maximum_ellipses_per_tile:
-    :param search_meters:
-    :param metrics:
-    :param histogram_interval:
-    :return:
-    """
-    if metrics is None:
-        metrics = {}
     metrics.update({"over_max": False, "hits": 0, "locations": 0})
 
-    geopoint_center = geopoint_fields["geopoint_center"]
-    ellipse_major = geopoint_fields["ellipse_major"]
-    ellipse_minor = geopoint_fields["ellipse_minor"]
-    ellipse_tilt = geopoint_fields["ellipse_tilt"]
-    ellipse_units = geopoint_fields["ellipse_units"]
-    category_field = geopoint_fields.get("category_field")
-    category_type = geopoint_fields.get("category_type")
-
-    _geopoint_center = split_fieldname_to_list(geopoint_center)
-    _ellipse_major = split_fieldname_to_list(ellipse_major)
-    _ellipse_minor = split_fieldname_to_list(ellipse_minor)
-    _ellipse_tilt = split_fieldname_to_list(ellipse_tilt)
-
-    if category_field:
-        category_field = split_fieldname_to_list(category_field)
-
     timeout_at = None
+
     if config.query_timeout_seconds:
         timeout_at = time.time() + config.query_timeout_seconds
         search = search.params(timeout=f"{config.query_timeout_seconds}s")
@@ -102,6 +364,7 @@ def create_datashader_ellipses_from_search(
             break
 
         metrics["hits"] += 1
+
         # NB. this actually isn't maximum ellipses per tile, but rather
         # maximum number of records iterated.  We might want to keep this behavior
         # because if you ask for ellipses on a index where none of the records have ellipse
@@ -110,236 +373,41 @@ def create_datashader_ellipses_from_search(
             metrics["over_max"] = True
             break
 
-        # Get all the ellipse fields
-        locs = get_nested_field_from_hit(hit, _geopoint_center, None)
-        majors = get_nested_field_from_hit(hit, _ellipse_major, None)
-        minors = get_nested_field_from_hit(hit, _ellipse_minor, None)
-        angles = get_nested_field_from_hit(hit, _ellipse_tilt, None)
+        category_list = get_category_list(
+            hit,
+            field_names.category_field,
+            category_type,
+            category_format,
+            histogram_interval,
+        )
 
-        # Check that we have all the fields
-        if locs is None:
-            logger.debug("hit field %s has no values", geopoint_center)
-            continue
-        if majors is None:
-            logger.debug("hit field %s has no values", ellipse_major)
-            continue
-        if minors is None:
-            logger.debug("hit field %s has no values", ellipse_minor)
-            continue
-        if angles is None:
-            logger.debug("hit field %s has no values", ellipse_tilt)
-            continue
-
-        # If its a list determine if there are multiple geos or just a single geo in list format
-        if isinstance(locs, (AttrList, list)):
-            if (
-                len(locs) == 2
-                and isinstance(locs[0], float)
-                and isinstance(locs[1], float)
-            ):
-                locs = [locs]
-                majors = [majors]
-                minors = [minors]
-                angles = [angles]
-        else:
-            # All other cases are single ellipses
-            locs = [locs]
-            majors = [majors]
-            minors = [minors]
-            angles = [angles]
-
-        # verify same length
-        if not len(locs) == len(majors) == len(minors) == len(angles):
-            logger.warning(
-                "ellipse parameters and length are not consistent"
-            )
-            continue
-
-        # process each ellipse
-        for ii, loc in enumerate(locs):
-            if isinstance(loc, str):
-                if "," not in loc:
-                    logger.warning("skipping loc with invalid str format %s", loc)
-                    continue
-
-                lat, lon = loc.split(",", 1)
-                loc = dict(lat=float(lat), lon=float(lon))
-
-            elif isinstance(loc, (AttrList, list)):
-                if len(loc) != 2:
-                    logger.warning(
-                        "skipping loc with invalid list format %s", loc
-                    )
-                    continue
-
-                lon, lat = loc
-                loc = dict(lat=float(lat), lon=float(lon))
-
-            elif not isinstance(loc, (AttrDict, dict)):
-                logger.warning(
-                    "skipping loc with invalid format %s %s %s",
-                    loc,
-                    isinstance(loc, list),
-                    type(loc),
-                )
-                continue
-
-            major = majors[ii]
-            minor = minors[ii]
-            angle = angles[ii]
-
-            try:
-                major = float(major)
-            except ValueError:
-                logger.warning(
-                    "skipping major with invalid major %s %s",
-                    major,
-                    type(major),
-                )
-                continue
-
-            try:
-                minor = float(minor)
-            except ValueError:
-                logger.warning(
-                    "skipping minor with invalid minor %s %s",
-                    minor,
-                    type(minor),
-                )
-                continue
-
-            try:
-                angle = float(angle)
-            except ValueError:
-                logger.warning(
-                    "skipping angle with invalid angle %s %s",
-                    angle,
-                    type(angle),
-                )
-                continue
-
-            # Handle deg->Meters conversion and everything else
-            x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
-            if ellipse_units == "majmin_nm":
-                major = major * 1852  # nm to meters
-                minor = minor * 1852  # nm to meters
-            elif ellipse_units == "semi_majmin_nm":
-                major = major * (2 * 1852)  # nm to meters, semi to full
-                minor = minor * (2 * 1852)  # nm to meters, semi to full
-            elif ellipse_units == "semi_majmin_m":
-                major = major * 2  # semi to full
-                minor = minor * 2  # semi to full
-            # NB. assume "majmin_m" if any others
-
+        for ellipse in ellipse_generator(hit, field_names, ellipse_units):
             # expel above CEP limit
-            if major > search_meters or minor > search_meters:
+            if ellipse.major > search_meters or ellipse.minor > search_meters:
                 continue
 
-            ellipse_render_mode = config.ellipse_render_mode
-            if ellipse_render_mode == "simple":
-                angle_rad = angle * ((2.0 * pi) / 360.0)  # Convert degrees to radians
-                Y, X = ellipse(
-                    major / 2.0, minor / 2.0, angle_rad, y0, x0, num_points=16
-                )
-            elif ellipse_render_mode == "matrix":
-                LAT, LON = generate_ellipse_points(
-                    loc["lat"],
-                    loc["lon"],
-                    major / 2.0,
-                    minor / 2.0,
-                    tilt=angle,
-                    n_points=config.num_ellipse_points
-                )
-                X, Y = lnglat_to_meters(LON, LAT)
-            else:
-                raise ValueError(f"Invalid ellipse render mode {ellipse_render_mode}")
+            x_points, y_points = ellipse_points(ellipse)
 
-            if category_field:
-                if histogram_interval:
-                    # Do quantization
-                    raw = get_nested_field_from_hit(hit, category_field, 0.0)
-                    if isinstance(raw, list):
-                        C = []
-                        for v in raw:
-                            if category_type == "number" or type(v) in (int, float):
-                                quantized = (
-                                    math.floor(float(v) / histogram_interval) * histogram_interval
-                                )
-                                C.append( str(to_32bit_float(quantized)) )
-                            else:
-                                C.append( str(v) )
-                    else:
-                        if category_type == "number" or type(raw) in (int, float):
-                            quantized = (
-                                math.floor(raw / histogram_interval) * histogram_interval
-                            )
-                            C = [ str(to_32bit_float(quantized)) ]
-                        else:
-                            C = [ str(raw) ]
-                else:
-                    #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
-                    v = get_nested_field_from_hit(hit, category_field, "N/A")
-                    if category_type == "number" or type(v) in (int, float):
-                        if category_format:
-                            C = [ pynumeral.format(to_32bit_float(v), category_format)]
-                        else:
-                            C = [ str(to_32bit_float(v)) ]
-                    else:
-                        # Just use the value
-                        if not isinstance(v, (list, AttrList)):
-                            C = [ str(v) ]
-                        else:
-                            C = [ str(vv) for vv in v ]
-            else:
-                C = [ "None" ]
+            for category in category_list:
+                for point in zip(x_points, y_points):
+                    yield {"x": point[0], "y": point[1], "c": category}
 
-            if len(C) > 100:
-                logger.warning("truncating category list of size %s to first 100 categories", len(C))
-                C = C[0:100]
-
-            for c in C:
-                for p in zip(X, Y):
-                    yield {"x": p[0], "y": p[1], "c": c}
             yield NAN_LINE  # Break between ellipses
             metrics["locations"] += 1
 
-
 def create_datashader_tracks_from_search(
     search,
-    geopoint_fields,
+    field_names: TrackFieldNames,
     maximum_hits_per_tile,
-    metrics=None,
-    histogram_interval=None,
-    category_format=None
+    histogram_interval,
+    category_type,
+    category_format,
+    metrics: Dict[str, Any],
 ):
-    """
-
-    :param search:
-    :param geopoint_fields:
-    :param maximum_hits_per_tile:
-    :param metrics:
-    :param histogram_interval:
-    :return:
-    """
-    if metrics is None:
-        metrics = {}
     metrics.update({"over_max": False, "hits": 0, "locations": 0})
-
-    geopoint_center = geopoint_fields["geopoint_center"]
-    category_field = geopoint_fields.get("category_field")
-    track_connection = geopoint_fields.get("track_connection")
-    category_type = geopoint_fields.get("category_type")
-
     category_set = set()
-
-    _geopoint_center = split_fieldname_to_list(geopoint_center)
-
-    if category_field:
-        category_field = split_fieldname_to_list(category_field)
-    if track_connection:
-        track_connection = split_fieldname_to_list(track_connection)
-
     timeout_at = None
+
     if config.query_timeout_seconds:
         timeout_at = time.time() + config.query_timeout_seconds
         search = search.params(timeout=f"{config.query_timeout_seconds}s")
@@ -360,11 +428,11 @@ def create_datashader_tracks_from_search(
             break
 
         # Get all the ellipse fields
-        locs = get_nested_field_from_hit(hit, _geopoint_center, None)
+        locs = get_nested_field_from_hit(hit, field_names.geopoint_center, None)
 
         # Check that we have all the fields
         if locs is None:
-            logger.debug("hit field %s has no values", geopoint_center)
+            logger.debug("hit field %s has no values", field_names.geopoint_center)
             continue
 
         # If its a list determine if there are multiple geos or just a single geo in list format
@@ -409,17 +477,17 @@ def create_datashader_tracks_from_search(
             # Handle deg->Meters conversion and everything else
             x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
 
-            if category_field:
+            if field_names.category_field:
                 if histogram_interval:
                     # Do quantization
-                    raw = get_nested_field_from_hit(hit, category_field, 0.0)
+                    raw = get_nested_field_from_hit(hit, field_names.category_field, 0.0)
                     quantized = (
                         math.floor(raw / histogram_interval) * histogram_interval
                     )
                     C = [ str(to_32bit_float(quantized)) ]
                 else:
                     #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
-                    v = get_nested_field_from_hit(hit, category_field, "N/A")
+                    v = get_nested_field_from_hit(hit, field_names.category_field, "N/A")
                     if category_type == "number" or type(v) in (int, float):
                         if category_format:
                             C = [ pynumeral.format(to_32bit_float(v), category_format)]
@@ -438,8 +506,8 @@ def create_datashader_tracks_from_search(
                 C = C[0:100]
 
             #Handle tracking field
-            if track_connection:
-                v = get_nested_field_from_hit(hit, track_connection, "N/A")
+            if field_names.track_connection:
+                v = get_nested_field_from_hit(hit, field_names.track_connection, "N/A")
                 # Just use the value
                 if isinstance(v, list):
                     T = v
@@ -536,21 +604,14 @@ def generate_nonaggregated_tile(
     start_time = params["start_time"]
     stop_time = params["stop_time"]
     category_field = params["category_field"]
-    category_format = params["category_format"]
     highlight = params["highlight"]
     cmap = params["cmap"]
     spread = params["spread"]
     span_range = params["span_range"]
     spread = params["spread"]
-    ellipse_major = params["ellipse_major"]
-    ellipse_minor = params["ellipse_minor"]
-    ellipse_tilt = params["ellipse_tilt"]
-    ellipse_units = params["ellipse_units"]
     search_distance = params["search_distance"]
     filter_distance = params["filter_distance"]
-    track_connection = params["track_connection"]
     max_batch = params["max_batch"]
-    max_ellipses_per_tile = params["max_ellipses_per_tile"]
     histogram_interval = params.get("generated_params", {}).get(
         "histogram_interval", None
     )
@@ -631,65 +692,38 @@ def generate_nonaggregated_tile(
 
         # Process the hits (geos) into a list of points
         s1 = time.time()
-        metrics = dict(over_max=False)
+        metrics = {"over_max": False}
+
         if render_mode == "ellipses":
-            geopoint_fields = {
-                "geopoint_center": geopoint_field,
-                "ellipse_major": ellipse_major,
-                "ellipse_minor": ellipse_minor,
-                "ellipse_tilt": ellipse_tilt,
-                "ellipse_units": ellipse_units,
-                "category_field": category_field,
-            }
-            includes_fields = list(
-                filter(
-                    lambda x: x is not None,
-                    [
-                        geopoint_field,
-                        ellipse_major,
-                        ellipse_minor,
-                        ellipse_tilt,
-                        category_field,
-                    ],
-                )
-            )
-            count_s = count_s.source(includes=includes_fields)
+            field_names = get_ellipse_field_names(params)
+            count_s = count_s.source(includes=populated_field_names(field_names))
             df = pd.DataFrame.from_dict(
                 create_datashader_ellipses_from_search(
                     count_s,
-                    geopoint_fields,
-                    max_ellipses_per_tile,
+                    field_names,
+                    params["ellipse_units"],
+                    params["max_ellipses_per_tile"],
                     search_meters,
-                    metrics,
                     histogram_interval,
-                    category_format
+                    params["category_type"],
+                    params["category_format"],
+                    metrics,
                 )
             )
             df_points = None
+
         else:
-            geopoint_fields = {
-                "geopoint_center": geopoint_field,
-                "track_connection": track_connection,
-                "category_field": category_field
-            }
-            includes_fields = list(
-                filter(
-                    lambda x: x is not None,
-                    [
-                        geopoint_field,
-                        track_connection,
-                        category_field,
-                    ],
-                )
-            )
+            field_names = get_track_field_names(params)
+            count_s = count_s.source(includes=populated_field_names(field_names))
             df = pd.DataFrame.from_dict(
                 create_datashader_tracks_from_search(
                     count_s,
-                    geopoint_fields,
-                    max_ellipses_per_tile,
-                    metrics,
+                    field_names,
+                    params["max_ellipses_per_tile"],
                     histogram_interval,
-                    category_format
+                    params["category_type"],
+                    params["category_format"],
+                    metrics,
                 )
             )
 

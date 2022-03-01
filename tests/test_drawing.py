@@ -67,14 +67,14 @@ def test_gen_empty():
     actual = drawing.gen_empty(256, 256)
     assert expected == actual
 
-def test_ellipse():
+def test_ellipse_planar_points():
     # Verify tilt of 0 means North
     radm = 100
     radn = 50
     tilt = 0
     xpos = 0
     ypos = 0
-    actual_y, actual_x = drawing.ellipse(radm, radn, tilt, xpos, ypos)
+    actual_y, actual_x = drawing.ellipse_planar_points(radm, radn, tilt, xpos, ypos)
     np.testing.assert_almost_equal(actual_y[0], 100)
     np.testing.assert_almost_equal(actual_y[4], 0)
     np.testing.assert_almost_equal(actual_y[8], -100)
@@ -91,7 +91,7 @@ def test_ellipse():
     tilt = 10
     xpos = 0
     ypos = 5
-    actual_y, actual_x = drawing.ellipse(radm, radn, tilt, xpos, ypos)
+    actual_y, actual_x = drawing.ellipse_planar_points(radm, radn, tilt, xpos, ypos)
     print(actual_y)
     print(actual_x)
     expected_x = np.array(

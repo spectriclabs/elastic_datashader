@@ -211,7 +211,7 @@ def generate_x_tile(width: int, height: int, thickness: int=8, color: Tuple[int,
 
 
 @njit
-def ellipse(
+def ellipse_planar_points(
     radm: float,
     radn: float,
     tilt: float,
@@ -237,7 +237,7 @@ def ellipse(
     return yarr, xarr
 
 @njit(fastmath=True)
-def generate_ellipse_points(
+def ellipse_spheroid_points(
     lat: float,
     lon: float,
     smaj: float,
