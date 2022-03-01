@@ -112,9 +112,9 @@ def all_ellipse_fields_have_values(locs, majors, minors, angles, field_names: El
 
     return True
 
-def normalize_geos_to_list(locs, majors, minors, angles):
+def normalize_ellipses_to_list(locs, majors, minors, angles):
     '''
-    If its a list determine if there are multiple geos or just a single geo in list format
+    If its a list determine if there are multiple ellipses or just a single ellipse in list format
     '''
     if isinstance(locs, (AttrList, list)):
         if (
@@ -122,7 +122,7 @@ def normalize_geos_to_list(locs, majors, minors, angles):
             and isinstance(locs[0], float)
             and isinstance(locs[1], float)
         ):
-            locs = [locs]
+            locs = [locs]  # eg. [[-73.986,40.7485]]
             majors = [majors]
             minors = [minors]
             angles = [angles]
@@ -134,6 +134,20 @@ def normalize_geos_to_list(locs, majors, minors, angles):
         angles = [angles]
 
     return locs, majors, minors, angles
+
+def normalize_locations_to_list(locs):
+    if isinstance(locs, (AttrList, list)):
+        if (
+            len(locs) == 2
+            and isinstance(locs[0], float)
+            and isinstance(locs[1], float)
+        ):
+            locs = [locs]  # eg. [[-73.986,40.7485]]
+    else:
+        # All other cases are single location
+        locs = [locs]
+
+    return locs
 
 @dataclass
 class Location:
@@ -148,6 +162,7 @@ class Ellipse:
     angle: float
 
 def normalize_location(location) -> Optional[Location]:
+    # sometimes the location is a comma-separated lat,lon
     if isinstance(location, str):
         if "," not in location:
             logger.warning("skipping location with invalid str format %s", location)
@@ -156,6 +171,7 @@ def normalize_location(location) -> Optional[Location]:
         lat, lon = location.split(",", 1)
         return Location(lat=float(lat), lon=float(lon))
 
+    # sometimes the location is a two-element [lon,lat] list
     if isinstance(location, (AttrList, list)):
         if len(location) != 2:
             logger.warning("skipping location with invalid list format %s", location)
@@ -164,6 +180,7 @@ def normalize_location(location) -> Optional[Location]:
         lon, lat = location
         return Location(lat=float(lat), lon=float(lon))
 
+    # if none of the above, then the location better be a dictionary
     if not isinstance(location, (AttrDict, dict)):
         logger.warning(
             "skipping location with invalid format %s %s %s",
@@ -236,16 +253,16 @@ def ellipse_generator(hit, field_names: EllipseFieldNames, ellipse_units: str) -
     angles = get_nested_field_from_hit(hit, field_names.ellipse_tilt, None)
 
     if not all_ellipse_fields_have_values(locations, majors, minors, angles, field_names):
-        yield None
+        return
 
-    locations, majors, minors, angles = normalize_geos_to_list(locations, majors, minors, angles)
+    locations, majors, minors, angles = normalize_ellipses_to_list(locations, majors, minors, angles)
 
     # verify same length
     if not len(locations) == len(majors) == len(minors) == len(angles):
         logger.warning(
             "ellipse parameters and length are not consistent"
         )
-        yield None
+        return
 
     for location, major, minor, angle in zip(locations, majors, minors, angles):
         location = normalize_location(location)
@@ -348,7 +365,7 @@ def create_datashader_ellipses_from_search(
     category_type,
     category_format,
     metrics: Dict[str, Any],
-):
+) -> Dict[str, Any]:
     metrics.update({"over_max": False, "hits": 0, "locations": 0})
 
     timeout_at = None
@@ -395,6 +412,34 @@ def create_datashader_ellipses_from_search(
             yield NAN_LINE  # Break between ellipses
             metrics["locations"] += 1
 
+def location_generator(hit, geopoint_center_field_name: str) -> Iterable[Optional[Location]]:
+    locations = get_nested_field_from_hit(hit, geopoint_center_field_name, None)
+
+    if locations is None:
+        logger.debug("hit field %s has no values", geopoint_center_field_name)
+        return
+
+    locations = normalize_locations_to_list(locations)
+
+    for location in locations:
+        location = normalize_location(location)
+
+        if location is not None:
+            yield location
+
+def get_track_list(hit, track_connection: List[str]) -> List[str]:
+    # Handle tracking field
+    if track_connection:
+        v = get_nested_field_from_hit(hit, track_connection, "N/A")
+
+        # Just use the value
+        if isinstance(v, list):
+            return v
+
+        return [v]
+
+    return ["None"]
+
 def create_datashader_tracks_from_search(
     search,
     field_names: TrackFieldNames,
@@ -403,7 +448,7 @@ def create_datashader_tracks_from_search(
     category_type,
     category_format,
     metrics: Dict[str, Any],
-):
+) -> Dict[str, Any]:
     metrics.update({"over_max": False, "hits": 0, "locations": 0})
     category_set = set()
     timeout_at = None
@@ -419,6 +464,7 @@ def create_datashader_tracks_from_search(
             break
 
         metrics["hits"] += 1
+
         # NB. this actually isn't maximum ellipses per tile, but rather
         # maximum number of records iterated.  We might want to keep this behavior
         # because if you ask for ellipses on a index where none of the records have ellipse
@@ -427,105 +473,27 @@ def create_datashader_tracks_from_search(
             metrics["over_max"] = True
             break
 
-        # Get all the ellipse fields
-        locs = get_nested_field_from_hit(hit, field_names.geopoint_center, None)
+        category_set.update(
+            get_category_list(
+                hit,
+                field_names.category_field,
+                category_type,
+                category_format,
+                histogram_interval,
+            )
+        )
 
-        # Check that we have all the fields
-        if locs is None:
-            logger.debug("hit field %s has no values", field_names.geopoint_center)
-            continue
+        track_list = get_track_list(hit, field_names.track_connection)
 
-        # If its a list determine if there are multiple geos or just a single geo in list format
-        if isinstance(locs, (AttrList, list)):
-            if (
-                len(locs) == 2
-                and isinstance(locs[0], float)
-                and isinstance(locs[1], float)
-            ):
-                locs = [locs]
-        else:
-            # All other cases are single ellipses
-            locs = [locs]
-
-        # process each ellipse
-        for loc in locs:
-            if isinstance(loc, str):
-                if "," not in loc:
-                    logger.warning(
-                        "skipping loc with invalid str format %s", loc
-                    )
-                    continue
-                lat, lon = loc.split(",", 1)
-                loc = dict(lat=float(lat), lon=float(lon))
-            elif isinstance(loc, (AttrList, list)):
-                if len(loc) != 2:
-                    logger.warning(
-                        "skipping loc with invalid list format %s", loc
-                    )
-                    continue
-                lon, lat = loc
-                loc = dict(lat=float(lat), lon=float(lon))
-            elif not isinstance(loc, (AttrDict, dict)):
-                logger.warning(
-                    "skipping loc with invalid format %s %s %s",
-                    loc,
-                    isinstance(loc, list),
-                    type(loc),
-                )
-                continue
-
+        for location in location_generator(hit, field_names.geopoint_center):
             # Handle deg->Meters conversion and everything else
-            x0, y0 = lnglat_to_meters(loc["lon"], loc["lat"])
+            x0, y0 = lnglat_to_meters(location.lon, location.lat)
 
-            if field_names.category_field:
-                if histogram_interval:
-                    # Do quantization
-                    raw = get_nested_field_from_hit(hit, field_names.category_field, 0.0)
-                    quantized = (
-                        math.floor(raw / histogram_interval) * histogram_interval
-                    )
-                    C = [ str(to_32bit_float(quantized)) ]
-                else:
-                    #If a number type, quantize it down to a 32-bit float so it matches what the legend will show
-                    v = get_nested_field_from_hit(hit, field_names.category_field, "N/A")
-                    if category_type == "number" or type(v) in (int, float):
-                        if category_format:
-                            C = [ pynumeral.format(to_32bit_float(v), category_format)]
-                        else:
-                            C = [ str(to_32bit_float(v)) ]
-                    else:
-                        # Just use the value
-                        if isinstance(v, list):
-                            C = v
-                        else:
-                            C = [ v ]
-            else:
-                C = [ "None" ]
-            if len(C) > 100:
-                logger.warning("truncating category list of size %s to first 100 categories", len(C))
-                C = C[0:100]
+            for category in category_set:
+                for track in track_list:
+                    yield {"x": x0, "y": y0, "c": category, "t": track}
 
-            #Handle tracking field
-            if field_names.track_connection:
-                v = get_nested_field_from_hit(hit, field_names.track_connection, "N/A")
-                # Just use the value
-                if isinstance(v, list):
-                    T = v
-                else:
-                    T = [ v ]
-            else:
-                T = [ "None" ]
-
-            category_set.update(C)
-            for c in C:
-                category_set.update(C)
-                for t in T:
-                    yield {"x": x0, "y": y0, "c": c, "t": t}
-            #yield NAN_LINE  # Break between ellipses
             metrics["locations"] += 1
-
-    #for c in category_set:
-    #    yield {"x": None, "y": None, "c": c, "t": None}
 
 def get_estimated_points_per_tile(span_range: Optional[str], global_bounds, zoom_level: int, global_doc_count: int) -> int:
     '''
