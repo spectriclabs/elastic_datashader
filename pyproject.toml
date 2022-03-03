@@ -77,6 +77,7 @@ setenv =
 	DATASHADER_VERIFY_INDICES = false
 
 deps =
+	geopy
 	pylint
 	pytest
 	pytest-cov

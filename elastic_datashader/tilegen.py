@@ -157,9 +157,9 @@ class Location:
 @dataclass
 class Ellipse:
     location: Location
-    major: float
-    minor: float
-    angle: float
+    major_meters: float
+    minor_meters: float
+    angle_degrees: float
 
 def normalize_location(location) -> Optional[Location]:
     # sometimes the location is a comma-separated lat,lon
@@ -222,9 +222,9 @@ def ellipse_points(ellipse: Ellipse) -> Tuple[np.array, np.array]:
     if config.ellipse_render_mode == "simple":
         x0, y0 = lnglat_to_meters(ellipse.location.lon, ellipse.location.lat)
         y_points, x_points = ellipse_planar_points(
-            ellipse.major/2,
-            ellipse.minor/2,
-            np.radians(ellipse.angle),
+            ellipse.major_meters/2,
+            ellipse.minor_meters/2,
+            np.radians(ellipse.angle_degrees),
             y0,
             x0,
             num_points=16,
@@ -235,9 +235,9 @@ def ellipse_points(ellipse: Ellipse) -> Tuple[np.array, np.array]:
         lats, lons = ellipse_spheroid_points(
             ellipse.location.lat,
             ellipse.location.lon,
-            ellipse.major/2,
-            ellipse.minor/2,
-            tilt=ellipse.angle,
+            ellipse.major_meters/2,
+            ellipse.minor_meters/2,
+            tilt=ellipse.angle_degrees,
             n_points=config.num_ellipse_points,
         )
         x_points, y_points = lnglat_to_meters(lons, lats)
@@ -248,7 +248,7 @@ def ellipse_points(ellipse: Ellipse) -> Tuple[np.array, np.array]:
 def ellipse_generator(hit, field_names: EllipseFieldNames, ellipse_units: str) -> Iterable[Optional[Ellipse]]:
     # Get all the ellipse fields
     locations = get_nested_field_from_hit(hit, field_names.geopoint_center, None)
-    majors = get_nested_field_from_hit(hit, field_names.ellipse_major, None)
+    majors = get_nested_field_from_hit(hit, field_names.ellipse_major_meters, None)
     minors = get_nested_field_from_hit(hit, field_names.ellipse_minor, None)
     angles = get_nested_field_from_hit(hit, field_names.ellipse_tilt, None)
 
@@ -287,9 +287,9 @@ def ellipse_generator(hit, field_names: EllipseFieldNames, ellipse_units: str) -
 
         yield Ellipse(
             location=location,
-            major=convert_to_full_axis_meters(major, ellipse_units),
-            minor=convert_to_full_axis_meters(minor, ellipse_units),
-            angle=angle,
+            major_meters=convert_to_full_axis_meters(major, ellipse_units),
+            minor_meters=convert_to_full_axis_meters(minor, ellipse_units),
+            angle_degrees=angle,
         )
 
 def limit_list_length(input_list: List[Any], max_length: int) -> List[Any]:
@@ -400,7 +400,7 @@ def create_datashader_ellipses_from_search(
 
         for ellipse in ellipse_generator(hit, field_names, ellipse_units):
             # expel above CEP limit
-            if ellipse.major > search_meters or ellipse.minor > search_meters:
+            if ellipse.major_meters > search_meters or ellipse.minor_meters > search_meters:
                 continue
 
             x_points, y_points = ellipse_points(ellipse)
@@ -577,7 +577,6 @@ def generate_nonaggregated_tile(
     spread = params["spread"]
     span_range = params["span_range"]
     spread = params["spread"]
-    search_distance = params["search_distance"]
     filter_distance = params["filter_distance"]
     max_batch = params["max_batch"]
     histogram_interval = params.get("generated_params", {}).get(
@@ -603,44 +602,16 @@ def generate_nonaggregated_tile(
         stop_time,
     )
     try:
-        # Get the web mercador bounds for the tile
-        xy_bounds = mu.xy_bounds(x, y, z)
-        # Calculate the x/y range in meters
-        x_range = xy_bounds[0], xy_bounds[2]
-        y_range = xy_bounds[1], xy_bounds[3]
-        # Swap the numbers so that [0] is always lowest
-        if x_range[0] > x_range[1]:
-            x_range = x_range[1], x_range[0]
-        if y_range[0] > y_range[1]:
-            y_range = y_range[1], y_range[0]
 
-        # Expand this by search_distance value to get adjacent geos that overlap into our tile
-        search_meters = search_distance * 1852
+        # Expand this by search_nautical_miles value to get adjacent geos that overlap into our tile
+        search_meters = params["search_nautical_miles"] * 1852
+
         if filter_distance is not None:
             filter_meters = filter_distance * 1852
         else:
             filter_meters = search_meters
 
-        boundary_extension = search_meters*1.5 #Search slightly beyond to reduce literal corner cases
-
-        # Get the top_left/bot_rght for the tile
-        top_left = mu.lnglat(
-            x_range[0] - boundary_extension, y_range[1] + boundary_extension
-        )
-        bot_rght = mu.lnglat(
-            x_range[1] + boundary_extension, y_range[0] - boundary_extension
-        )
-
-        bb_dict = {
-            "top_left": {
-                "lat": min(90, max(-90, top_left[1])),
-                "lon": min(180, max(-180, top_left[0])),
-            },
-            "bottom_right": {
-                "lat": min(90, max(-90, bot_rght[1])),
-                "lon": min(180, max(-180, bot_rght[0])),
-            },
-        }
+        bb_dict = create_bounding_box_for_ellipses(x, y, z, search_meters)
 
         # Create base search
         base_s = get_search_base(config.elastic_hosts, headers, params, idx).params(
@@ -765,6 +736,7 @@ def generate_nonaggregated_tile(
                 img = gen_overlay(img, color=(128, 128, 128, 128))
             elif metrics.get("aborted"):
                 img = gen_overlay(img, color=(128, 128, 128, 128))
+
             if params.get("debug"):
                 img = gen_debug_overlay(img, f"{z}/{x}/{y}")
         else:
@@ -788,6 +760,8 @@ def generate_nonaggregated_tile(
                 color_key,
                 inplace=True,
             )
+
+            x_range, y_range = xy_ranges(x, y, z)
             agg = ds.Canvas(
                 plot_width=tile_width_px,
                 plot_height=tile_height_px,
@@ -896,7 +870,70 @@ def apply_spread(img, spread):
 
     return img
 
-def generate_tile(idx, x, y, z, headers, params):
+@lru_cache
+def xy_ranges(x: int, y: int, z: int) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+    xy_bounds = mu.xy_bounds(x, y, z)  # bounds with coordinates as meters
+
+    # make sure element 0 is always lowest
+    x_range = sorted((xy_bounds[0], xy_bounds[2]))
+    y_range = sorted((xy_bounds[1], xy_bounds[3]))
+
+    return tuple(x_range), tuple(y_range)
+
+@lru_cache
+def create_bounding_box_for_tile(x: int, y: int, z: int) -> Dict[str, Dict[str, float]]:
+    '''
+    Creates the lat/lon bounding box dictionary used to query
+    ElasticSearch for a particular x, y, z Web Mercator tile.
+    '''
+    west, south, east, north = mu.bounds(x, y, z) # bounds with coordinate as degrees
+
+    # Constrain exactly to map boundaries
+    return {
+        "top_left": {
+            "lat": min(90, max(-90, north)),
+            "lon": min(180, max(-180, west)),
+        },
+        "bottom_right": {
+            "lat": min(90, max(-90, south)),
+            "lon": min(180, max(-180, east)),
+        },
+    }
+
+@lru_cache
+def create_bounding_box_for_ellipses(x: int, y: int, z: int, search_meters: float) -> Dict[str, Dict[str, float]]:
+    '''
+    Creates the lat/lon bounding box dictionary used to query
+    ElasticSearch.  It takes the boundaries for an x, y, z  Web
+    Mercator tile and expands them to include ellipses whose
+    center points are outside the tile, but with major/minor
+    axes that could cause part of the ellipse to appear in the
+    tile.
+    '''
+    x_range, y_range = xy_ranges(x, y, z)  # ranges with coordinates as meters
+    boundary_extension = search_meters * 1.5  # search slightly beyond to reduce literal corner cases
+
+    west_m = x_range[0] - boundary_extension
+    north_m = y_range[1] + boundary_extension
+
+    east_m = x_range[1] + boundary_extension
+    south_m = y_range[0] - boundary_extension
+
+    west, north = mu.lnglat(west_m, north_m)
+    east, south = mu.lnglat(east_m, south_m)
+
+    return {
+        "top_left": {
+            "lon": min(180, max(-180, west)),
+            "lat": min(90, max(-90, north)),
+        },
+        "bottom_right": {
+            "lon": min(180, max(-180, east)),
+            "lat": min(90, max(-90, south)),
+        },
+    }
+
+def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_px=256):
     '''
     idx: ElasticSearch index to search
     x, y: TMS tile coordinates
@@ -941,34 +978,7 @@ def generate_tile(idx, x, y, z, headers, params):
         stop_time,
     )
     try:
-        # Preconfigured tile size
-        tile_height_px = 256
-        tile_width_px = 256
-
-        # Get the web mercador bounds for the tile
-        xy_bounds = mu.xy_bounds(x, y, z)
-        west, south, east, north = mu.bounds(x, y, z)
-        # Calculate the x/y range in meters
-        x_range = xy_bounds[0], xy_bounds[2]
-        y_range = xy_bounds[1], xy_bounds[3]
-        # Swap the numbers so that [0] is always lowest
-        if x_range[0] > x_range[1]:
-            x_range = x_range[1], x_range[0]
-        if y_range[0] > y_range[1]:
-            y_range = y_range[1], y_range[0]
-        # Get the top_left/bot_rght for the tile
-        west, south, east, north = mu.bounds(x, y, z)
-        # Constrain exactly to map boundaries
-        bb_dict = {
-            "top_left": {
-                "lat": min(90, max(-90, north)),
-                "lon": min(180, max(-180, west)),
-            },
-            "bottom_right": {
-                "lat": min(90, max(-90, south)),
-                "lon": min(180, max(-180, east)),
-            },
-        }
+        bb_dict = create_bounding_box_for_tile(x, y, z)
 
         # Create base search
         base_s = get_search_base(config.elastic_hosts, headers, params, idx)
@@ -1025,21 +1035,10 @@ def generate_tile(idx, x, y, z, headers, params):
         # don't allow geotile precision to be any worse than current zoom
         geotile_precision = max(current_zoom, current_zoom + agg_zooms)
 
-        tile_bbox = {
-            "top_left": {
-                "lat": bb_dict["top_left"]["lat"],
-                "lon": bb_dict["top_left"]["lon"]
-            },
-            "bottom_right": {
-                "lat": bb_dict["bottom_right"]["lat"],
-                "lon": bb_dict["bottom_right"]["lon"],
-            },
-        }
-
         tile_s = copy.copy(base_s)
         tile_s = tile_s.params(size=0, track_total_hits=False)
         tile_s = tile_s.filter(
-            "geo_bounding_box", **{geopoint_field: tile_bbox}
+            "geo_bounding_box", **{geopoint_field: bb_dict}
         )
 
         s1 = time.time()
@@ -1191,6 +1190,7 @@ def generate_tile(idx, x, y, z, headers, params):
                 histogram_interval=histogram_interval
             )
 
+            x_range, y_range = xy_ranges(x, y, z)
             agg = ds.Canvas(
                 plot_width=tile_width_px,
                 plot_height=tile_height_px,
@@ -1215,6 +1215,7 @@ def generate_tile(idx, x, y, z, headers, params):
         ###############################################################
         # Heat Mode
         else:
+            x_range, y_range = xy_ranges(x, y, z)
             agg = ds.Canvas(
                 plot_width=tile_width_px,
                 plot_height=tile_height_px,

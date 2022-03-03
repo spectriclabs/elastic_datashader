@@ -43,7 +43,7 @@ def create_default_params() -> Dict[str, Any]:
         "max_ellipses_per_tile": config.max_ellipses_per_tile,
         "render_mode": None,
         "resolution": "finest",
-        "search_distance": 50,
+        "search_nautical_miles": 50,
         "span_range": None,
         "spread": None,
         "timestamp_field": "@timestamp",
@@ -136,7 +136,12 @@ def get_ellipse_params(render_mode: str, query_params: Dict[Any, Any]) -> Dict[s
     return {name: query_params.get(name, "") for name in param_names}
 
 def get_search_distance(query_params: Dict[Any, Any]) -> float:
-    #Reduce this to just "search" -> "search_distance" once Kibana is changed
+    '''
+    Takes a string and converts it to a distance in
+    nautical miles (nm).  If the input string does not
+    have a mapping, then 50.0 nm is returned.
+    '''
+    # Reduce this to just "search" -> "search_distance" once Kibana is changed
     if query_params.get("track_search", "") == "narrow":
         return 1.0
 
@@ -157,7 +162,12 @@ def get_search_distance(query_params: Dict[Any, Any]) -> float:
 
     return 50.0
 
-def get_filter_distance(track_filter: Optional[str]) -> Optional[int]:
+def get_filter_distance(track_filter: Optional[str]) -> Optional[float]:
+    '''
+    Takes a string and converts it to a distance in
+    nautical miles (nm).  If the input string cannot
+    be converted to a number, then None is returned.
+    '''
     if track_filter is None or track_filter == "default":
         return None
 
@@ -263,7 +273,7 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params.update(get_query(params_param))
     params["render_mode"] = render_mode
     params.update(get_ellipse_params(render_mode, query_params))
-    params["search_distance"] = get_search_distance(query_params)
+    params["search_nautical_miles"] = get_search_distance(query_params)
     params["track_connection"] = query_params.get("track_connection", params["track_connection"])
     params["filter_distance"] = get_filter_distance(query_params.get("track_filter", None))
     params["category_field"] = category_field
