@@ -7,7 +7,8 @@ import math
 import time
 import json
 
-from datashader import reductions as rd, transfer_functions as tf
+from datashader import reductions as rd
+from datashader import transfer_functions as tf
 from datashader.utils import lnglat_to_meters
 from elasticsearch_dsl import AttrList, AttrDict, A
 
@@ -91,7 +92,8 @@ def get_track_field_names(params: Dict[str, Any]) -> TrackFieldNames:
     )
 
 def populated_field_names(field_names: Union[EllipseFieldNames,TrackFieldNames]) -> List[str]:
-    return [v for v in asdict(field_names).values() if v is not None]
+    field_names_as_lists = (v for v in asdict(field_names).values() if v is not None)
+    return [".".join(field_name_as_list) for field_name_as_list in field_names_as_lists]
 
 def all_ellipse_fields_have_values(locs, majors, minors, angles, field_names: EllipseFieldNames) -> bool:
     if locs is None:
@@ -248,7 +250,7 @@ def ellipse_points(ellipse: Ellipse) -> Tuple[np.array, np.array]:
 def ellipse_generator(hit, field_names: EllipseFieldNames, ellipse_units: str) -> Iterable[Optional[Ellipse]]:
     # Get all the ellipse fields
     locations = get_nested_field_from_hit(hit, field_names.geopoint_center, None)
-    majors = get_nested_field_from_hit(hit, field_names.ellipse_major_meters, None)
+    majors = get_nested_field_from_hit(hit, field_names.ellipse_major, None)
     minors = get_nested_field_from_hit(hit, field_names.ellipse_minor, None)
     angles = get_nested_field_from_hit(hit, field_names.ellipse_tilt, None)
 
@@ -745,14 +747,15 @@ def generate_nonaggregated_tile(
 
             # Generate the image
             df["c"] = df["c"].astype("category")
-            color_key=create_color_key(
+            color_key = create_color_key(
                 categories,
                 cmap=cmap,
                 highlight=highlight,
                 field_min=field_min,
                 field_max=field_max,
-                histogram_interval=histogram_interval
+                histogram_interval=histogram_interval,
             )
+
             # prevent memory explosion in datashader _colorize
             _, color_key = simplify_categories(
                 df,
@@ -771,6 +774,7 @@ def generate_nonaggregated_tile(
 
             #now for the points as well
             points_agg = None
+
             if df_points is not None:
                 df_points["c"] = df_points["c"].astype("category")
                 # prevent memory explosion in datashader _colorize
@@ -799,8 +803,9 @@ def generate_nonaggregated_tile(
                 how="log",
                 span=span,
             )
+
             # spread ellipse/tracks (i.e. make lines thicker)
-            if (spread is not None) and (spread > 0):
+            if spread is not None and spread > 0:
                 img = tf.spread(img, spread)
 
             if points_agg is not None:
@@ -823,6 +828,7 @@ def generate_nonaggregated_tile(
                 img = tf.stack(img, points_img)
 
             img = img.to_bytesio().read()
+
             if metrics.get("over_max"):
                 # Put hashing on image to indicate that it is over maximum
                 logger.info("Generating overlay for tile")
