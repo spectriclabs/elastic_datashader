@@ -913,8 +913,7 @@ def create_bounding_box_for_ellipses(x: int, y: int, z: int, search_meters: floa
     ElasticSearch.  It takes the boundaries for an x, y, z  Web
     Mercator tile and expands them to include ellipses whose
     center points are outside the tile, but with major/minor
-    axes that could cause part of the ellipse to appear in the
-    tile.
+    axes that could extend onto the tile.
     '''
     x_range, y_range = xy_ranges(x, y, z)  # ranges with coordinates as meters
     boundary_extension = search_meters * 1.5  # search slightly beyond to reduce literal corner cases
