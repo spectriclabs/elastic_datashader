@@ -6,6 +6,7 @@ and catered specifically to our use-case
 import numba
 import numpy as np
 
+from .constants import R2D, HALF_CE, CE, INV_RE, EPSILON, LL_EPSILON, INV_PI, INV_360
 
 __all__ = [
     "lnglat",
@@ -17,18 +18,6 @@ __all__ = [
     "num_tiles",
     "tiles_bounds",
 ]
-
-
-R2D = 57.29577951308232  # 180 / PI
-RE = 6378137.0
-HALF_CE = np.pi * RE
-CE = 2 * HALF_CE
-INV_RE = 1.567855942887398e-07
-EPSILON = 1e-14
-LL_EPSILON = 1e-11
-INV_PI = 1 / np.pi
-INV_360 = 1 / 360.0
-
 
 @numba.njit(fastmath=True)
 def lnglat(x, y):

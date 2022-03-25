@@ -11,6 +11,7 @@ from datashader import reductions as rd
 from datashader import transfer_functions as tf
 from datashader.utils import lnglat_to_meters
 from elasticsearch_dsl import AttrList, AttrDict, A
+from georgio import wm_tile_expanded_bbox  # pylint: disable=E0611
 
 import colorcet as cc
 import datashader as ds
@@ -906,6 +907,7 @@ def create_bounding_box_for_tile(x: int, y: int, z: int) -> Dict[str, Dict[str, 
         },
     }
 
+
 @lru_cache
 def create_bounding_box_for_ellipses(x: int, y: int, z: int, search_meters: float) -> Dict[str, Dict[str, float]]:
     '''
@@ -915,17 +917,7 @@ def create_bounding_box_for_ellipses(x: int, y: int, z: int, search_meters: floa
     center points are outside the tile, but with major/minor
     axes that could extend onto the tile.
     '''
-    x_range, y_range = xy_ranges(x, y, z)  # ranges with coordinates as meters
-    boundary_extension = search_meters * 1.5  # search slightly beyond to reduce literal corner cases
-
-    west_m = x_range[0] - boundary_extension
-    north_m = y_range[1] + boundary_extension
-
-    east_m = x_range[1] + boundary_extension
-    south_m = y_range[0] - boundary_extension
-
-    west, north = mu.lnglat(west_m, north_m)
-    east, south = mu.lnglat(east_m, south_m)
+    west, south, east, north = wm_tile_expanded_bbox(x, y, z, search_meters)
 
     return {
         "top_left": {

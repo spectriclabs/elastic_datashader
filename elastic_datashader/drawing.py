@@ -1,13 +1,17 @@
-import io
 from functools import lru_cache
 from hashlib import md5
 from typing import Dict, Iterable, Tuple
 
-import numpy as np
+import io
+
 from PIL import Image, ImageDraw
 from colorcet import palette
 from numba import njit
+
 import colorcet as cc
+import numpy as np
+
+from .constants import METERS_PER_DEG_LAT
 
 def force_within_range(val: int, lower_inclusive: int, upper_exclusive: int) -> int:
     return max(lower_inclusive, min(val, upper_exclusive-1))
@@ -282,7 +286,7 @@ def ellipse_spheroid_points(
 
     Example
     -------
-    >>> lst = generate_ellipse_points(30, 40, 5, 5, n_points=5)
+    >>> lst = ellipse_spheroid_points(30, 40, 5, 5, n_points=5)
     >>> lst
     array([[30.00004966, 40.        ,  0.        ],
            [30.00001535, 39.99994547,  0.        ],
@@ -291,12 +295,8 @@ def ellipse_spheroid_points(
            [30.00001535, 40.00005453,  0.        ],
            [30.00004966, 40.        ,  0.        ]])
     """
-    # earth equatorial radius in meters
-    earth_equatorial_radius = 6378137.0
-
     # measure the topocentric measures of lat and lon at the placemark
-    meters_per_deg_lat = 2.0 * np.pi * earth_equatorial_radius / 360.0
-    meters_per_deg_lon = meters_per_deg_lat * np.cos(np.radians(lat))
+    meters_per_deg_lon = METERS_PER_DEG_LAT * np.cos(np.radians(lat))
 
     # the tilt angle is in degrees, clockwise-positive. Convert to cartesian.
     theta = np.radians(90 - tilt)
@@ -335,7 +335,7 @@ def ellipse_spheroid_points(
 
     # generate a 2x2 matrix that scales from meters to deg lat and lon
     latlon_scale = np.array(
-        ((1.0 / meters_per_deg_lon, 0), (0, 1.0 / meters_per_deg_lat))
+        ((1.0 / meters_per_deg_lon, 0), (0, 1.0 / METERS_PER_DEG_LAT))
     )
 
     # build an aggregate transformation
