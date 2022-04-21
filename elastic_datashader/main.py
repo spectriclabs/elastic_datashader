@@ -1,5 +1,8 @@
+from asyncio import create_task
+
 from fastapi import FastAPI
 
+from .cache import background_cache_cleanup
 from .config import config
 from .elastic import verify_datashader_indices
 from .drawing import initialize_custom_color_maps
@@ -21,3 +24,7 @@ app.include_router(index.router)
 app.include_router(indices.router)
 app.include_router(legend.router)
 app.include_router(tms.router)
+
+@app.on_event("startup")
+async def app_startup():
+    create_task(background_cache_cleanup())

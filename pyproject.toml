@@ -64,7 +64,7 @@ line-length = 150
 [tool.tox]
 legacy_tox_ini = """
 [tox]
-envlist = py38
+envlist = py39
 isolated_build = true
 recreate = true
 

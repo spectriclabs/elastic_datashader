@@ -11,6 +11,7 @@ import yaml
 @dataclass(frozen=True)
 class Config:
     allowlist_headers: Optional[str]
+    cache_cleanup_interval: timedelta
     cache_path: Path
     cache_timeout: timedelta
     csrf_secret_key: str
@@ -78,6 +79,7 @@ def check_config(c: Config) -> None:
 def config_from_env(env) -> Config:
     return Config(
         allowlist_headers=env.get("DATASHADER_ALLOWLIST_HEADERS", None),
+        cache_cleanup_interval=timedelta(seconds=int(env.get("DATASHADER_CACHE_CLEANUP_INTERVAL", 5*60))),
         cache_path=Path(env.get("DATASHADER_CACHE_DIRECTORY", "tms-cache")),
         cache_timeout=timedelta(seconds=int(env.get("DATASHADER_CACHE_TIMEOUT", 60*60))),
         csrf_secret_key=env.get("DATASHADER_CSRF_SECRET_KEY", "CSRFProtectionKey"),

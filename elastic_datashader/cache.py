@@ -1,10 +1,11 @@
+from asyncio import sleep
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from os import scandir
 from pathlib import Path
 from shutil import rmtree
 from time import time
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from humanize import naturalsize
 
@@ -160,6 +161,23 @@ def age_off_cache(cache_path: Path, idx_name: str, max_age: timedelta) -> None:
             logger.info("Aging off %s at %d sec old", file_path, file_age.total_seconds())
             # set missing_ok=True in case another process deleted the same file
             file_path.unlink(missing_ok=True)
+
+def get_idx_names(cache_path: Path) -> Iterable[str]:
+    for path in cache_path.glob("*"):
+        if path.is_dir():
+            yield path.name
+
+async def background_cache_cleanup():
+    while True:
+        logger.info("Starting background cache cleanup")
+        cache_cleanup_start = time()
+
+        for idx_name in get_idx_names(config.cache_path):
+            age_off_cache(config.cache_path, idx_name, config.cache_timeout)
+
+        cache_cleanup_end = time()
+        logger.info("Finished background cache cleanup in %ss", cache_cleanup_end-cache_cleanup_start)
+        await sleep(config.cache_cleanup_interval.total_seconds())
 
 def build_layer_info(cache_path: Path) -> Dict[str, OrderedDict]:
     """Build up dictionary of layer info
