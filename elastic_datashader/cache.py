@@ -169,15 +169,20 @@ def get_idx_names(cache_path: Path) -> Iterable[str]:
 
 async def background_cache_cleanup():
     while True:
-        logger.info("Starting background cache cleanup")
-        cache_cleanup_start = time()
+        try:
+            logger.info("Starting background cache cleanup")
+            cache_cleanup_start = time()
 
-        for idx_name in get_idx_names(config.cache_path):
-            age_off_cache(config.cache_path, idx_name, config.cache_timeout)
+            for idx_name in get_idx_names(config.cache_path):
+                age_off_cache(config.cache_path, idx_name, config.cache_timeout)
 
-        cache_cleanup_end = time()
-        logger.info("Finished background cache cleanup in %ss", cache_cleanup_end-cache_cleanup_start)
-        await sleep(config.cache_cleanup_interval.total_seconds())
+            cache_cleanup_end = time()
+            logger.info("Finished background cache cleanup in %ss", cache_cleanup_end-cache_cleanup_start)
+            await sleep(config.cache_cleanup_interval.total_seconds())
+
+        except Exception as ex:  # pylint: disable=W0703
+            # ensure this loop never dies
+            logger.error(str(ex))
 
 def build_layer_info(cache_path: Path) -> Dict[str, OrderedDict]:
     """Build up dictionary of layer info
