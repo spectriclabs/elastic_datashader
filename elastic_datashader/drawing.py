@@ -1,17 +1,47 @@
-#!/usr/bin/env python3
-import io
 from functools import lru_cache
 from hashlib import md5
 from typing import Dict, Iterable, Tuple
 
-import numpy as np
+import io
+
 from PIL import Image, ImageDraw
 from colorcet import palette
 from numba import njit
-import colorcet as cc
 
-def get_unique_color_cnt(cmap):
-    return len(palette[cmap])
+import colorcet as cc
+import numpy as np
+
+from .constants import METERS_PER_DEG_LAT
+
+def force_within_range(val: int, lower_inclusive: int, upper_exclusive: int) -> int:
+    return max(lower_inclusive, min(val, upper_exclusive-1))
+
+def get_categorical_color_index(category: str, num_colors: int) -> int:
+    """
+    If the field doesn't have a min/max range we simply take the hash
+    and then map it to a color-index.  This ensures colors are consistent
+    across independent tile generations, but can result in situations where
+    colors are reused before exhausting the color palette.
+    """
+    category_hash = md5(bytes(category, encoding="utf-8")).hexdigest()
+    number = int(category_hash[0:2], 16)
+    return number % num_colors
+
+def get_ramp_color_index(category: str, field_min: float, field_max: float, num_colors: int) -> int:
+    """
+    For ramp cmaps, we map the field range across the palette
+    """
+    number_str = category.replace(",", "")  # remove commas from large number
+    lower_val = float(number_str)
+    color_index = int(((lower_val - field_min) / (field_max - field_min)) * num_colors)
+    return force_within_range(color_index, 0, num_colors)
+
+def get_histogram_color_index(category: str, field_min: float, field_max: float, num_colors: int):
+    number_str, _ = category.rsplit("-", 1)
+    number_str = number_str.replace(",", "")  # remove comma from large number
+    lower_val = float(number_str)
+    color_index = int(((lower_val - field_min) / (field_max - field_min)) * num_colors)
+    return force_within_range(color_index, 0, num_colors)
 
 def create_color_key(
     categories: Iterable,
@@ -26,6 +56,9 @@ def create_color_key(
     :param categories: Categories to encode as different colors
     :param cmap: Colorcet color-map name (defaults to "glasbey_category10")
     :param highlight: Only colorize this category and make all others a default grey color
+    :param field_min: The minimum numerical value for that field
+    :param field_max: The maximum numerical value for that field
+    :param histogram_interval:
     :return: Dictionary containing each category and their respective color
 
     :Example:
@@ -33,54 +66,52 @@ def create_color_key(
     {'foo': '#9a0390', 'bar': '#8a9500', 'baz': '#870062'}
     """
     mapping = {}
-    for k in categories:
-        if (k == "Other"):
-            mapping[k] = '#AAAAAA' # Light Grey
-        elif (k == "N/A"):
-            mapping[k] = '#666666' # Dark Grey
+
+    for category in categories:
+        if category == "Other":
+            mapping[category] = '#AAAAAA' # Light Grey
+        elif category == "N/A":
+            mapping[category] = '#666666' # Dark Grey
         else:
-            ii = None
-            if (field_min is None) or (field_max is None):
-                # If the field doesn't have a min/max range we simply take the hash
-                # and then map it to a color-index.  This ensures colors are consistent
-                # across independent tile generations, but can result in situations where
-                # colors are reused before exhausting the color palette.
-                ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+            color_index = None
+
+            if field_min is None or field_max is None:
+                color_index = get_categorical_color_index(category, len(palette[cmap]))
             else:
-                if float(field_max - field_min) <= 0.0:
+                if field_max - field_min <= 0.0:
                     # If there is a range but it's zero or less, simply map to the last color
-                    ii = len(palette[cmap])-1
+                    color_index = len(palette[cmap]) - 1
                 else:
                     try:
-                        if (histogram_interval is None):
+                        if histogram_interval is None:
                             if is_categorical_cmap(cmap):
                                 # for categorical color maps, we want nearby colors to not map to the same index
-                                ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+                                color_index = get_categorical_color_index(category, len(palette[cmap]))
                             else:
                                 # For ramp cmaps, we map the field range across the palette
-                                ii = int(((float(k.replace(",", "")) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
+                                color_index = get_ramp_color_index(category, field_min, field_max, len(palette[cmap]))
                         else:
-                            # If there is a histogram internal, map the color based off the histogram bin
-                            lower_val = float(k.rsplit("-", 1)[0].replace(",", ""))
-                            ii = int(((float(lower_val) - field_min) / float(field_max - field_min)) * len(palette[cmap]))
-                        ii = max(0, min(ii, len(palette[cmap])-1))
+                            # If there is a histogram interval, map the color based off the histogram bin
+                            color_index = get_histogram_color_index(category, field_min, field_max, len(palette[cmap]))
+
                     except ValueError:
-                        ii = int(md5(k.encode("utf-8")).hexdigest()[0:2], 16) % len(palette[cmap])
+                        color_index = get_categorical_color_index(category, len(palette[cmap]))
 
             if highlight:
-                if k == highlight:
-                    mapping[k] = palette[cmap][ii]
+                if category == highlight:
+                    mapping[category] = palette[cmap][color_index]
                 else:
-                    mapping[k] = '#D3D3D3' # Light Grey
-            elif ii is not None:
-                mapping[k] = palette[cmap][ii]
+                    mapping[category] = '#D3D3D3' # Light Grey
+            elif color_index is not None:
+                mapping[category] = palette[cmap][color_index]
             else:
-                mapping[k] = '#D3D3D3' # Light Grey
+                mapping[category] = '#D3D3D3' # Light Grey
+
     return mapping
 
 
 @lru_cache(10)
-def gen_overlay_img(width: int, height: int, thickness: int, color: tuple = (255, 0, 0, 64)) -> Image:
+def gen_overlay_img(width: int, height: int, thickness: int, color: Tuple[int, int, int, int]=(255, 0, 0, 64)) -> Image:
     """Create an overlay hash image, using an lru_cache since the same
     overlay can be generated once and then reused indefinitely
 
@@ -115,7 +146,7 @@ def gen_debug_img(width: int, height: int, text: str, thickness: int = 2) -> Ima
     return overlay
 
 
-def gen_overlay(img, thickness: int = 8, color: tuple = (255, 0, 0, 64)) -> bytes:
+def gen_overlay(img, thickness: int = 8, color: Tuple[int, int, int, int]=(255, 0, 0, 64)) -> bytes:
     """Generate and overlay to image
 
     :param img: Image over which to add an overlay
@@ -146,27 +177,6 @@ def gen_debug_overlay(img: bytes, text: str) -> bytes:
 
 
 @lru_cache(10)
-def gen_error(width: int, height: int, thickness: int = 8, color: tuple = (255, 0, 0, 255)) -> bytes:
-    """Generate error image
-
-    :param width: Width of image
-    :param height: Height of image
-    :param thickness: Thickness of border
-    :return: Error image
-    """
-    overlay = Image.new("RGBA", (width, height))
-    draw = ImageDraw.Draw(overlay)
-
-    # Draw a red border
-    draw.line([(0, 0), (width, height)], color, thickness)
-    draw.line([(width, 0), (0, height)], color, thickness)
-
-    with io.BytesIO() as output:
-        overlay.save(output, format="PNG")
-        return output.getvalue()
-
-
-@lru_cache(10)
 def gen_empty(width: int, height: int) -> bytes:
     """Generate empty image
 
@@ -180,8 +190,32 @@ def gen_empty(width: int, height: int) -> bytes:
         return output.getvalue()
 
 
+@lru_cache(10)
+def generate_x_tile(width: int, height: int, thickness: int=8, color: Tuple[int, int, int, int]=(255, 0, 0, 255)) -> bytes:
+    """
+    Generate a tile with an X drawn over it.
+    This can be used to indicate an error (red),
+    or temporarily unavailable (gray X).
+
+    :param width: Width of image
+    :param height: Height of image
+    :param thickness: Thickness of the stroke to draw the X
+    :return: image
+    """
+    overlay = Image.new("RGBA", (width, height))
+    draw = ImageDraw.Draw(overlay)
+
+    # Draw a red X
+    draw.line([(0, 0), (width, height)], color, thickness)
+    draw.line([(width, 0), (0, height)], color, thickness)
+
+    with io.BytesIO() as output:
+        overlay.save(output, format="PNG")
+        return output.getvalue()
+
+
 @njit
-def ellipse(
+def ellipse_planar_points(
     radm: float,
     radn: float,
     tilt: float,
@@ -207,7 +241,7 @@ def ellipse(
     return yarr, xarr
 
 @njit(fastmath=True)
-def generate_ellipse_points(
+def ellipse_spheroid_points(
     lat: float,
     lon: float,
     smaj: float,
@@ -252,7 +286,7 @@ def generate_ellipse_points(
 
     Example
     -------
-    >>> lst = generate_ellipse_points(30, 40, 5, 5, n_points=5)
+    >>> lst = ellipse_spheroid_points(30, 40, 5, 5, n_points=5)
     >>> lst
     array([[30.00004966, 40.        ,  0.        ],
            [30.00001535, 39.99994547,  0.        ],
@@ -261,12 +295,8 @@ def generate_ellipse_points(
            [30.00001535, 40.00005453,  0.        ],
            [30.00004966, 40.        ,  0.        ]])
     """
-    # earth equatorial radius in meters
-    earth_equatorial_radius = 6378137.0
-
     # measure the topocentric measures of lat and lon at the placemark
-    meters_per_deg_lat = 2.0 * np.pi * earth_equatorial_radius / 360.0
-    meters_per_deg_lon = meters_per_deg_lat * np.cos(np.radians(lat))
+    meters_per_deg_lon = METERS_PER_DEG_LAT * np.cos(np.radians(lat))
 
     # the tilt angle is in degrees, clockwise-positive. Convert to cartesian.
     theta = np.radians(90 - tilt)
@@ -305,7 +335,7 @@ def generate_ellipse_points(
 
     # generate a 2x2 matrix that scales from meters to deg lat and lon
     latlon_scale = np.array(
-        ((1.0 / meters_per_deg_lon, 0), (0, 1.0 / meters_per_deg_lat))
+        ((1.0 / meters_per_deg_lon, 0), (0, 1.0 / METERS_PER_DEG_LAT))
     )
 
     # build an aggregate transformation
@@ -347,5 +377,6 @@ CATEGORICAL_CMAPS = set((
   'category10',
   'kibana5'
 ))
+
 def is_categorical_cmap(cmap):
-    return ( cmap in CATEGORICAL_CMAPS )
+    return cmap in CATEGORICAL_CMAPS

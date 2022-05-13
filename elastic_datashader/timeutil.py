@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
-import math
 from datetime import datetime
 from typing import Tuple
 
+import math
+
 import arrow
 import datemath
-
 
 def quantize_time_range(
     start_time: datetime,
@@ -39,28 +38,29 @@ def quantize_time_range(
     )
     if truncated_start_time == truncated_stop_time:
         return start_time, stop_time
-    else:
-        return truncated_start_time, truncated_stop_time
+
+    return truncated_start_time, truncated_stop_time
 
 
-def convert_kibana_time(time_string, current_time, round_direction='down'):
-    """Convert Kibana/ES date math into Python datetimes
+def convert_kibana_time(time_string: str, current_time: datetime, round_direction='down'):
+    """
+    Convert Kibana/ES date math into Python datetimes
 
     :param time_string: Time-string following
     :param current_time: Reference point for date math
+    :param round_direction: Whether to round up or down (default: "down")
     :return: Datetime object based on ``time_string`` math
 
     :Examples:
     >>> now = datetime(2020, 5, 12, 15, 0, 0)
     >>> convert_kibana_time("now-3m", now)
-    datetime.datetime(2020, 5, 12, 14, 57, tzinfo=tzutc())
+    datetime.datetime(2020, 5, 12, 14, 57, tzinfo=timezone.utc)
     """
-    if isinstance(current_time, datetime):
-        current_time = arrow.get(current_time)
+    current_time = arrow.get(current_time)
     result = arrow.get(datemath.datemath(time_string, now=current_time))
-    
-    if isinstance(time_string, str) and round_direction=='up':
-        #Kibana treats time rounding different than elasticsearch
+
+    if round_direction == 'up':
+        # Kibana treats time rounding different than elasticsearch
         if time_string.endswith("/s"):
             result = result.shift(seconds=1, microseconds=-1)
         elif time_string.endswith("/m"):
@@ -75,6 +75,7 @@ def convert_kibana_time(time_string, current_time, round_direction='down'):
             result = result.shift(months=1, microseconds=-1)
         elif time_string.endswith("/y"):
             result = result.shift(years=1, microseconds=-1)
+
     return result.datetime
 
 
@@ -95,11 +96,14 @@ def pretty_time_delta(seconds: int) -> str:
     days, seconds = divmod(seconds, 86400)
     hours, seconds = divmod(seconds, 3600)
     minutes, seconds = divmod(seconds, 60)
+
     if days > 0:
-        return "%s%dd%dh%dm%ds" % (sign_string, days, hours, minutes, seconds)
-    elif hours > 0:
-        return "%s%dh%dm%ds" % (sign_string, hours, minutes, seconds)
-    elif minutes > 0:
-        return "%s%dm%ds" % (sign_string, minutes, seconds)
-    else:
-        return "%s%ds" % (sign_string, seconds)
+        return f"{sign_string}{days}d{hours}h{minutes}m{seconds}s"
+
+    if hours > 0:
+        return f"{sign_string}{hours}h{minutes}m{seconds}s"
+
+    if minutes > 0:
+        return f"{sign_string}{minutes}m{seconds}s"
+
+    return f"{sign_string}{seconds}s"

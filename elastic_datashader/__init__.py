@@ -1,1 +1,1 @@
-from .cli import create_app
+from .main import app

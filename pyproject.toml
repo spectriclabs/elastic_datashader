@@ -1,6 +1,10 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
 [tool.poetry]
 name = "elastic_datashader"
-version = "0.0.5"
+version = "0.0.6"
 description = "Elastic-Datashader TMS Server"
 authors = ["Spectric Labs <foss@spectric.com>"]
 license = "Apache-2.0"
@@ -17,26 +21,24 @@ elastic_datashader = "elastic_datashader.cli:main"
 
 [tool.poetry.dependencies]
 python = ">=3.8,<4"
-Flask = ">=2"
 elasticsearch = ">=7.16"
 elasticsearch-dsl = ">=7.4"
-pyOpenSSL = "*"
 datashader = ">=0.11.0"
 pandas = "*"
 colorcet = "*"
 mercantile = ">=1.2"
 pypng = "*"
-Flask-APScheduler = "*"
 Pillow = "*"
 pynumeral = "*"
 arrow = "*"
 python-datemath = "*"
 numba = "*"
-numpy = ">=1.19"
-urllib3 = "*"
+numpy = ">=1.19,<=1.21"
 PyYAML = "*"
 humanize = "*"
-gunicorn = {version = "*", optional = true}
+uvicorn = {extras = ["standard"], version = "*", optional = true}
+fastapi = "^0.73.0"
+georgio = "^2022.84.833"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
@@ -50,29 +52,42 @@ testpaths = ["tests"]
 
 [tool.poetry.extras]
 apm = ["elasticapm"]
-localwebserver = ["gunicorn"]
+localwebserver = ["uvicorn"]
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.pylint.'MESSAGES CONTROL']
+max-line-length = 150
+disable = "too-many-nested-blocks,too-many-branches,too-many-statements,R0801,R0902,R0903,R0911,R0913,R0914,C0103,C0114,C0115,C0116,C0123,C0301,C0302,fixme"
+
+[tool.black]
+line-length = 150
 
 [tool.tox]
 legacy_tox_ini = """
 [tox]
-envlist = py38
+envlist = py39
 isolated_build = true
+recreate = true
 
 [gh-actions]
 python =
-	3.8: py38
 	3.9: py39
 
 [testenv]
+setenv =
+	DATASHADER_VERIFY_INDICES = false
+
 deps =
+	geopy
 	pylint
 	pytest
+	pytest-cov
+	requests
+
+whitelist_externals =
+	mkdir
 
 commands =
-	pylint --disable=R,C,fixme elastic_datashader
-	pytest
+	pylint elastic_datashader
+	mkdir -p {toxinidir}/tms-cache
+	pytest --cov-report term-missing --cov=elastic_datashader
 """

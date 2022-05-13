@@ -3,17 +3,27 @@ from typing import Any, Dict, List, Optional
 
 import copy
 import struct
-import pynumeral
 import time
 
 from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import AttrDict, Search
-from flask import current_app, request
 
-import elastic_datashader.helpers.mercantile_util as mu
+import pynumeral
 import yaml
 
+from . import mercantile_util as mu
+from .config import config
+from .logger import logger
+
+def make_label(raw, histogram_interval, category_format) -> str:
+    # Use pynumeral if format is provided
+    if category_format:
+        raw_format = pynumeral.format(raw, category_format)
+        raw_hist_format = pynumeral.format(raw + histogram_interval, category_format)
+        return f"{raw_format}-{raw_hist_format}"
+
+    return f"{raw}-{histogram_interval}"
 
 def to_32bit_float(number):
     return struct.unpack("f", struct.pack("f", float(number)))[0]
@@ -36,13 +46,13 @@ def scan(search, use_scroll=False, size=10000):
                 _search = None
 
 
-def verify_datashader_indices(elasticsearch_uri: str):
+def verify_datashader_indices(elasticsearch_hosts: str):
     """Verify the ES indices exist
 
-    :param elasticsearch_uri:
+    :param elasticsearch_hosts:
     """
     es = Elasticsearch(
-        elasticsearch_uri.split(","),
+        elasticsearch_hosts.split(","),
         verify_certs=False,
         timeout=120
     )
@@ -137,13 +147,14 @@ def verify_datashader_indices(elasticsearch_uri: str):
     )
 
 def get_search_base(
-    elastic_uri: str,
+    elastic_hosts: str,
+    headers: Optional[str],
     params: Dict[str, Any],
     idx: int,
 ) -> Search:
     """
 
-    :param elastic_uri:
+    :param elastic_hosts:
     :param params:
     :param idx:
     :param header_file:
@@ -159,10 +170,10 @@ def get_search_base(
 
     # Connect to Elasticsearch
     es = Elasticsearch(
-        elastic_uri.split(","),
+        elastic_hosts.split(","),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(request.headers, user),
+        headers=get_es_headers(headers, user),
     )
 
     # Create base search
@@ -214,8 +225,22 @@ def get_search_base(
 
     return base_s
 
+def handle_range_or_exists_filters(filter_input: Dict[Any, Any]) -> Dict[str, Any]:
+    """
+    `range` and `exists` filters can appear either directly under
+    `filter[]` or under `filter[].query` depending on the version
+    of Kibana, the former being the old way, so they need special
+    handling for backward compatibility.
+    """
+    filter_type = filter_input.get("meta").get("type")  # "range" or "exists"
 
-def build_dsl_filter(filter_inputs):
+    # Handle old query structure for backward compatibility
+    if filter_input.get(filter_type) is not None:
+        return {filter_type: filter_input.get(filter_type)}
+
+    return filter_input.get("query")
+
+def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
     """
 
     :param filter_inputs:
@@ -226,18 +251,19 @@ def build_dsl_filter(filter_inputs):
     filter_dict = {"filter": [{"match_all": {}}], "must_not": []}
 
     for f in filter_inputs:
-        current_app.logger.info("Filter %s\n %s", f.get("meta").get("type"), f)
+        logger.info("Filter %s\n %s", f.get("meta").get("type"), f)
         # Skip disabled filters
         if f.get("meta").get("disabled") in ("true", True):
             continue
 
         is_spatial_filter = (
-            f.get("meta").get("type") == "spatial_filter" or 
-            f.get("geo_polygon") or 
-            f.get("geo_bounding_box") or 
+            f.get("meta").get("type") == "spatial_filter" or
+            f.get("geo_polygon") or
+            f.get("geo_bounding_box") or
             f.get("geo_shape") or
             f.get("geo_distance")
         )
+
         # Handle spatial filters
         if is_spatial_filter:
             if f.get("geo_polygon"):
@@ -264,24 +290,20 @@ def build_dsl_filter(filter_inputs):
                     filter_dict["must_not"].append(geo_bbox_dict)
                 else:
                     filter_dict["filter"].append(geo_bbox_dict)
+
         # Handle phrase matching
         elif f.get("meta").get("type") in ("phrase", "phrases", "bool"):
             if f.get("meta").get("negate"):
                 filter_dict["must_not"].append(f.get("query"))
             else:
                 filter_dict["filter"].append(f.get("query"))
-        elif f.get("meta").get("type") == "range":
-            range_dict = {"range": f.get("range")}
+
+        elif f.get("meta").get("type") in ("range", "exists"):
             if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(range_dict)
+                filter_dict["must_not"].append(handle_range_or_exists_filters(f))
             else:
-                filter_dict["filter"].append(range_dict)
-        elif f.get("meta").get("type") == "exists":
-            exists_dict = {"exists": f.get("exists")}
-            if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(exists_dict)
-            else:
-                filter_dict["filter"].append(exists_dict)
+                filter_dict["filter"].append(handle_range_or_exists_filters(f))
+
         elif f.get("meta", {}).get("type") == "custom" and f.get("meta", {}).get("key") is not None:
             filter_key = f.get("meta", {}).get("key")
             if f.get("meta", {}).get("negate"):
@@ -294,9 +316,11 @@ def build_dsl_filter(filter_inputs):
                     filter_dict["filter"].append( { "bool": f.get(filter_key).get("bool") } )
                 else:
                     filter_dict["filter"].append( { filter_key: f.get(filter_key) } )
+
         else:
-            raise ValueError("unsupported filter type %s" % f.get("meta").get("type"))
-    current_app.logger.info("Filter output %s", filter_dict)
+            raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
+
+    logger.info("Filter output %s", filter_dict)
     return filter_dict
 
 def load_datashader_headers(header_file_path_str: Optional[str]) -> Dict[Any, Any]:
@@ -327,12 +351,13 @@ def get_es_headers(request_headers=None, user=None):
     """
 
     # Copy so we don't mutate the headers in the config
-    result = copy.deepcopy(current_app.config.get("DATASHADER_HEADERS"))  
+    result = copy.deepcopy(config.datashader_headers)
 
     # Figure out what headers are allowed to pass-through
-    whitelist_headers = current_app.config.get("WHITELIST_HEADERS")
-    if whitelist_headers and request_headers:
-        for hh in whitelist_headers.split(","):
+    allowlist_headers = config.allowlist_headers
+
+    if allowlist_headers and request_headers:
+        for hh in allowlist_headers.split(","):
             if hh in request_headers:
                 result[hh] = request_headers[hh]
 
@@ -371,7 +396,7 @@ def convert(response, category_formatter=str):
             yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
 
 def convert_composite(response, categorical, filter_buckets, histogram_interval, category_type, category_format):
-    if categorical and filter_buckets == False:
+    if categorical and filter_buckets is False:
         # Convert a regular terms aggregation
         for bucket in response:
             for category in bucket.categories:
@@ -381,20 +406,13 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                 raw = category.key
                 # Bin the data
                 if histogram_interval is not None:
-                    # Format with pynumeral if provided
-                    if category_format:
-                        label = "%s-%s" % (
-                            pynumeral.format(float(raw), category_format),
-                            pynumeral.format(float(raw) + histogram_interval, category_format),
-                        )
-                    else:
-                        label = "%s-%s" % (float(raw), float(raw) + histogram_interval)
+                    label = make_label(float(raw), histogram_interval, category_format)
                 else:
                     if category_type == "number":
                         try:
                             label = pynumeral.format(to_32bit_float(raw), category_format)
                         except ValueError:
-                            label = str(raw)                        
+                            label = str(raw)
                     else:
                         label = str(raw)
                 yield {
@@ -405,7 +423,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                     "c": category.doc_count,
                     "t": label,
                 }
-    elif categorical and filter_buckets == True:
+    elif categorical and filter_buckets is True:
         # Convert a filter bucket aggregation
         for bucket in response:
             for key in bucket.categories.buckets:
@@ -418,7 +436,7 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
                         try:
                             label = pynumeral.format(to_32bit_float(key), category_format)
                         except ValueError:
-                            label = str(key)                        
+                            label = str(key)
                     else:
                         label = str(key)
 
@@ -452,44 +470,37 @@ def split_fieldname_to_list(field: str) -> List[str]:
     :param field: Field name to split
     :return: List containing field name
     """
-    field = field.split(".")
+    field_list = field.split(".")
+
     # .raw and .keyword are common conventions, but the
     # only way to actually do this right is to lookup the
     # mapping
-    if field[-1] in ("raw", "keyword"):
-        field.pop()
-    return field
+    if field_list[-1] in ("raw", "keyword"):
+        field_list = field_list[:-1]
 
+    return field_list
 
-def get_nested_field_from_hit(hit, field, default=None):
-    """
+def get_nested_field_from_hit(hit, field_parts: List[str], default=None):
+    if len(field_parts) == 1:
+        return getattr(hit, field_parts[0], default)
 
-    :param hit:
-    :param field:
-    :param default:
-    :return:
-    """
-    # make it safe to call with a string or a list of strings
-    if isinstance(field, str):
-        field = [field]
-
-    if len(field) == 0:
-        raise ValueError("field must be provided")
-    elif len(field) == 1:
-        return getattr(hit, field[0], default)
-    elif len(field) > 1:
+    if len(field_parts) > 1:
         # iterate being careful if the field and the hit are not consistent
         v = hit.to_dict()
-        f = ".".join(field)
+        f = ".".join(field_parts)
+
         if f in v:
             return v.get(f)
-        else:
-            for f in field:
-                if isinstance(v, dict) or isinstance(v, AttrDict):
-                    v = v.get(f, None)
-                else:
-                    return default
+
+        for f in field_parts:
+            if isinstance(v, (AttrDict, dict)):
+                v = v.get(f, None)
+            else:
+                return default
+
         return v
+
+    raise ValueError("field must be provided")
 
 def chunk_iter(iterable, chunk_size):
     chunks = [ None ] * chunk_size
@@ -500,12 +511,12 @@ def chunk_iter(iterable, chunk_size):
             i = -1
             yield (True, chunks)
         chunks[idx] = v
-    
+
     if i >= 0:
         last_written_idx =( i % chunk_size)
         yield (False, chunks[0:last_written_idx+1])
 
-class ScanAggs(object):
+class ScanAggs:
     def __init__(self, search, source_aggs, inner_aggs=None, size=10, timeout=None):
         self.search = search
         self.source_aggs = source_aggs
@@ -533,9 +544,11 @@ class ScanAggs(object):
         def run_search(**kwargs):
             _timeout_at = kwargs.pop("timeout_at", None)
             s = self.search[:0]
+
             if _timeout_at:
                 _time_remaining = _timeout_at - time.time()
-                s = s.params(timeout="%ds" % _time_remaining)
+                s = s.params(timeout=f"{_time_remaining}s")
+
             s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
 
             for agg_name, agg in self.inner_aggs.items():
@@ -554,7 +567,7 @@ class ScanAggs(object):
         self.total_skipped += response._shards.skipped  # pylint: disable=W0212
         self.total_successful += response._shards.successful  # pylint: disable=W0212
         self.total_failed += response._shards.failed  # pylint: disable=W0212
-        
+
         while response.aggregations.comp.buckets:
             for b in response.aggregations.comp.buckets:
                 yield b
@@ -562,7 +575,7 @@ class ScanAggs(object):
                 after = response.aggregations.comp.after_key
             else:
                 after = response.aggregations.comp.buckets[-1].key
-            
+
             if timeout_at and time.time() > timeout_at:
                 self.aborted = True
                 break

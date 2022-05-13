@@ -1,14 +1,14 @@
-from datetime import datetime
-from dateutil.tz import tzutc
+from datetime import datetime, timezone
 import pytest
-from elastic_datashader.helpers import timeutil
+
+from elastic_datashader import timeutil
 
 
 @pytest.mark.parametrize(
     "start,stop",
     (
-        (None, datetime(2020, 5, 1, 0, 0, 5)),
-        (datetime(2020, 5, 1, 0, 0, 5), None),
+        (None, datetime(2020, 5, 1, 0, 0, 5, tzinfo=timezone.utc)),
+        (datetime(2020, 5, 1, 0, 0, 5, tzinfo=timezone.utc), None),
         (None, None),
     )
 )
@@ -21,19 +21,19 @@ def test_quantize_time_range_no_stop(start, stop):
     "start,stop,expected",
     (
         (
-            datetime(2020, 5, 1, 0, 0, 5),
-            datetime(2020, 5, 11, 12, 0, 1),
-            (datetime(2020, 5, 1, 0, 0), datetime(2020, 5, 11, 12, 0)),
+            datetime(2020, 5, 1, 0, 0, 5, tzinfo=timezone.utc),
+            datetime(2020, 5, 11, 12, 0, 1, tzinfo=timezone.utc),
+            (datetime(2020, 5, 1, 0, 0, tzinfo=timezone.utc), datetime(2020, 5, 11, 12, 0, tzinfo=timezone.utc)),
         ),
         (
-            datetime(2020, 3, 1, 0, 0, 5),
-            datetime(2020, 5, 11, 12, 0, 1),
-            (datetime(2020, 3, 1, 0, 0), datetime(2020, 5, 11, 12, 0)),
+            datetime(2020, 3, 1, 0, 0, 5, tzinfo=timezone.utc),
+            datetime(2020, 5, 11, 12, 0, 1, tzinfo=timezone.utc),
+            (datetime(2020, 3, 1, 0, 0, tzinfo=timezone.utc), datetime(2020, 5, 11, 12, 0, tzinfo=timezone.utc)),
         ),
         (
-            datetime(2020, 5, 11, 12, 0, 0),
-            datetime(2020, 5, 11, 12, 0, 3),
-            (datetime(2020, 5, 11, 12, 0), datetime(2020, 5, 11, 12, 0, 3)),
+            datetime(2020, 5, 11, 12, 0, 0, tzinfo=timezone.utc),
+            datetime(2020, 5, 11, 12, 0, 3, tzinfo=timezone.utc),
+            (datetime(2020, 5, 11, 12, 0, tzinfo=timezone.utc), datetime(2020, 5, 11, 12, 0, 3, tzinfo=timezone.utc)),
         ),
     ),
 )
@@ -44,30 +44,71 @@ def test_quantize_time_range(start, stop, expected):
 @pytest.mark.parametrize(
     "time_string,current_time,round_direction,expected",
     (
-        ("now-3d", datetime(2020, 5, 11, 12), "down", datetime(2020, 5, 8, 12, tzinfo=tzutc())),
         (
             "now-3d",
-            datetime(2020, 5, 11, 12),
+            datetime(2020, 5, 11, 12, tzinfo=timezone.utc),
             "down",
-            datetime(2020, 5, 8, 12, tzinfo=tzutc())
+            datetime(2020, 5, 8, 12, tzinfo=timezone.utc)
+        ),
+        (
+            "now-3d",
+            datetime(2020, 5, 11, 12, tzinfo=timezone.utc),
+            "down",
+            datetime(2020, 5, 8, 12, tzinfo=timezone.utc)
         ),
         (
             "now+3d",
-            datetime(2020, 5, 11, 12),            
+            datetime(2020, 5, 11, 12, tzinfo=timezone.utc),
             "down",
-            datetime(2020, 5, 14, 12, tzinfo=tzutc())
+            datetime(2020, 5, 14, 12, tzinfo=timezone.utc)
         ),
         (
             "now-1d/d",
-            datetime(2020, 5, 11, 12, 4, 20, 0),
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
             "down",
-            datetime(2020, 5, 10, tzinfo=tzutc())
+            datetime(2020, 5, 10, tzinfo=timezone.utc)
         ),
         (
-            "now-1d/d",
-            datetime(2020, 5, 11, 12, 4, 20, 0),
+            "now-1s/s",
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
             "up",
-            datetime(2020, 5, 10, 23, 59, 59, 999999, tzinfo=tzutc())
+            datetime(2020, 5, 11, 12, 4, 19, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1m/m",
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 11, 12, 3, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1h/h",
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 11, 11, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1d/d",
+            datetime(2020, 5, 11, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 10, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1w/w",
+            datetime(2020, 5, 15, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 5, 10, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1M/M",
+            datetime(2020, 5, 15, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2020, 4, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        ),
+        (
+            "now-1y/y",
+            datetime(2020, 5, 15, 12, 4, 20, 0, tzinfo=timezone.utc),
+            "up",
+            datetime(2019, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
         ),
     ),
 )

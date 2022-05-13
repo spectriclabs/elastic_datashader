@@ -1,19 +1,30 @@
-import numpy as np
-from PIL import Image
-import pytest
-from elastic_datashader.helpers import drawing
+from pathlib import Path
 
+from PIL import Image
+
+import numpy as np
+import pytest
+
+from elastic_datashader import drawing
 
 @pytest.mark.parametrize(
     "categories,expected",
     (
-        (("foo", "bar", "baz"), {"bar": "#8a9500", "baz": "#870062", "foo": "#9a0390"}),
+        (
+            ("foo", "bar", "baz", "Other", "N/A"),
+            {
+                "bar": "#8a9500",
+                "baz": "#870062",
+                "foo": "#9a0390",
+                "Other": "#AAAAAA",
+                "N/A": "#666666",
+            }
+        ),
         ([], {}),
     ),
 )
 def test_create_color_key(categories, expected):
     assert drawing.create_color_key(categories) == expected
-
 
 def test_gen_overlay_img():
     width = 256
@@ -23,7 +34,6 @@ def test_gen_overlay_img():
     img = drawing.gen_overlay_img(width, height, thickness)
 
     np.testing.assert_equal(np.array(expected), np.array(img))
-
 
 def test_gen_debug_img():
     width = 256
@@ -35,45 +45,36 @@ def test_gen_debug_img():
 
     np.testing.assert_equal(np.array(expected), np.array(img))
 
-
 def test_gen_overlay():
     img = drawing.gen_empty(256, 256)
-    with open("./tests/dat/gen_overlay.txt", "rb") as expected_file:
-        expected = expected_file.read()
+    expected = Path("./tests/dat/gen_overlay.txt").read_bytes()
     actual = drawing.gen_overlay(img)
     assert expected == actual
 
-
 def test_gen_debug_overlay():
     img = drawing.gen_empty(256, 256)
-    with open("./tests/dat/gen_debug_overlay.txt", "rb") as expected_file:
-        expected = expected_file.read()
+    expected = Path("./tests/dat/gen_debug_overlay.txt").read_bytes()
     actual = drawing.gen_debug_overlay(img, "hello, world!")
     assert expected == actual
 
-
-def test_gen_error():
-    with open("./tests/dat/gen_error.txt", "rb") as expected_file:
-        expected = expected_file.read()
-    actual = drawing.gen_error(256, 256, 5)
+def test_generate_x_tile():
+    expected = Path("./tests/dat/gen_error.txt").read_bytes()
+    actual = drawing.generate_x_tile(256, 256, 5)
     assert expected == actual
 
-
 def test_gen_empty():
-    with open("./tests/dat/gen_empty.txt", "rb") as expected_file:
-        expected = expected_file.read()
+    expected = Path("./tests/dat/gen_empty.txt").read_bytes()
     actual = drawing.gen_empty(256, 256)
     assert expected == actual
 
-
-def test_ellipse():
+def test_ellipse_planar_points():
     # Verify tilt of 0 means North
     radm = 100
     radn = 50
     tilt = 0
     xpos = 0
     ypos = 0
-    actual_y, actual_x = drawing.ellipse(radm, radn, tilt, xpos, ypos)
+    actual_y, actual_x = drawing.ellipse_planar_points(radm, radn, tilt, xpos, ypos)
     np.testing.assert_almost_equal(actual_y[0], 100)
     np.testing.assert_almost_equal(actual_y[4], 0)
     np.testing.assert_almost_equal(actual_y[8], -100)
@@ -90,7 +91,7 @@ def test_ellipse():
     tilt = 10
     xpos = 0
     ypos = 5
-    actual_y, actual_x = drawing.ellipse(radm, radn, tilt, xpos, ypos)
+    actual_y, actual_x = drawing.ellipse_planar_points(radm, radn, tilt, xpos, ypos)
     print(actual_y)
     print(actual_x)
     expected_x = np.array(

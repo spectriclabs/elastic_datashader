@@ -1,6 +1,6 @@
 import pytest
-from elastic_datashader.helpers import elastic
 
+from elastic_datashader import elastic
 
 def test_get_search_base():
     pass
@@ -17,7 +17,6 @@ def test_get_es_headers():
 def test_convert():
     pass
 
-
 @pytest.mark.parametrize(
     "field,expected",
     (
@@ -29,18 +28,30 @@ def test_convert():
 def test_split_fieldname_to_list(field, expected):
     assert expected == elastic.split_fieldname_to_list(field)
 
-
 def test_get_nested_field_from_hit():
     pass
+
+@pytest.mark.parametrize(
+    "filter_input,filter_type,expected",
+    (
+        ({"meta": {"type": "exists"}, "query": {"exists": {"field": "foo"}}}, "exists", {"exists": {"field": "foo"}}),
+        ({"meta": {"type": "range"}, "range": {"from": "foo", "to": "bar"}}, "range", {"range": {"from": "foo", "to": "bar"}}),
+    )
+)
+def test_handle_range_or_exists_filters(filter_input, filter_type, expected):
+    filter_output = elastic.handle_range_or_exists_filters(filter_input)
+    assert len(filter_output) == 1
+    assert filter_type in filter_output
+    assert type(filter_output[filter_type]) is dict
 
 def test_chunk_iter():
     for has_more, chunk in elastic.chunk_iter([], 1000):
         assert True == False
-    
+
     for has_more, chunk in elastic.chunk_iter(range(10), 1000):
         assert has_more ==  False
         assert len(chunk) == 10
-    
+
     for has_more, chunk in elastic.chunk_iter(range(1000), 1000):
         assert has_more ==  False
         assert len(chunk) == 1000
@@ -52,7 +63,7 @@ def test_chunk_iter():
         elif ii == 1:
             assert has_more ==  False
             assert len(chunk) == 1
-    
+
     for ii, (has_more, chunk) in enumerate(elastic.chunk_iter(range(2000), 1000)):
         if ii == 0:
             assert has_more ==  True

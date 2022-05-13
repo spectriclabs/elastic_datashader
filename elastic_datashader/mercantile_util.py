@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 mercantile_util.py contains modified versions of
 many of the mercantile functions, just with numba acceleration
@@ -7,6 +6,7 @@ and catered specifically to our use-case
 import numba
 import numpy as np
 
+from .constants import R2D, HALF_CE, CE, INV_RE, EPSILON, LL_EPSILON, INV_PI, INV_360
 
 __all__ = [
     "lnglat",
@@ -18,18 +18,6 @@ __all__ = [
     "num_tiles",
     "tiles_bounds",
 ]
-
-
-R2D = 57.29577951308232  # 180 / PI
-RE = 6378137.0
-HALF_CE = np.pi * RE
-CE = 2 * HALF_CE
-INV_RE = 1.567855942887398e-07
-EPSILON = 1e-14
-LL_EPSILON = 1e-11
-INV_PI = 1 / np.pi
-INV_360 = 1 / 360.0
-
 
 @numba.njit(fastmath=True)
 def lnglat(x, y):
@@ -144,8 +132,8 @@ def num_tiles(west, south, east, north, zoom):
             # bbox_east
             _num_tiles_in_bbox(west, south, 180.0, north, zoom)
         )
-    else:
-        return _num_tiles_in_bbox(west, south, east, north, zoom)
+
+    return _num_tiles_in_bbox(west, south, east, north, zoom)
 
 
 @numba.njit(fastmath=True, parallel=True, nogil=True)
@@ -179,5 +167,5 @@ def tiles_bounds(west, south, east, north, zoom):
         tiles_west = _tiles_in_bbox(-180.0, south, east, north, zoom)
         tiles_east = _tiles_in_bbox(west, south, 180.0, north, zoom)
         return np.concatenate((tiles_west, tiles_east))
-    else:
-        return _tiles_in_bbox(west, south, east, north, zoom)
+
+    return _tiles_in_bbox(west, south, east, north, zoom)
