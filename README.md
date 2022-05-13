@@ -47,7 +47,7 @@ poetry install --extras localwebserver
 uvicorn is now available for you within the virtualenv (you can reenter with `poetry shell`).  Note that the log level for the `datashader` logger can be set within the `logging_config.yml` or by setting the `DATASHADER_LOG_LEVEL` environment variable; the latter takes precedence.
 
 ```sh
-DATASHADER_ELASTIC=http://user:password@localhost:9200 uvicorn elastic_datashader:app --reload --port 6002 --log-config logging_config.yml 
+DATASHADER_ELASTIC=http://user:password@localhost:9200 uvicorn elastic_datashader:app --reload --port 6002 --log-config deployment/logging_config.yml 
 ```
 
 ### Docker

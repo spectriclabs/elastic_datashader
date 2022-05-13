@@ -17,15 +17,14 @@ RUN mkdir -p /opt/elastic_datashader/tms-cache
 COPY --from=builder /build/dist/*.whl /opt/elastic_datashader/
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir /opt/elastic_datashader/*.whl && \
-    pip install gunicorn
+    pip install uvicorn
 
-COPY deployment/gunicorn_config.py /opt/elastic_datashader
+COPY deployment/logging_config.yml /opt/elastic_datashader
 
 VOLUME ["/opt/elastic_datashader/tms-cache"]
+ENV DATASHADER_CACHE_DIR=/opt/elastic_datashader/tms-cache
 
-ENTRYPOINT [ "gunicorn", \
-    "--chdir", "/opt/elastic_datashader", \
-    "-c", "/opt/elastic_datashader/gunicorn_config.py", \
-    "--env", "DATASHADER_CACHE_DIR=/opt/elastic_datashader/tms-cache", \
-    "elastic_datashader:create_app()" \
+ENTRYPOINT [ "uvicorn", \
+    "elastic_datashader:app", \
+    "--log-config", "/opt/elastic_datashader/logging_config.yml"
 ]
