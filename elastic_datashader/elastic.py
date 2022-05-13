@@ -225,6 +225,20 @@ def get_search_base(
 
     return base_s
 
+def handle_range_or_exists_filters(filter_input: Dict[Any, Any]) -> Dict[str, Any]:
+    """
+    `range` and `exists` filters can appear either directly under
+    `filter[]` or under `filter[].query` depending on the version
+    of Kibana, the former being the old way, so they need special
+    handling for backward compatibility.
+    """
+    filter_type = filter_input.get("meta").get("type")  # "range" or "exists"
+
+    # Handle old query structure for backward compatibility
+    if filter_input.get(filter_type) is not None:
+        return {filter_type: filter_input.get(filter_type)}
+
+    return filter_input.get("query")
 
 def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
     """
@@ -249,6 +263,7 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
             f.get("geo_shape") or
             f.get("geo_distance")
         )
+
         # Handle spatial filters
         if is_spatial_filter:
             if f.get("geo_polygon"):
@@ -275,24 +290,20 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
                     filter_dict["must_not"].append(geo_bbox_dict)
                 else:
                     filter_dict["filter"].append(geo_bbox_dict)
+
         # Handle phrase matching
         elif f.get("meta").get("type") in ("phrase", "phrases", "bool"):
             if f.get("meta").get("negate"):
                 filter_dict["must_not"].append(f.get("query"))
             else:
                 filter_dict["filter"].append(f.get("query"))
-        elif f.get("meta").get("type") == "range":
-            range_dict = {"range": f.get("range")}
+
+        elif f.get("meta").get("type") in ("range", "exists"):
             if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(range_dict)
+                filter_dict["must_not"].append(handle_range_or_exists_filters(f))
             else:
-                filter_dict["filter"].append(range_dict)
-        elif f.get("meta").get("type") == "exists":
-            exists_dict = {"exists": f.get("exists")}
-            if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(exists_dict)
-            else:
-                filter_dict["filter"].append(exists_dict)
+                filter_dict["filter"].append(handle_range_or_exists_filters(f))
+
         elif f.get("meta", {}).get("type") == "custom" and f.get("meta", {}).get("key") is not None:
             filter_key = f.get("meta", {}).get("key")
             if f.get("meta", {}).get("negate"):
@@ -305,8 +316,10 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
                     filter_dict["filter"].append( { "bool": f.get(filter_key).get("bool") } )
                 else:
                     filter_dict["filter"].append( { filter_key: f.get(filter_key) } )
+
         else:
             raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
+
     logger.info("Filter output %s", filter_dict)
     return filter_dict
 
