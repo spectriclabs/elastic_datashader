@@ -26,7 +26,5 @@ ENV DATASHADER_CACHE_DIRECTORY=/opt/elastic_datashader/tms-cache
 
 ENTRYPOINT [ "uvicorn", \
     "elastic_datashader:app", \
-    "--host", "0.0.0.0", \
-    "--port", "8080", \
     "--log-config", "/opt/elastic_datashader/logging_config.yml" \
 ]
