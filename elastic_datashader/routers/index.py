@@ -1,11 +1,15 @@
+from os.path import dirname
+
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
 from ..cache import du, build_layer_info
 from ..config import config
 
+current_dir = dirname(__file__)
+
 router = APIRouter()
-templates = Jinja2Templates(directory="elastic_datashader/templates")
+templates = Jinja2Templates(directory=f"{current_dir}/../templates")
 
 @router.get("/")
 @router.get("/index")
