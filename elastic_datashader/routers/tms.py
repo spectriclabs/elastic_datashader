@@ -52,18 +52,14 @@ def error_tile_response(ex: Exception) -> Response:
         }
     )
 
-def temporary_tile_response() -> Response:
-    img = generate_x_tile(TILE_HEIGHT_PX, TILE_WIDTH_PX, color=(128, 128, 128, 128))
-
+# https://stackoverflow.com/questions/14832983/http-status-202-how-to-provide-information-about-async-request-completion
+def retry_after() -> Response:
     return Response(
-        img,
-        status_code=418,  # "I'm a teapot. This isn't the response you're looking for. Try again."
+        status_code=503,
         headers={
+            "Retry-After": "5",
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "max-age=5",
-            "Content-Type": "image/png",
-            "Retry-After": "10",
-        }
+        },
     )
 
 def check_proxy_key(tms_proxy_key: Optional[str]) -> None:
@@ -291,7 +287,8 @@ async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background
 
     # Cache miss.
     # Generate the tile into the cache in the background.
-    # In the meantime, return a temporary tile with a short browser-cache timeout and retry time,
-    # so when the tile gets re-requested by the browser, it will hopefully be waiting in the cache.
     background_tasks.add_task(generate_tile_to_cache, idx, x, y, z, params, parameter_hash, request)
-    return temporary_tile_response()
+
+    # Tell the client to retry the request after a certain amount of time.
+    # This may take multiple retries if the tile takes a long time to render.
+    return retry_after()

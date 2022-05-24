@@ -2,12 +2,17 @@ from asyncio import create_task
 
 from fastapi import FastAPI
 
+import urllib3
+
 from .cache import background_cache_cleanup
 from .config import config
 from .elastic import verify_datashader_indices
 from .drawing import initialize_custom_color_maps
 from .logger import logger
 from .routers import cache, data, index, indices, legend, tms
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+urllib3.disable_warnings(UserWarning)
 
 logger.info("Loaded configuration %s", config)
 logger.setLevel(config.log_level)
