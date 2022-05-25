@@ -10,8 +10,7 @@ WORKDIR /build/elastic_datashader
 RUN poetry build
 
 FROM python:3.9 AS deployment
-LABEL maintainer="foss@spectric.com" \
-      version="0.0.6"
+LABEL maintainer="foss@spectric.com"
 
 COPY --from=builder /build/dist/*.whl /opt/elastic_datashader/
 RUN mkdir -p /opt/elastic_datashader/tms-cache && \
