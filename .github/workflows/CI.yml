@@ -43,6 +43,9 @@ jobs:
       packages: write
 
     steps:
+    - name: Create timestamp env
+      run: echo "timestamp=$(date --utc +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+      shell: bash
     - uses: actions/checkout@v2
     - uses: docker/login-action@v2
       with:
@@ -54,7 +57,7 @@ jobs:
       with:
         images: ${{ env.REGISTRY }}/elastic_datashader
         tags: |
-          type=schedule,pattern={{date 'YYYYMMDDHHmmss'}}
+          type=raw,value=${{ env.timestamp }}
     - uses: docker/build-push-action@v3
       with:
         context: .
