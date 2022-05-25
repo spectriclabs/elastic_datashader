@@ -7,6 +7,8 @@ from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch_dsl import Document
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
+from starlette.datastructures import URL
 
 from ..cache import (
     cache_entry_exists,
@@ -52,12 +54,36 @@ def error_tile_response(ex: Exception) -> Response:
         }
     )
 
-# https://stackoverflow.com/questions/14832983/http-status-202-how-to-provide-information-about-async-request-completion
-def retry_after() -> Response:
-    return Response(
-        status_code=503,
+def get_next_wait(already_waited: int) -> int:
+    if already_waited <= 0:
+        return 2
+
+    if already_waited <= 2:
+        return 5
+
+    return already_waited + 5
+
+def make_next_wait_url(url: URL, next_wait: int) -> str:
+    path_parts = url.path.split('/')
+
+    if len(path_parts) == 6:  # did not contain already_waited path param
+        path_parts_str = '/'.join(path_parts[2:])
+    elif len(path_parts) == 7:  # did contain already_waited path param
+        path_parts_str = '/'.join(path_parts[3:])
+    else:
+        raise ValueError(f"Could not make next URL. Unexpected number of path params. {url}")
+
+    new_path = f"tms/{next_wait}/{path_parts_str}"
+    base, params = str(url).split(url.path)
+    return f"{base}/{new_path}{params}"
+
+def retry_after(url: URL, already_waited: int) -> Response:
+    next_wait = get_next_wait(already_waited)
+
+    return RedirectResponse(
+        make_next_wait_url(url, next_wait),
         headers={
-            "Retry-After": "5",
+            "Retry-After": str(next_wait),
             "Access-Control-Allow-Origin": "*",
         },
     )
@@ -252,8 +278,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
         release_cache_placeholder(config.cache_path, rendering_tile_name(idx, x, y, z, parameter_hash))
 
-@router.get("/{idx}/{z}/{x}/{y}.png")
-async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
+def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
     check_proxy_key(request.headers.get('tms-proxy-key'))
 
     es = Elasticsearch(
@@ -269,6 +294,7 @@ async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background
         logger.exception("Error while extracting parameters")
         params = {"user": request.headers.get("es-security-runas-user", None)}
         error_info = {
+            'already_waited': already_waited,
             'idx': idx,
             'x': x,
             'y': y,
@@ -289,6 +315,15 @@ async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background
     # Generate the tile into the cache in the background.
     background_tasks.add_task(generate_tile_to_cache, idx, x, y, z, params, parameter_hash, request)
 
-    # Tell the client to retry the request after a certain amount of time.
-    # This may take multiple retries if the tile takes a long time to render.
-    return retry_after()
+    # Tell the client to retry the request at a different URL after a certain
+    # amount of time.  This may take multiple retries if the tile takes a
+    # long time to render.
+    return retry_after(request.url, already_waited)
+
+@router.get("/{idx}/{z}/{x}/{y}.png")
+async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
+    return fetch_or_render_tile(0, idx, x, y, z, request, background_tasks)
+
+@router.get("/{already_waited}/{idx}/{z}/{x}/{y}.png")
+async def get_tms_after_wait(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
+    return fetch_or_render_tile(already_waited, idx, x, y, z, request, background_tasks)
