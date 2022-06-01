@@ -13,19 +13,17 @@ def test_get_next_wait():
     assert get_next_wait(-1) == 2
 
 @pytest.mark.parametrize(
-    "url, next_wait, expected_url",
+    "idx, x, y, z, first_wait, next_wait, expected_url",
     (
         (
-            URL("https://foo:bar@baz.com/tms/someindex/5/10/15.png?c1=spectric&c2=labs"),
-            2,
-            "https://foo:bar@baz.com/tms/2/someindex/5/10/15.png?c1=spectric&c2=labs"
+            "someindex", 10, 15, 5, True, 2,
+            "../../../2/someindex/5/10/15.png"
         ),
         (
-            URL("https://foo:bar@baz.com/tms/10/someindex/5/10/15.png?c1=spectric&c2=labs"),
-            15,
-            "https://foo:bar@baz.com/tms/15/someindex/5/10/15.png?c1=spectric&c2=labs"
+            "someindex", 10, 15, 5, False, 15,
+            "../../../../15/someindex/5/10/15.png"
         ),
     )
 )
-def test_make_next_wait_url(url, next_wait, expected_url):
-    assert make_next_wait_url(url, next_wait) == expected_url
+def test_make_next_wait_url(idx, x, y, z, first_wait, next_wait, expected_url):
+    assert make_next_wait_url(idx, x, y, z, first_wait, next_wait) == expected_url

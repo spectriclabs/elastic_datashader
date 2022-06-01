@@ -63,25 +63,27 @@ def get_next_wait(already_waited: int) -> int:
 
     return already_waited + 5
 
-def make_next_wait_url(url: URL, next_wait: int) -> str:
-    path_parts = url.path.split('/')
-
-    if len(path_parts) == 6:  # did not contain already_waited path param
-        path_parts_str = '/'.join(path_parts[2:])
-    elif len(path_parts) == 7:  # did contain already_waited path param
-        path_parts_str = '/'.join(path_parts[3:])
+def make_next_wait_url(idx: str, x: int, y: int, z: int, first_wait: bool, next_wait: int) -> str:
+    if first_wait:
+        # go from idx/z/x/y.png to next_wait/idx/z/x/y.png
+        relative_path = '../../..'
     else:
-        raise ValueError(f"Could not make next URL. Unexpected number of path params. {url}")
+        # go from previous_wait/idx/z/x/y.png to next_wait/idx/z/x/y.png
+        relative_path = '../../../..'
 
-    new_path = f"tms/{next_wait}/{path_parts_str}"
-    base, params = str(url).split(url.path)
-    return f"{base}/{new_path}{params}"
+    return f"{relative_path}/{next_wait}/{idx}/{z}/{x}/{y}.png"
 
-def retry_after(url: URL, already_waited: int) -> Response:
+def url_params_str(url: URL) -> str:
+    _, params = str(url).split(url.path)
+    return params
+
+def retry_after(url: URL, idx: str, x: int, y: int, z: int, already_waited: int) -> Response:
     next_wait = get_next_wait(already_waited)
+    next_url = make_next_wait_url(idx, x, y, z, already_waited==0, next_wait) + url_params_str(url)
+    logger.debug('Redirecting to %s', next_url)
 
     return RedirectResponse(
-        make_next_wait_url(url, next_wait),
+        next_url,
         headers={
             "Retry-After": str(next_wait),
             "Access-Control-Allow-Origin": "*",
@@ -318,7 +320,7 @@ def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, 
     # Tell the client to retry the request at a different URL after a certain
     # amount of time.  This may take multiple retries if the tile takes a
     # long time to render.
-    return retry_after(request.url, already_waited)
+    return retry_after(request.url, idx, x, y, z, already_waited)
 
 @router.get("/{idx}/{z}/{x}/{y}.png")
 async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
