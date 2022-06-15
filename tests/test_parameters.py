@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -120,5 +120,35 @@ def test_get_category_field():
 
 def test_get_parameter_hash():
     assert parameters.get_parameter_hash({"foo": "bar", "baz": 1}) == "0d922e38f1a94fdc8acc6016c333d49e"
-    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1, "abc": datetime(2022, 2, 17, 11, 00, 00, tzinfo=timezone.utc)}) == "5463c0e1ae7f3c9e182afc2786050765"
+    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1, "abc": datetime(2022, 2, 17, 11, 0, 0, tzinfo=timezone.utc)}) == "5463c0e1ae7f3c9e182afc2786050765"
     assert parameters.get_parameter_hash({}) == "d41d8cd98f00b204e9800998ecf8427e"
+
+def test_get_time_bounds_already_quantized():
+    now = datetime(2022, 6, 14, 12, 15, 0, tzinfo=timezone.utc)
+    time_bounds = parameters.get_time_bounds(now, "now-15m", "now")
+    assert "start_time" in time_bounds
+    assert "stop_time" in time_bounds
+    assert time_bounds["start_time"] == now - timedelta(minutes=15)
+    assert time_bounds["stop_time"] == now
+
+def test_get_time_bounds_cant_quantize():
+    now = datetime(2022, 6, 14, 12, 8, 0, tzinfo=timezone.utc)
+    time_bounds = parameters.get_time_bounds(now, "now-3m", "now")
+    assert time_bounds["start_time"] == now - timedelta(minutes=3)
+    assert time_bounds["stop_time"] == now
+
+def test_get_time_bounds_no_from():
+    now = datetime(2022, 6, 14, 12, 6, 0, tzinfo=timezone.utc)
+    time_bounds = parameters.get_time_bounds(now, None, "now")
+    assert time_bounds["start_time"] is None
+
+    # no quantization because no start_time
+    assert time_bounds["stop_time"] == datetime(2022, 6, 14, 12, 6, 0, tzinfo=timezone.utc)
+
+def test_get_time_bounds_no_to():
+    now = datetime(2022, 6, 14, 12, 15, 0, tzinfo=timezone.utc)
+    time_bounds = parameters.get_time_bounds(now, "now-4m", None)
+
+    # quantization because stop_time is auto-populated
+    assert time_bounds["start_time"] == datetime(2022, 6, 14, 12, 10, 0, tzinfo=timezone.utc)
+    assert time_bounds["stop_time"] == now

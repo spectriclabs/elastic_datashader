@@ -215,8 +215,7 @@ def get_category_field(category_field: Optional[str]) -> Optional[str]:
 
     return category_field
 
-def get_time_bounds(from_time: Optional[str], to_time: Optional[str]) -> Dict[str, datetime]:
-    now = datetime.now(timezone.utc)
+def get_time_bounds(now: datetime, from_time: Optional[str], to_time: Optional[str]) -> Dict[str, datetime]:
     start_time = None
     stop_time = now
 
@@ -261,6 +260,7 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     # There's a query parameter called "params"
     params_param = load_params_param(query_params.get("params"))
 
+    now = datetime.now(timezone.utc)
     from_time = get_from_time(params_param)
     to_time = get_to_time(params_param)
     render_mode = get_render_mode(query_params)
@@ -288,7 +288,7 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params["span_range"] = query_params.get("span", "auto")
     params["geopoint_field"] = query_params.get("geopoint_field", params["geopoint_field"])
     params["timestamp_field"] = query_params.get("timestamp_field", params["timestamp_field"])
-    params.update(get_time_bounds(from_time, to_time))
+    params.update(get_time_bounds(now, from_time, to_time))
     params["debug"] = (query_params.get("debug", False) == 'true')
 
     if params["geopoint_field"] is None:

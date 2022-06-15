@@ -201,18 +201,23 @@ def get_search_base(
     if dsl_filter or dsl_query:
         # Need to convert to a dict, merge with filters then convert back to a search object
         base_dict = base_s.to_dict()
+
         # setup an empty filter list if necessary
         if base_dict.get("query", {}).get("bool", {}).get("filter") is None:
             base_dict["query"]["bool"]["filter"] = []
+
         # Add the dsl_query
         if dsl_query:
             base_dict["query"]["bool"]["filter"].append(dsl_query)
+
         # add dsl_filters
         if dsl_filter:
             for f in dsl_filter["filter"]:
                 base_dict["query"]["bool"]["filter"].append(f)
+
             if base_dict.get("query", {}).get("bool", {}).get("must_not") is None:
                 base_dict["query"]["bool"]["must_not"] = []
+
             for f in dsl_filter["must_not"]:
                 base_dict["query"]["bool"]["must_not"].append(f)
 
@@ -220,6 +225,7 @@ def get_search_base(
         base_s = Search.from_dict(base_dict).index(idx).using(es)
 
     base_s = base_s.params(ignore_unavailable=True)
+
     if user:
         base_s = base_s.params(preference=user)
 
