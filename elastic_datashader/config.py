@@ -3,14 +3,18 @@ from datetime import timedelta
 from logging import getLevelName, INFO
 from os import environ
 from pathlib import Path
+from re import compile as compile_regex
 from socket import getfqdn
 from typing import Any, Dict, Optional
 
 import yaml
 
+BASE64_PATTERN = compile_regex("([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?")
+
 @dataclass(frozen=True)
 class Config:
     allowlist_headers: Optional[str]
+    api_key: Optional[str]
     cache_cleanup_interval: timedelta
     cache_path: Path
     cache_timeout: timedelta
@@ -69,6 +73,9 @@ def true_if_none(val: Optional[str]) -> bool:
 
     return True
 
+def is_base64_encoded(value: str) -> bool:
+    return BASE64_PATTERN.fullmatch(value) is not None
+
 def check_config(c: Config) -> None:
     if not c.cache_path.exists():
         raise Exception(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' does not exist")
@@ -76,9 +83,13 @@ def check_config(c: Config) -> None:
     if not c.cache_path.is_dir():
         raise Exception(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' is not a directory")
 
+    if c.api_key and not is_base64_encoded(c.api_key):
+        raise Exception(f"DATASHADER_ELASTIC_API_KEY '{c.api_key}' does not appear to be base64 encoded")
+
 def config_from_env(env) -> Config:
     return Config(
         allowlist_headers=env.get("DATASHADER_ALLOWLIST_HEADERS", None),
+        api_key=env.get("DATASHADER_ELASTIC_API_KEY", None),
         cache_cleanup_interval=timedelta(seconds=int(env.get("DATASHADER_CACHE_CLEANUP_INTERVAL", 5*60))),
         cache_path=Path(env.get("DATASHADER_CACHE_DIRECTORY", "tms-cache")),
         cache_timeout=timedelta(seconds=int(env.get("DATASHADER_CACHE_TIMEOUT", 60*60))),

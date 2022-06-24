@@ -371,6 +371,9 @@ def get_es_headers(request_headers=None, user=None):
     if user:
         result["es-security-runas-user"] = user
 
+    if config.api_key:
+        result["Authorization"] = f"ApiKey {config.api_key}"
+
     return result
 
 

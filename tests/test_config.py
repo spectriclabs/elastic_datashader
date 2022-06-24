@@ -26,8 +26,16 @@ def test_config_defaults():
     assert cfg.hostname == socket.getfqdn()
 
 
+def test_is_base64_encoded():
+    assert config.is_base64_encoded("aVZlLUMzSUJuYndxdDJvN0k1bU46aGxlYUpNS2lTa2FKeVZua1FnY1VEdw==")
+    assert config.is_base64_encoded("abcd")
+    assert not config.is_base64_encoded("foo")
+    assert not config.is_base64_encoded("abcd=")
+
+
 def test_config_env():
     env = {
+        "DATASHADER_ELASTIC_API_KEY": "aVZlLUMzSUJuYndxdDJvN0k1bU46aGxlYUpNS2lTa2FKeVZua1FnY1VEdw==",
         "DATASHADER_LOG_LEVEL": "info",
         "DATASHADER_CACHE_DIRECTORY": "tms-cache-foo",
         "DATASHADER_CACHE_TIMEOUT": "60",
@@ -43,6 +51,7 @@ def test_config_env():
     }
 
     cfg = config.config_from_env(env)
+    assert cfg.api_key == "aVZlLUMzSUJuYndxdDJvN0k1bU46aGxlYUpNS2lTa2FKeVZua1FnY1VEdw=="
     assert cfg.log_level == INFO
     assert cfg.cache_path == Path("tms-cache-foo")
     assert cfg.cache_timeout == timedelta(seconds=60)
@@ -66,7 +75,7 @@ def test_true_if_none():
     assert config.true_if_none("off") == False
     assert config.true_if_none("on") == True
 
-def test_check_config(tmp_path):
+def test_check_config_path(tmp_path):
     cache_path = tmp_path / "foo"
     cfg = config.config_from_env({"DATASHADER_CACHE_DIRECTORY": cache_path})
 
@@ -74,6 +83,17 @@ def test_check_config(tmp_path):
         config.check_config(cfg)
 
     cache_path.touch()  # make file not directory
+
+    with pytest.raises(Exception):
+        config.check_config(cfg)
+
+def test_check_config_api_key(tmp_path):
+    cache_path = tmp_path / "foo"
+    cache_path.mkdir()
+    cfg = config.config_from_env({
+        "DATASHADER_CACHE_DIRECTORY": cache_path,
+        "DATASHADER_ELASTIC_API_KEY": "foo",
+    })
 
     with pytest.raises(Exception):
         config.check_config(cfg)
