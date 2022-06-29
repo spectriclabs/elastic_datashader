@@ -36,7 +36,7 @@ numba = "*"
 numpy = ">=1.19,<=1.21"
 PyYAML = "*"
 humanize = "*"
-uvicorn = {extras = ["standard"], version = "^0.18.1", optional = true}
+uvicorn = {extras = ["standard"], version = "^0.18.2", optional = true}
 fastapi = "^0.73.0"
 georgio = "^2022.84.833"
 

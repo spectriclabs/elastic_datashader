@@ -2,11 +2,11 @@ version: 1
 disable_existing_loggers: False
 formatters:
   default:
-    "()": uvicorn._logging.DefaultFormatter
+    "()": uvicorn.logging.DefaultFormatter
     datefmt: "%Y-%m-%dT%H:%M:%S"
     format: '[%(asctime)s.%(msecs)03dZ] %(name)s %(levelprefix)s %(message)s'
   access:
-    "()": uvicorn._logging.AccessFormatter
+    "()": uvicorn.logging.AccessFormatter
     datefmt: "%Y-%m-%dT%H:%M:%S"
     format: '[%(asctime)s.%(msecs)03dZ] %(name)s %(levelprefix)s %(message)s'
 handlers:
