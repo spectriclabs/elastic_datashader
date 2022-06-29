@@ -20,10 +20,10 @@ classifiers = [
 elastic_datashader = "elastic_datashader.cli:main"
 
 [tool.poetry.dependencies]
-python = ">=3.8,<4"
+python = ">=3.9,<3.11"
 elasticsearch = ">=7.16"
 elasticsearch-dsl = ">=7.4"
-datashader = ">=0.11.0"
+datashader = ">=0.14.0"
 pandas = "*"
 colorcet = "*"
 mercantile = ">=1.2"
@@ -32,12 +32,12 @@ Pillow = "*"
 pynumeral = "*"
 arrow = "*"
 python-datemath = "*"
-numba = "*"
-numpy = ">=1.19,<=1.21"
+numba = "^0.55.2"
+numpy = ">=1.22"
 PyYAML = "*"
 humanize = "*"
 uvicorn = {extras = ["standard"], version = "^0.18.2", optional = true}
-fastapi = "^0.73.0"
+fastapi = "^0.78.0"
 georgio = "^2022.84.833"
 
 [tool.poetry.dev-dependencies]
