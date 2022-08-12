@@ -317,7 +317,7 @@ async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z:
     background_tasks.add_task(generate_tile_to_cache, idx, x, y, z, params, parameter_hash, request)
 
     #lets hold the connection open for the already_waited time then check the cache again
-    timeout = time.time() + already_waited   
+    timeout = time.time() + already_waited
     while time.time() < timeout:
         time.sleep(0.1)
         disconnected = await request.is_disconnected()
