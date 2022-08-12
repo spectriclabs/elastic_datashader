@@ -296,6 +296,13 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
                     filter_dict["must_not"].append(geo_bbox_dict)
                 else:
                     filter_dict["filter"].append(geo_bbox_dict)
+            elif f.get("query"):
+                if f.get("meta").get("negate"):
+                    filter_dict["must_not"].append(f.get("query"))
+                else:
+                    filter_dict["filter"].append(f.get("query"))
+            else:
+                raise ValueError("unsupported spatial_filter  {}".format(f))  # pylint: disable=C0209
 
         # Handle phrase matching
         elif f.get("meta").get("type") in ("phrase", "phrases", "bool"):
