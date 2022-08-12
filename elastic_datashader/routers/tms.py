@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from os import getpid
 from socket import gethostname
 from typing import Optional
-
+import time
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch_dsl import Document
@@ -280,7 +280,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
         release_cache_placeholder(config.cache_path, rendering_tile_name(idx, x, y, z, parameter_hash))
 
-def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
+async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
     check_proxy_key(request.headers.get('tms-proxy-key'))
 
     es = Elasticsearch(
@@ -308,7 +308,6 @@ def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, 
 
         create_datashader_tiles_entry(es, **error_info)
         return error_tile_response(ex)
-
     # Try to use a cached response
     if (response := cached_response(es, idx, x, y, z, params, parameter_hash)) is not None:
         return response
@@ -317,6 +316,17 @@ def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, 
     # Generate the tile into the cache in the background.
     background_tasks.add_task(generate_tile_to_cache, idx, x, y, z, params, parameter_hash, request)
 
+    #lets hold the connection open for the already_waited time then check the cache again
+    timeout = time.time() + already_waited   
+    while time.time() < timeout:
+        time.sleep(0.1)
+        disconnected = await request.is_disconnected()
+        if disconnected:
+            logger.info("Client Disconnected before response was sent")
+            return None
+        if (response := cached_response(es, idx, x, y, z, params, parameter_hash)) is not None:
+            return response
+
     # Tell the client to retry the request at a different URL after a certain
     # amount of time.  This may take multiple retries if the tile takes a
     # long time to render.
@@ -324,8 +334,8 @@ def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, 
 
 @router.get("/{idx}/{z}/{x}/{y}.png")
 async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
-    return fetch_or_render_tile(0, idx, x, y, z, request, background_tasks)
+    return await fetch_or_render_tile(0, idx, x, y, z, request, background_tasks)
 
 @router.get("/{already_waited}/{idx}/{z}/{x}/{y}.png")
 async def get_tms_after_wait(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
-    return fetch_or_render_tile(already_waited, idx, x, y, z, request, background_tasks)
+    return await fetch_or_render_tile(already_waited, idx, x, y, z, request, background_tasks)
