@@ -31,7 +31,9 @@ def legend_response(data: str, error: Optional[Exception]=None, **kwargs) -> Res
         headers["Datashader-Parameter-Hash"] = kwargs["parameter_hash"]
 
     if kwargs.get("params"):
-        headers["Datashader-RunAs-User"] = kwargs["params"].get("user", "")
+        user = kwargs["params"].get("user", "")
+        if user is not None:
+            headers["Datashader-RunAs-User"] = kwargs["params"].get("user", "")
 
     if error is not None:
         headers["Error"] = str(error)
