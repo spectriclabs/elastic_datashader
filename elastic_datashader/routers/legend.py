@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Request, Response
 
+import math
 import mercantile
 import pynumeral
 
@@ -19,6 +20,31 @@ from ..logger import logger
 from ..parameters import extract_parameters, merge_generated_parameters
 
 router = APIRouter()
+
+def lob(point,brng,distance):
+
+    R = 6371009 #Radius of the Earth this is the same as georgio
+    brng = math.radians(brng) #Bearing is degrees converted to radians.
+    d = distance #Distance in meters
+
+
+    lat1 = math.radians(point['lat']) #Current lat point converted to radians
+    lon1 = math.radians(point['lon']) #Current lon point converted to radians
+
+    lat2 = math.asin( math.sin(lat1)*math.cos(d/R) +
+        math.cos(lat1)*math.sin(d/R)*math.cos(brng))
+
+    lon2 = lon1 + math.atan2(math.sin(brng)*math.sin(d/R)*math.cos(lat1),
+                math.cos(d/R)-math.sin(lat1)*math.sin(lat2))
+
+    lat2 = math.degrees(lat2)
+    lon2 = math.degrees(lon2)
+    return {"lat":lat2,"lon":lon2}
+
+def expand_bbox_by_meters(bbox,meters):
+    #top left line of bearing nw and bottom right lob se
+    return {"top_left":lob(bbox['top_left'],315,meters),"bottom_right":lob(bbox['bottom_right'],135,meters)}
+
 
 def legend_response(data: str, error: Optional[Exception]=None, **kwargs) -> Response:
     headers={
@@ -111,6 +137,12 @@ async def provide_legend(idx: str, field_name: str, request: Request):  # pylint
                 "lon": min(180.0, extent["maxLon"]),
             },
         }
+        if params['render_mode'] == "ellipses":
+            #expand the bbox by half the search_nautical_miles or we cut off items on the edge
+            #this still isn't 100% accurate because the tiles are squares and our viewport is rectangular
+            #you can sometimes see a little tiny part of the ellipse and it isn't counted
+            meters = params['search_nautical_miles'] * 1852
+            legend_bbox = expand_bbox_by_meters(legend_bbox,meters/2)
         logger.info("legend_bbox: %s", legend_bbox)
         base_s = base_s.filter("geo_bounding_box", **{geopoint_field: legend_bbox})
 
