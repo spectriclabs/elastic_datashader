@@ -145,6 +145,18 @@ def verify_datashader_indices(elasticsearch_hosts: str):
         body=tile_mapping,
         ignore=400
     )
+def convert_nm_to_ellipse_units(distance: float, units: str) -> float:
+    if units == "majmin_nm":
+        return distance  # full-axis nautical miles to full-axis meters
+
+    if units == "semi_majmin_nm":
+        return distance / 2  # semi-axis nautical miles to full-axis meters
+
+    if units == "semi_majmin_m":
+        return distance * 2 * 1852  # semi-axis meters to full-axis meters
+
+    # NB. assume "majmin_m" if any others
+    return distance * 1852
 
 def get_search_base(
     elastic_hosts: str,
@@ -192,6 +204,14 @@ def get_search_base(
 
     if time_range and time_range[timestamp_field]:
         base_s = base_s.filter("range", **time_range)
+    
+    #filter the ellipse search range in the data base query so the legen matches the tiles
+    if params['render_mode'] =="ellipses":
+        units = convert_nm_to_ellipse_units(params['search_nautical_miles'],params['ellipse_units'])
+        search_range = {params["ellipse_major"]:{"lte":units}}
+        base_s = base_s.filter("range",**search_range)
+        search_range = {params["ellipse_minor"]:{"lte":units}}
+        base_s = base_s.filter("range",**search_range)
 
     # Add lucene query
     if lucene_query:
