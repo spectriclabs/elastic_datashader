@@ -1,10 +1,10 @@
 from copy import copy
 from json import dumps, loads
 from typing import Optional
+import math
 
 from fastapi import APIRouter, Request, Response
 
-import math
 import mercantile
 import pynumeral
 

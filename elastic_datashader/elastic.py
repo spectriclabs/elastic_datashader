@@ -204,7 +204,7 @@ def get_search_base(
 
     if time_range and time_range[timestamp_field]:
         base_s = base_s.filter("range", **time_range)
-    
+
     #filter the ellipse search range in the data base query so the legen matches the tiles
     if params['render_mode'] =="ellipses":
         units = convert_nm_to_ellipse_units(params['search_nautical_miles'],params['ellipse_units'])
