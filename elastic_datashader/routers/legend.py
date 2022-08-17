@@ -137,7 +137,7 @@ async def provide_legend(idx: str, field_name: str, request: Request):  # pylint
                 "lon": min(180.0, extent["maxLon"]),
             },
         }
-        if params['render_mode'] == "ellipses":
+        if params.get('render_mode',"") == "ellipses":
             #expand the bbox by half the search_nautical_miles or we cut off items on the edge
             #this still isn't 100% accurate because the tiles are squares and our viewport is rectangular
             #you can sometimes see a little tiny part of the ellipse and it isn't counted
