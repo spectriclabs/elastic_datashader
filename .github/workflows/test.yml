@@ -1,7 +1,4 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
-name: "Build, Test, and Publish"
+name: "Build, Test, and Publish Test Docker Image"
 
 on:
   push:
@@ -58,6 +55,7 @@ jobs:
         images: ${{ env.REGISTRY }}/spectriclabs/elastic_datashader
         tags: |
           type=raw,value=${{ env.timestamp }}
+          type=raw,value=test
     - uses: docker/build-push-action@v3
       with:
         context: .
