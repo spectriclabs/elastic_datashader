@@ -2,7 +2,7 @@ name: "Publish Release Docker Image"
 
 on:
   push:
-    tags: *
+    tags: '*'
 
 env:
   REGISTRY: ghcr.io
@@ -35,11 +35,3 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-
-  always_job:
-    name: Always run job
-    runs-on: ubuntu-latest
-    steps:
-      # https://github.com/orgs/community/discussions/25146
-      - name: Always run
-        run: echo "This job is used to prevent the workflow status from showing as failed when all other jobs are skipped."
