@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./target/types",
+  },
+  "include": [
+    "public/**/*.ts",
+    "public/**/*.tsx",
+    "common/**/*.ts",
+    "../../../typings/**/*",
+  ],
+  "references": [
+    { "path": "../../src/core/tsconfig.json" },
+    { "path": "../../x-pack/plugins/maps/tsconfig.json"},
+    { "path": "../../src/plugins/unified_search/tsconfig.json" }
+  ]
+}
