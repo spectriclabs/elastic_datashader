@@ -179,13 +179,13 @@ def get_search_base(
     dsl_query = params["dsl_query"]
     dsl_filter = params["dsl_filter"]
     user = params.get("user")
-
+    x_opaque_id = params.get("x-opaque-id")
     # Connect to Elasticsearch
     es = Elasticsearch(
         elastic_hosts.split(","),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(headers, user),
+        headers=get_es_headers(headers, user,x_opaque_id),
     )
 
     # Create base search
@@ -375,11 +375,12 @@ def load_datashader_headers(header_file_path_str: Optional[str]) -> Dict[Any, An
 
     return loaded_yaml
 
-def get_es_headers(request_headers=None, user=None):
+def get_es_headers(request_headers=None, user=None,x_opaque_id=None):
     """
 
     :param request_headers:
     :param user:
+    :param x_opaque_id:
     :return:
     """
 
@@ -397,7 +398,8 @@ def get_es_headers(request_headers=None, user=None):
     # Set runas user based off user provided
     if user:
         result["es-security-runas-user"] = user
-
+    if x_opaque_id:
+        result["x-opaque-id"] = x_opaque_id
     if config.api_key:
         result["Authorization"] = f"ApiKey {config.api_key}"
 
