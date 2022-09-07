@@ -3,6 +3,7 @@ from os import getpid
 from socket import gethostname
 from typing import Optional
 import time
+import uuid
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch_dsl import Document
@@ -185,13 +186,14 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
     # If we fail, then make sure to remove the cache placeholder and unclaim the task.
     # Then bail and let another request have a shot at it.
     try:
-        headers = get_es_headers(request_headers=request.headers, user=params["user"])
+        x_opaque_id = str(uuid.uuid4())
+        headers = get_es_headers(request_headers=request.headers, user=params["user"],x_opaque_id=x_opaque_id)
         logger.debug("Loaded input headers %s", request.headers)
         logger.debug("Loaded elasticsearch headers %s", headers)
 
         # Get or generate extended parameters
         params = merge_generated_parameters(request.headers, params, idx, parameter_hash)
-
+        params = {**params,"x-opaque-id":x_opaque_id}
         base_tile_info = {
             'hash': parameter_hash,
             'idx': idx,
