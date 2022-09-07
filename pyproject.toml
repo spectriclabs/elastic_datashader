@@ -21,12 +21,12 @@ elastic_datashader = "elastic_datashader.cli:main"
 
 [tool.poetry.dependencies]
 python = ">=3.8,<4"
-elasticsearch = ">=7.16"
-elasticsearch-dsl = ">=7.4"
-datashader = ">=0.11.0"
+elasticsearch = "7.17.4"
+elasticsearch-dsl = "7.4.0"
+datashader = "0.14.2"
 pandas = "*"
 colorcet = "*"
-mercantile = ">=1.2"
+mercantile = "1.2.1"
 pypng = "*"
 Pillow = "*"
 pynumeral = "*"
@@ -38,7 +38,7 @@ PyYAML = "*"
 humanize = "*"
 uvicorn = {extras = ["standard"], version = "^0.18.2", optional = true}
 fastapi = "^0.73.0"
-georgio = "^2022.84.833"
+georgio = "2022.225.1340"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
