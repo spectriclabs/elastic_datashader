@@ -33,6 +33,7 @@ Note that there are extras that can also be installed with `--extras` which are 
 
 First enter the virtualenv created by poetry.
 
+
 ```sh
 poetry shell
 ```
@@ -198,3 +199,13 @@ The API is currently provisional and may change in future releases.
   {"key"="abc", "color"="acolor", "count"=105},
 ]
 ```
+
+### Release Instructions
+
+Releases
+
+Draft New Release
+
+Create tag with one-up build number, Target:Master
+
+[Publish Release]
