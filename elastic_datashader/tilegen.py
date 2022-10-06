@@ -1125,7 +1125,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 timeout=config.query_timeout_seconds
             )
 
-            
+
             df = pd.DataFrame(
                 convert_composite(
                     resp.execute(),
@@ -1138,7 +1138,6 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             )
             estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
         elif field_type == "geo_shape":
-            shape_s = copy.copy(tile_s)
             searches = []
             estimated_points_per_tile = 10000
             zoom = 0
@@ -1196,7 +1195,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 )
             )
             if len(df)/resp.num_searches == composite_agg_size:
-                logger.warn("clipping on tile %s",[x,y,z])
+                logger.warning("clipping on tile %s",[x,y,z])
 
         s2 = time.time()
         logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)

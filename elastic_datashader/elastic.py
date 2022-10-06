@@ -572,6 +572,7 @@ def chunk_iter(iterable, chunk_size):
         yield (False, chunks[0:last_written_idx+1])
 
 def bucket_noop(bucket,search):
+    # pylint: disable=unused-argument
     return bucket
 class Scan:
     def __init__(self, searches, inner_aggs=None,field=None,precision=None, size=10, timeout=None,bucket_callback=bucket_noop):
@@ -591,7 +592,7 @@ class Scan:
         self.bucket_callback = bucket_callback
         if self.bucket_callback is None:
             self.bucket_callback = bucket_noop
-    
+
     def execute(self):
         """
         Helper function used to iterate over all possible bucket combinations of
