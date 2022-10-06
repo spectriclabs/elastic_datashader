@@ -32,11 +32,13 @@ from .drawing import (
     gen_overlay,
 )
 from .elastic import (
+    get_field_type,
     get_search_base,
     convert_composite,
     split_fieldname_to_list,
     get_nested_field_from_hit,
     to_32bit_float,
+    Scan,
     ScanAggs,
     get_tile_categories,
     scan
@@ -534,6 +536,9 @@ def get_span_upper_bound(span_range: str, estimated_points_per_tile: Optional[in
     if span_range == "wide":
         return math.log(1e9)
 
+    if span_range == "ultrawide":
+        return math.log(1e308)
+
     assert estimated_points_per_tile is not None
     return math.log(max(estimated_points_per_tile * 2, 2))
 
@@ -981,7 +986,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
         base_s = get_search_base(config.elastic_hosts, headers, params, idx)
 
         # Now find out how many documents
-        count_s = copy.copy(base_s)
+        count_s = copy.copy(base_s)[0:0] #slice of array sets from/size since we are aggregating the data we don't need the hits
         count_s = count_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
 
         doc_cnt = count_s.count()
@@ -1109,26 +1114,89 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         # the composite needs one bin for 'after_key'
         composite_agg_size = int(max_bins / inner_agg_size) - 1
-
-        resp = ScanAggs(
-            tile_s,
-            {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
-            inner_aggs,
-            size=composite_agg_size,
-            timeout=config.query_timeout_seconds
-        )
-
+        field_type = get_field_type(config.elastic_hosts, headers, params,geopoint_field, idx)
         partial_data = False # TODO can we get partial data?
-        df = pd.DataFrame(
-            convert_composite(
-                resp.execute(),
-                (category_field is not None),
-                bool(category_filters),
-                histogram_interval,
-                category_type,
-                category_format
+        if field_type == "geo_point":
+            resp = ScanAggs(
+                tile_s,
+                {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
+                inner_aggs,
+                size=composite_agg_size,
+                timeout=config.query_timeout_seconds
             )
-        )
+
+            
+            df = pd.DataFrame(
+                convert_composite(
+                    resp.execute(),
+                    (category_field is not None),
+                    bool(category_filters),
+                    histogram_interval,
+                    category_type,
+                    category_format
+                )
+            )
+            estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
+        elif field_type == "geo_shape":
+            shape_s = copy.copy(tile_s)
+            searches = []
+            estimated_points_per_tile = 10000
+            zoom = 0
+            #span_range = "ultrawide"
+            if resolution == "coarse":
+                zoom = 5
+                spread = 7
+            elif resolution == "fine":
+                zoom = 6
+                spread = 3
+            elif resolution == "finest":
+                zoom = 7
+                spread = 1
+            searches = []
+            composite_agg_size = 65536#max agg bucket size
+            geotile_precision = current_zoom+zoom
+            subtile_bb_dict = create_bounding_box_for_tile(x, y, z)
+            subtile_s = copy.copy(base_s)
+            subtile_s = subtile_s[0:0]
+            subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
+            subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
+            searches.append(subtile_s)
+            #logger.info(inner_aggs)
+            cmap = "bmy" #todo have front end pass the cmap for none categorical
+            def calc_aggregation(bucket,search):
+                #get bounds from bucket.key
+                #do search for sum of values on category_field
+                z, x, y = [ int(x) for x in bucket.key.split("/") ]
+                bucket_bb_dict = create_bounding_box_for_tile(x, y, z)
+                subtile_s = copy.copy(base_s)
+                subtile_s.aggs.bucket("sum","median_absolute_deviation",field=category_field,missing=0)
+                subtile_s = subtile_s[0:0]
+                subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: bucket_bb_dict})
+                response = subtile_s.execute()
+                search.num_searches += 1
+                search.total_took += response.took
+                search.total_shards += response._shards.total  # pylint: disable=W0212
+                search.total_skipped += response._shards.skipped  # pylint: disable=W0212
+                search.total_successful += response._shards.successful  # pylint: disable=W0212
+                search.total_failed += response._shards.failed  # pylint: disable=W0212
+                bucket.doc_count = response.aggregations.sum['value'] #replace with sum of category_field
+                return bucket
+            bucket_callback = None
+            if category_field:
+                bucket_callback = calc_aggregation
+            resp = Scan(searches,timeout=config.query_timeout_seconds,bucket_callback=bucket_callback)
+            df = pd.DataFrame(
+                convert_composite(
+                    resp.execute(),
+                    False,#we don't need categorical, because ES doesn't support composite buckets for geo_shapes we calculate that with a secondary search in the bucket_callback
+                    False,#we dont need filter_buckets, because ES doesn't support composite buckets for geo_shapes we calculate that with a secondary search in the bucket_callback
+                    histogram_interval,
+                    category_type,
+                    category_format
+                )
+            )
+            if len(df)/resp.num_searches == composite_agg_size:
+                logger.warn("clipping on tile %s",[x,y,z])
 
         s2 = time.time()
         logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)
@@ -1142,7 +1210,6 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
         metrics["shards_failed"] = resp.total_failed
         logger.info("%s", metrics)
 
-        estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
 
         if len(df.index) == 0:
             img = gen_empty(tile_width_px, tile_height_px)
@@ -1154,7 +1221,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         ###############################################################
         # Category Mode
-        if category_field:
+        if category_field and field_type != "geo_shape":
             # TODO it would be nice if datashader honored the category orders
             # in z-order, then we could make "Other" drawn underneath the less
             # promenent colors

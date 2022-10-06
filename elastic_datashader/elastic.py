@@ -158,6 +158,20 @@ def convert_nm_to_ellipse_units(distance: float, units: str) -> float:
     # NB. assume "majmin_m" if any others
     return distance * 1852
 
+def get_field_type(elastic_hosts: str,headers: Optional[str],params: Dict[str, Any],field:str,idx: str) -> str:
+    user = params.get("user")
+    x_opaque_id = params.get("x-opaque-id")
+    es = Elasticsearch(
+        elastic_hosts.split(","),
+        verify_certs=False,
+        timeout=900,
+        headers=get_es_headers(headers, user,x_opaque_id),
+    )
+    mappings = es.indices.get_field_mapping(fields=field,index=idx)
+    #{'foot_prints': {'mappings': {'foot_print': {'full_name': 'foot_print', 'mapping': {'foot_print': {'type': 'geo_shape'}}}}}}
+    index = list(mappings.keys())[0] #if index is my_index* it comes back as my_index
+    return mappings[index]['mappings'][field]['mapping'][field]['type']
+
 def get_search_base(
     elastic_hosts: str,
     headers: Optional[str],
@@ -497,8 +511,11 @@ def geotile_bucket_to_lonlat(bucket):
     if hasattr(bucket, "centroid"):
         lon = bucket.centroid.location.lon
         lat = bucket.centroid.location.lat
-    else:
+    elif hasattr(bucket.key,'grids'):
         z, x, y = [ int(x) for x in bucket.key.grids.split("/") ]
+        lon, lat = mu.center(x, y, z)
+    else:
+        z, x, y = [ int(x) for x in bucket.key.split("/") ]
         lon, lat = mu.center(x, y, z)
     return lon, lat
 
@@ -553,6 +570,63 @@ def chunk_iter(iterable, chunk_size):
     if i >= 0:
         last_written_idx =( i % chunk_size)
         yield (False, chunks[0:last_written_idx+1])
+
+def bucket_noop(bucket,search):
+    return bucket
+class Scan:
+    def __init__(self, searches, inner_aggs=None,field=None,precision=None, size=10, timeout=None,bucket_callback=bucket_noop):
+        self.field = field
+        self.precision = precision
+        self.searches = searches
+        self.inner_aggs = inner_aggs if inner_aggs is not None else {}
+        self.size = size
+        self.num_searches = 0
+        self.total_took = 0
+        self.total_shards = 0
+        self.total_skipped = 0
+        self.total_successful = 0
+        self.total_failed = 0
+        self.timeout = timeout
+        self.aborted = False
+        self.bucket_callback = bucket_callback
+        if self.bucket_callback is None:
+            self.bucket_callback = bucket_noop
+    
+    def execute(self):
+        """
+        Helper function used to iterate over all possible bucket combinations of
+        ``source_aggs``, returning results of ``inner_aggs`` for each. Uses the
+        ``composite`` aggregation under the hood to perform this.
+        """
+        self.num_searches = 0
+        self.total_took = 0
+        self.aborted = False
+
+        def run_search(s,**kwargs):
+            _timeout_at = kwargs.pop("timeout_at", None)
+            if _timeout_at:
+                _time_remaining = _timeout_at - int(time.time())
+                s = s.params(timeout=f"{_time_remaining}s")
+            if self.field and self.precision:
+                s.aggs.bucket("comp", "geotile_grid", field=self.field,precision=self.precision,size=self.size)
+            #logger.info(json.dumps(s.to_dict(),indent=2,default=str))
+            return s.execute()
+
+        timeout_at = None
+        if self.timeout:
+            timeout_at = int(time.time()) + self.timeout
+        for search in self.searches:
+            response = run_search(search,timeout_at=timeout_at)
+            self.num_searches += 1
+            self.total_took += response.took
+            self.total_shards += response._shards.total  # pylint: disable=W0212
+            self.total_skipped += response._shards.skipped  # pylint: disable=W0212
+            self.total_successful += response._shards.successful  # pylint: disable=W0212
+            self.total_failed += response._shards.failed  # pylint: disable=W0212
+            for b in response.aggregations.comp.buckets:
+                b = self.bucket_callback(b,self)
+                yield b
+
 
 class ScanAggs:
     def __init__(self, search, source_aggs, inner_aggs=None, size=10, timeout=None):
