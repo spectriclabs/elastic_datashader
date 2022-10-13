@@ -537,7 +537,6 @@ def get_span_upper_bound(span_range: str, estimated_points_per_tile: Optional[in
         return math.log(1e9)
 
     if span_range == "ultrawide":
-        return math.log(1e30)
         return math.log(1e308)
 
     assert estimated_points_per_tile is not None
@@ -1178,26 +1177,28 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 bucket.metric("sum","sum",field=category_field,missing=0)
             searches.append(subtile_s)
             cmap = "bmy" #todo have front end pass the cmap for none categorical
-            def calc_aggregation(bucket,search):
-                #get bounds from bucket.key
-                #do search for sum of values on category_field
-                z, x, y = [ int(x) for x in bucket.key.split("/") ]
-                bucket_bb_dict = create_bounding_box_for_tile(x, y, z)
-                subtile_s = copy.copy(base_s)
-                subtile_s.aggs.bucket("sum","avg",field=category_field,missing=0)
-                subtile_s = subtile_s[0:0]
-                subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: bucket_bb_dict})
-                response = subtile_s.execute()
-                search.num_searches += 1
-                search.total_took += response.took
-                search.total_shards += response._shards.total  # pylint: disable=W0212
-                search.total_skipped += response._shards.skipped  # pylint: disable=W0212
-                search.total_successful += response._shards.successful  # pylint: disable=W0212
-                search.total_failed += response._shards.failed  # pylint: disable=W0212
-                bucket.doc_count = response.aggregations.sum['value'] #replace with sum of category_field
-                return bucket
+            
+            # def calc_aggregation(bucket,search):
+            #     #get bounds from bucket.key
+            #     #do search for sum of values on category_field
+            #     z, x, y = [ int(x) for x in bucket.key.split("/") ]
+            #     bucket_bb_dict = create_bounding_box_for_tile(x, y, z)
+            #     subtile_s = copy.copy(base_s)
+            #     subtile_s.aggs.bucket("sum","avg",field=category_field,missing=0)
+            #     subtile_s = subtile_s[0:0]
+            #     subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: bucket_bb_dict})
+            #     response = subtile_s.execute()
+            #     search.num_searches += 1
+            #     search.total_took += response.took
+            #     search.total_shards += response._shards.total  # pylint: disable=W0212
+            #     search.total_skipped += response._shards.skipped  # pylint: disable=W0212
+            #     search.total_successful += response._shards.successful  # pylint: disable=W0212
+            #     search.total_failed += response._shards.failed  # pylint: disable=W0212
+            #     bucket.doc_count = response.aggregations.sum['value'] #replace with sum of category_field
+            #     return bucket
             
             def remap_bucket(bucket,search):
+                # pylint: disable=unused-argument
                 #get bounds from bucket.key
                 #remap sub aggregation for sum of values to the doc count
                 bucket.doc_count = bucket.sum['value']
