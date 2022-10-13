@@ -537,10 +537,11 @@ def get_span_upper_bound(span_range: str, estimated_points_per_tile: Optional[in
         return math.log(1e9)
 
     if span_range == "ultrawide":
+        return math.log(1e30)
         return math.log(1e308)
 
     assert estimated_points_per_tile is not None
-    return math.log(max(estimated_points_per_tile * 2, 2))
+    return math.log(max(math.pow(estimated_points_per_tile,2), 2))
 
 def get_span_none(span_upper_bound: Optional[float]) -> Optional[List[float]]:
     if span_upper_bound is None:
@@ -1116,6 +1117,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
         composite_agg_size = int(max_bins / inner_agg_size) - 1
         field_type = get_field_type(config.elastic_hosts, headers, params,geopoint_field, idx)
         partial_data = False # TODO can we get partial data?
+        span = None
         if field_type == "geo_point":
             resp = ScanAggs(
                 tile_s,
@@ -1138,10 +1140,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             )
             estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
         elif field_type == "geo_shape":
-            searches = []
-            estimated_points_per_tile = 10000
             zoom = 0
-            #span_range = "ultrawide"
             if resolution == "coarse":
                 zoom = 5
                 spread = 7
@@ -1151,16 +1150,33 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             elif resolution == "finest":
                 zoom = 7
                 spread = 1
+            geotile_precision = current_zoom+zoom
+            searches = []
+            if category_field:
+                max_value_s = copy.copy(base_s)
+                bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+                bucket.metric("sum","sum",field=category_field,missing=0)
+                resp = max_value_s.execute()
+                estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
+                span = [0,estimated_points_per_tile]
+            else:
+                max_value_s = copy.copy(base_s)
+                max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+                resp = max_value_s.execute()
+                estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
+                span = [0,estimated_points_per_tile]
+            logger.info("EST Points: %s",estimated_points_per_tile)
+
             searches = []
             composite_agg_size = 65536#max agg bucket size
-            geotile_precision = current_zoom+zoom
             subtile_bb_dict = create_bounding_box_for_tile(x, y, z)
             subtile_s = copy.copy(base_s)
             subtile_s = subtile_s[0:0]
             subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
-            subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
+            bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
+            if category_field:
+                bucket.metric("sum","sum",field=category_field,missing=0)
             searches.append(subtile_s)
-            #logger.info(inner_aggs)
             cmap = "bmy" #todo have front end pass the cmap for none categorical
             def calc_aggregation(bucket,search):
                 #get bounds from bucket.key
@@ -1168,7 +1184,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 z, x, y = [ int(x) for x in bucket.key.split("/") ]
                 bucket_bb_dict = create_bounding_box_for_tile(x, y, z)
                 subtile_s = copy.copy(base_s)
-                subtile_s.aggs.bucket("sum","median_absolute_deviation",field=category_field,missing=0)
+                subtile_s.aggs.bucket("sum","avg",field=category_field,missing=0)
                 subtile_s = subtile_s[0:0]
                 subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: bucket_bb_dict})
                 response = subtile_s.execute()
@@ -1180,9 +1196,16 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 search.total_failed += response._shards.failed  # pylint: disable=W0212
                 bucket.doc_count = response.aggregations.sum['value'] #replace with sum of category_field
                 return bucket
+            
+            def remap_bucket(bucket,search):
+                #get bounds from bucket.key
+                #remap sub aggregation for sum of values to the doc count
+                bucket.doc_count = bucket.sum['value']
+                return bucket
             bucket_callback = None
             if category_field:
-                bucket_callback = calc_aggregation
+                #bucket_callback = calc_aggregation #don't run a sub query. sub aggregation worked But we might want to leave this in for cross index searches
+                bucket_callback = remap_bucket
             resp = Scan(searches,timeout=config.query_timeout_seconds,bucket_callback=bucket_callback)
             df = pd.DataFrame(
                 convert_composite(
@@ -1291,8 +1314,10 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             # bins that have 1000 or more items will be colored full
             # scale
             span_upper_bound = get_span_upper_bound(span_range, estimated_points_per_tile)
-            span = get_span_zero(span_upper_bound)
-            logger.debug("Span %s %s", span, span_range)
+            if span is None:
+                span = get_span_zero(span_upper_bound)
+            logger.info("Span %s %s", span, span_range)
+            logger.info("aggs min:%s max:%s",float(agg.min()),float(agg.max()))
             img = tf.shade(agg, cmap=cc.palette[cmap], how="log", span=span)
 
         ###############################################################
