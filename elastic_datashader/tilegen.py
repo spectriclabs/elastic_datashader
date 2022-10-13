@@ -1177,7 +1177,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 bucket.metric("sum","sum",field=category_field,missing=0)
             searches.append(subtile_s)
             cmap = "bmy" #todo have front end pass the cmap for none categorical
-            
+
             # def calc_aggregation(bucket,search):
             #     #get bounds from bucket.key
             #     #do search for sum of values on category_field
@@ -1196,7 +1196,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             #     search.total_failed += response._shards.failed  # pylint: disable=W0212
             #     bucket.doc_count = response.aggregations.sum['value'] #replace with sum of category_field
             #     return bucket
-            
+
             def remap_bucket(bucket,search):
                 # pylint: disable=unused-argument
                 #get bounds from bucket.key
