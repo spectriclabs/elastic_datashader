@@ -39,7 +39,6 @@ from .elastic import (
     get_nested_field_from_hit,
     to_32bit_float,
     Scan,
-    ScanAggs,
     get_tile_categories,
     scan
 )
@@ -984,7 +983,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         # Create base search
         base_s = get_search_base(config.elastic_hosts, headers, params, idx)
-
+        base_s = base_s[0:0]
         # Now find out how many documents
         count_s = copy.copy(base_s)[0:0] #slice of array sets from/size since we are aggregating the data we don't need the hits
         count_s = count_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
@@ -1118,13 +1117,37 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
         partial_data = False # TODO can we get partial data?
         span = None
         if field_type == "geo_point":
-            resp = ScanAggs(
-                tile_s,
-                {"grids": A("geotile_grid", field=geopoint_field, precision=geotile_precision)},
-                inner_aggs,
-                size=composite_agg_size,
-                timeout=config.query_timeout_seconds
-            )
+            geo_tile_grid = A("geotile_grid", field=geopoint_field, precision=geotile_precision)
+            logger.info(params)
+            estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
+            if params['bucket_min']>0 or params['bucket_max']<1:
+                if estimated_points_per_tile is None:
+                    #this isn't good we need a real number so lets query the max aggregation ammount
+                    max_value_s = copy.copy(base_s)
+                    bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+                    if category_field:
+                        bucket.metric("sum","sum",field=category_field,missing=0)
+                    resp = max_value_s.execute()
+                    if category_field:
+                        estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
+                    else:
+                        estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
+                min_bucket = estimated_points_per_tile*params['bucket_min']
+                max_bucket = estimated_points_per_tile*params['bucket_max']
+                geo_tile_grid.pipeline("selector","bucket_selector",buckets_path={"doc_count":"_count"},script=f"params.doc_count > {min_bucket} && params.doc_count < {max_bucket}")
+                logger.info(geo_tile_grid.to_dict())
+            if inner_aggs is not None:
+                for agg_name, agg in inner_aggs.items():
+                    geo_tile_grid.aggs[agg_name] = agg
+            tile_s.aggs["comp"] = geo_tile_grid
+            resp = Scan([tile_s],timeout=config.query_timeout_seconds)
+            # resp = ScanAggs(
+            #     tile_s,
+            #     {"grids": geo_tile_grid},
+            #     inner_aggs,
+            #     size=composite_agg_size,
+            #     timeout=config.query_timeout_seconds
+            # ) #Dont use composite aggregator because you cannot use a bucket selector
 
 
             df = pd.DataFrame(
@@ -1137,7 +1160,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                     category_format
                 )
             )
-            estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
+
         elif field_type == "geo_shape":
             zoom = 0
             if resolution == "coarse":

@@ -15,7 +15,7 @@ from elasticsearch.exceptions import NotFoundError, ConflictError
 from elasticsearch_dsl import Document
 
 from .config import config
-from .elastic import get_search_base, build_dsl_filter
+from .elastic import get_field_type, get_search_base, build_dsl_filter
 from .logger import logger
 from .timeutil import quantize_time_range, convert_kibana_time
 
@@ -50,6 +50,8 @@ def create_default_params() -> Dict[str, Any]:
         "track_connection": None,
         "use_centroid": False,
         "user": None,
+        "bucket_min":0,
+        "bucket_max":1
     }
 
 
@@ -289,6 +291,8 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params["geopoint_field"] = query_params.get("geopoint_field", params["geopoint_field"])
     params["timestamp_field"] = query_params.get("timestamp_field", params["timestamp_field"])
     params.update(get_time_bounds(now, from_time, to_time))
+    params["bucket_min"] = float(query_params.get("bucket_min",0))
+    params["bucket_max"] = float(query_params.get("bucket_max",1))
     params["debug"] = (query_params.get("debug", False) == 'true')
 
     if params["geopoint_field"] is None:
@@ -305,8 +309,9 @@ def generate_global_params(headers, params, idx):
     category_field = params["category_field"]
     category_type = params["category_type"]
     category_histogram = params["category_histogram"]
+    current_zoom = params["mapZoom"]
     span_range = params["span_range"]
-
+    resolution = params["resolution"]
     histogram_range = 0
     histogram_interval = None
     histogram_cnt = None
@@ -316,7 +321,7 @@ def generate_global_params(headers, params, idx):
 
     # Create base search
     base_s = get_search_base(config.elastic_hosts, headers, params, idx)
-
+    base_s = base_s[0:0]
     # west, south, east, north
     global_bounds = [-180, -90, 180, 90]
     global_doc_cnt = 0
@@ -337,8 +342,10 @@ def generate_global_params(headers, params, idx):
     if category_type == "number":
         bounds_s.aggs.metric("field_stats", "stats", field=category_field)
 
+    field_type = get_field_type(config.elastic_hosts, headers, params,geopoint_field, idx)
     # Execute and process search
-    if len(list(bounds_s.aggs)) > 0:
+    if len(list(bounds_s.aggs)) > 0 and field_type != "geo_shape":
+        logger.info(bounds_s.to_dict())
         bounds_resp = bounds_s.execute()
         assert len(bounds_resp.hits) == 0
 
@@ -403,6 +410,45 @@ def generate_global_params(headers, params, idx):
                             )
                         else:
                             histogram_range = 0
+    elif field_type == "geo_shape":
+        zoom = 0
+        if resolution == "coarse":
+            zoom = 5
+        elif resolution == "fine":
+            zoom = 6
+        elif resolution == "finest":
+            zoom = 7
+        geotile_precision = current_zoom+zoom
+        max_value_s = copy.copy(base_s)
+        bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=0,size=1)
+        resp = max_value_s.execute()
+        global_doc_cnt = resp.aggregations.comp.buckets[0].doc_count
+        if global_doc_cnt > 100000:
+            histogram_cnt = 200
+        else:
+            histogram_cnt = 500
+
+        if category_field:
+            max_value_s = copy.copy(base_s)
+            bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+            bucket.metric("sum","sum",field=category_field,missing=0)
+            resp = max_value_s.execute()
+            estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
+            histogram_range = estimated_points_per_tile
+        else:
+            max_value_s = copy.copy(base_s)
+            max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+            resp = max_value_s.execute()
+            estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
+            histogram_range = estimated_points_per_tile
+        if histogram_range > 0:
+            # round to the nearest larger power of 10
+            histogram_range = math.pow(
+                10, math.ceil(math.log10(histogram_range))
+            )
+            histogram_interval = histogram_range / histogram_cnt
+        field_min = 0
+        field_max = estimated_points_per_tile
     else:
         logger.debug("Skipping global query")
 
