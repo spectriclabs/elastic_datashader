@@ -142,7 +142,8 @@ The API is currently provisional and may change in future releases.
 * `spread=[alphanumeric]` : how large points should be rendered (one of `large`, `medium`, `small`, `auto`)
 * `span_range=[alphanumeric]` : the dyanmic range to be applied for alpha channel (one of `flat`, `narrow`, `normal`, `wide`, `auto`)
 * `resolution=[alphanumeric]` : the aggregation grid size (default: `finest`),
-
+* `bucket_min=[numeric]` : a filter to filterout lower count grid points (percentage of maximum records per grid point)
+* `bucket_max=[numeric]` : a filter to filter out higher count grid points (percentage of maximum records per grid point)
 **Params**
 
 ```
