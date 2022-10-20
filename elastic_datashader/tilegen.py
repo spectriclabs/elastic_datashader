@@ -1132,8 +1132,9 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                         estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
                     else:
                         estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
-                min_bucket = estimated_points_per_tile*params['bucket_min']
-                max_bucket = estimated_points_per_tile*params['bucket_max']
+
+                min_bucket = math.exp(math.log(estimated_points_per_tile)*params['bucket_min'])
+                max_bucket = math.exp(math.log(estimated_points_per_tile)*params['bucket_max'])
                 geo_tile_grid.pipeline("selector","bucket_selector",buckets_path={"doc_count":"_count"},script=f"params.doc_count > {min_bucket} && params.doc_count < {max_bucket}")
                 logger.info(geo_tile_grid.to_dict())
             if inner_aggs is not None:
