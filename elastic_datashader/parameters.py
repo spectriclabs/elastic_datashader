@@ -51,7 +51,9 @@ def create_default_params() -> Dict[str, Any]:
         "use_centroid": False,
         "user": None,
         "bucket_min":0,
-        "bucket_max":1
+        "bucket_max":1,
+        "timeOverlap":False,
+        "timeOverlapSize":"auto"
     }
 
 
@@ -293,6 +295,8 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params.update(get_time_bounds(now, from_time, to_time))
     params["bucket_min"] = float(query_params.get("bucket_min",0))
     params["bucket_max"] = float(query_params.get("bucket_max",1))
+    params["timeOverlap"] = query_params.get("timeOverlap","false") == "true"
+    params["timeOverlapSize"] = query_params.get("timeOverlapSize","auto")
     params["debug"] = (query_params.get("debug", False) == 'true')
 
     if params["geopoint_field"] is None:

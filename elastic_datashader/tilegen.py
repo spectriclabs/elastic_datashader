@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
-
+from datetime import datetime, timezone
 import copy
 import math
 import time
@@ -32,6 +32,7 @@ from .drawing import (
     gen_overlay,
 )
 from .elastic import (
+    parse_duration_interval,
     get_field_type,
     get_search_base,
     convert_composite,
@@ -1187,7 +1188,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 resp = max_value_s.execute()
                 estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
                 span = [0,estimated_points_per_tile]
-            logger.info("EST Points: %s",estimated_points_per_tile)
+            logger.info("EST Points: %s %s",estimated_points_per_tile,category_field)
 
             searches = []
             composite_agg_size = 65536#max agg bucket size
@@ -1230,6 +1231,13 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             if category_field:
                 #bucket_callback = calc_aggregation #don't run a sub query. sub aggregation worked But we might want to leave this in for cross index searches
                 bucket_callback = remap_bucket
+
+            if params['timeOverlap']:#run scan using date intervals to check overlaps during the same time
+                subtile_bb_dict = create_bounding_box_for_tile(x, y, z)
+                interval = params['timeOverlapSize']
+                logger.info("CREATING TIMEBUCKETS %s",interval)
+                searches = create_time_interval_searches(base_s,subtile_bb_dict,start_time,stop_time,timestamp_field,geopoint_field,geotile_precision,composite_agg_size,category_field,interval)
+
             resp = Scan(searches,timeout=config.query_timeout_seconds,bucket_callback=bucket_callback)
             df = pd.DataFrame(
                 convert_composite(
@@ -1370,3 +1378,55 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             "An exception occured while attempting to generate a tile:"
         )
         raise
+
+
+def create_time_interval_searches(base_s,subtile_bb_dict,start_time,stop_time,timestamp_field,geopoint_field,geotile_precision,composite_agg_size,category_field,interval="auto"):
+    stime = start_time
+    searches = []
+    if interval == "auto":
+        subtile_s = copy.copy(base_s)
+        subtile_s = subtile_s[0:0]
+        subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
+        subtile_s.aggs.bucket("by_time", "auto_date_histogram", field="lastupdated",buckets=546)
+        resp = subtile_s.execute()
+        interval = resp.aggregations.by_time.interval
+        #create a search for each bucket using the bucket time plus the interval
+        logger.info("Doing multiple queries based on interval %s",interval)
+
+        for bucket in resp.aggregations.by_time:
+            subtile_s = copy.copy(base_s)
+            bucket_start_time = datetime.strptime(bucket.key_as_string,"%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+            bucket_stop_time = bucket_start_time+ parse_duration_interval(interval)
+
+            if timestamp_field:
+                time_range = {timestamp_field: {}}
+                if bucket_start_time is not None:
+                    time_range[timestamp_field]["gte"] = bucket_start_time
+                if stop_time is not None:
+                    time_range[timestamp_field]["lte"] = bucket_stop_time
+
+            if time_range and time_range[timestamp_field]:
+                subtile_s = subtile_s.filter("range", **time_range)
+                bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
+                if category_field:
+                    bucket.metric("sum","sum",field=category_field,missing=0)
+                searches.append(subtile_s)
+        return searches
+
+    while stime < stop_time:
+        subtile_s = copy.copy(base_s)
+        subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
+        subtile_s = subtile_s[0:0]
+        bucket_start_time = stime
+        bucket_stop_time = bucket_start_time+ parse_duration_interval(interval)
+        time_range = {timestamp_field: {}}
+        time_range[timestamp_field]["gte"] = bucket_start_time
+        time_range[timestamp_field]["lte"] = bucket_stop_time
+        stime = bucket_stop_time
+        subtile_s = subtile_s.filter("range", **time_range)
+        bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
+        bucket.pipeline("selector","bucket_selector",buckets_path={"doc_count":"_count"},script="params.doc_count >= 2")
+        if category_field:
+            bucket.metric("sum","sum",field=category_field,missing=0)
+        searches.append(subtile_s)
+    return searches

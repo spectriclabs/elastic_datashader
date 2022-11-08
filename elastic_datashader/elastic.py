@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 import copy
 import struct
 import time
+from dateutil.relativedelta import relativedelta
 
 from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
@@ -419,6 +419,19 @@ def get_es_headers(request_headers=None, user=None,x_opaque_id=None):
 
     return result
 
+def parse_duration_interval(interval):
+    durations = {"days":"d",
+    "minutes":"m",
+    "hours":"h",
+    "weeks":"w",
+    "months":"M",
+    #"quarter":"q", dateutil.relativedelta doesn't handle quarters
+    "years":"y"}
+    kwargs = {}
+    for key,value in durations.items():
+        if interval[1] == value:
+            kwargs[key] = int(interval[0])
+    return relativedelta(**kwargs)
 
 def convert(response, category_formatter=str):
     """
