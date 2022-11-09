@@ -14,13 +14,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ['3.9']
+        python-version: ['3.10']
         os: [ubuntu-latest]
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
         architecture: x64
@@ -43,7 +43,7 @@ jobs:
     - name: Create timestamp env
       run: echo "timestamp=$(date --utc +%Y%m%d%H%M%S)" >> $GITHUB_ENV
       shell: bash
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: docker/login-action@v2
       with:
         registry: ${{ env.REGISTRY }}

@@ -1,4 +1,4 @@
-FROM python:3.9 AS builder
+FROM python:3.10 AS builder
 
 RUN mkdir -p /build
 RUN pip install --upgrade pip && \
@@ -9,7 +9,7 @@ COPY elastic_datashader /build/elastic_datashader
 WORKDIR /build/elastic_datashader
 RUN poetry build
 
-FROM python:3.9 AS deployment
+FROM python:3.10 AS deployment
 LABEL maintainer="foss@spectric.com"
 
 COPY --from=builder /build/dist/*.whl /opt/elastic_datashader/
