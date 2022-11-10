@@ -1,5 +1,7 @@
 FROM python:3.10 AS builder
 
+ENV PIP_ROOT_USER_ACTION=ignore
+
 RUN mkdir -p /build
 RUN pip install --upgrade pip && \
     pip install poetry
@@ -11,6 +13,8 @@ RUN poetry build
 
 FROM python:3.10 AS deployment
 LABEL maintainer="foss@spectric.com"
+
+ENV PIP_ROOT_USER_ACTION=ignore
 
 COPY --from=builder /build/dist/*.whl /opt/elastic_datashader/
 RUN mkdir -p /opt/elastic_datashader/tms-cache && \
