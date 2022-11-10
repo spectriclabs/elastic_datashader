@@ -429,8 +429,8 @@ def parse_duration_interval(interval):
     "years":"y"}
     kwargs = {}
     for key,value in durations.items():
-        if interval[1] == value:
-            kwargs[key] = int(interval[0])
+        if interval[len(interval)-1] == value:
+            kwargs[key] = int(interval[0:len(interval)-1])
     return relativedelta(**kwargs)
 
 def convert(response, category_formatter=str):

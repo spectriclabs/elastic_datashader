@@ -423,14 +423,7 @@ def generate_global_params(headers, params, idx):
         elif resolution == "finest":
             zoom = 7
         geotile_precision = current_zoom+zoom
-        max_value_s = copy.copy(base_s)
-        bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=0,size=1)
-        resp = max_value_s.execute()
-        global_doc_cnt = resp.aggregations.comp.buckets[0].doc_count
-        if global_doc_cnt > 100000:
-            histogram_cnt = 200
-        else:
-            histogram_cnt = 500
+        histogram_cnt = 500
 
         if category_field:
             max_value_s = copy.copy(base_s)
@@ -445,6 +438,7 @@ def generate_global_params(headers, params, idx):
             resp = max_value_s.execute()
             estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
             histogram_range = estimated_points_per_tile
+        global_doc_cnt = estimated_points_per_tile
         if histogram_range > 0:
             # round to the nearest larger power of 10
             histogram_range = math.pow(

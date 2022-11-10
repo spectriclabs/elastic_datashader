@@ -1,7 +1,6 @@
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
-from datetime import datetime, timezone
 import copy
 import math
 import time
@@ -1175,19 +1174,25 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 spread = 1
             geotile_precision = current_zoom+zoom
             searches = []
-            if category_field:
-                max_value_s = copy.copy(base_s)
-                bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
-                bucket.metric("sum","sum",field=category_field,missing=0)
-                resp = max_value_s.execute()
-                estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
+
+            if params.get("generated_params", {}).get('complete',False):
+                estimated_points_per_tile = params["generated_params"]['global_doc_cnt']
                 span = [0,estimated_points_per_tile]
+                logger.info("USING GENERATED PARAMS")
             else:
-                max_value_s = copy.copy(base_s)
-                max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
-                resp = max_value_s.execute()
-                estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
-                span = [0,estimated_points_per_tile]
+                if category_field:
+                    max_value_s = copy.copy(base_s)
+                    bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+                    bucket.metric("sum","sum",field=category_field,missing=0)
+                    resp = max_value_s.execute()
+                    estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
+                    span = [0,estimated_points_per_tile]
+                else:
+                    max_value_s = copy.copy(base_s)
+                    max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+                    resp = max_value_s.execute()
+                    estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
+                    span = [0,estimated_points_per_tile]
             logger.info("EST Points: %s %s",estimated_points_per_tile,category_field)
 
             searches = []
@@ -1384,41 +1389,23 @@ def create_time_interval_searches(base_s,subtile_bb_dict,start_time,stop_time,ti
     stime = start_time
     searches = []
     if interval == "auto":
-        subtile_s = copy.copy(base_s)
-        subtile_s = subtile_s[0:0]
-        subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
-        subtile_s.aggs.bucket("by_time", "auto_date_histogram", field="lastupdated",buckets=546)
-        resp = subtile_s.execute()
-        interval = resp.aggregations.by_time.interval
-        #create a search for each bucket using the bucket time plus the interval
-        logger.info("Doing multiple queries based on interval %s",interval)
+        delta = stop_time - start_time
+        minutes = delta.total_seconds() /60
+        step = 1 #step through all the minutes in an hour to find a fit
+        while minutes/step > 546:
+            step = step +1
+        interval = str(step)+"m"
 
-        for bucket in resp.aggregations.by_time:
-            subtile_s = copy.copy(base_s)
-            bucket_start_time = datetime.strptime(bucket.key_as_string,"%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-            bucket_stop_time = bucket_start_time+ parse_duration_interval(interval)
-
-            if timestamp_field:
-                time_range = {timestamp_field: {}}
-                if bucket_start_time is not None:
-                    time_range[timestamp_field]["gte"] = bucket_start_time
-                if stop_time is not None:
-                    time_range[timestamp_field]["lte"] = bucket_stop_time
-
-            if time_range and time_range[timestamp_field]:
-                subtile_s = subtile_s.filter("range", **time_range)
-                bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
-                if category_field:
-                    bucket.metric("sum","sum",field=category_field,missing=0)
-                searches.append(subtile_s)
-        return searches
-
+    logger.info("Actual time bucket %s",interval)
     while stime < stop_time:
         subtile_s = copy.copy(base_s)
         subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
         subtile_s = subtile_s[0:0]
         bucket_start_time = stime
-        bucket_stop_time = bucket_start_time+ parse_duration_interval(interval)
+        bucket_duration = parse_duration_interval(interval)
+        #logger.info(bucket_duration)
+        bucket_stop_time = bucket_start_time+ bucket_duration
+        bucket_stop_time = min(bucket_stop_time, stop_time)
         time_range = {timestamp_field: {}}
         time_range[timestamp_field]["gte"] = bucket_start_time
         time_range[timestamp_field]["lte"] = bucket_stop_time
