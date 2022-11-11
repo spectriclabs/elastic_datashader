@@ -158,18 +158,18 @@ def convert_nm_to_ellipse_units(distance: float, units: str) -> float:
     # NB. assume "majmin_m" if any others
     return distance * 1852
 
-def get_field_type(elastic_hosts: str,headers: Optional[str],params: Dict[str, Any],field:str,idx: str) -> str:
+def get_field_type(elastic_hosts: str, headers: Optional[str], params: Dict[str, Any], field: str, idx: str) -> str:
     user = params.get("user")
     x_opaque_id = params.get("x-opaque-id")
     es = Elasticsearch(
         elastic_hosts.split(","),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(headers, user,x_opaque_id),
+        headers=get_es_headers(headers, user, x_opaque_id),
     )
-    mappings = es.indices.get_field_mapping(fields=field,index=idx)
-    #{'foot_prints': {'mappings': {'foot_print': {'full_name': 'foot_print', 'mapping': {'foot_print': {'type': 'geo_shape'}}}}}}
-    index = list(mappings.keys())[0] #if index is my_index* it comes back as my_index
+    mappings = es.indices.get_field_mapping(fields=field, index=idx)
+    # {'foot_prints': {'mappings': {'foot_print': {'full_name': 'foot_print', 'mapping': {'foot_print': {'type': 'geo_shape'}}}}}}
+    index = list(mappings.keys())[0] # if index is my_index* it comes back as my_index
     return mappings[index]['mappings'][field]['mapping'][field]['type']
 
 def get_search_base(
@@ -199,7 +199,7 @@ def get_search_base(
         elastic_hosts.split(","),
         verify_certs=False,
         timeout=900,
-        headers=get_es_headers(headers, user,x_opaque_id),
+        headers=get_es_headers(headers, user, x_opaque_id),
     )
 
     # Create base search
@@ -219,13 +219,13 @@ def get_search_base(
     if time_range and time_range[timestamp_field]:
         base_s = base_s.filter("range", **time_range)
 
-    #filter the ellipse search range in the data base query so the legen matches the tiles
-    if params.get('render_mode',"") =="ellipses":
-        units = convert_nm_to_ellipse_units(params['search_nautical_miles'],params['ellipse_units'])
-        search_range = {params["ellipse_major"]:{"lte":units}}
-        base_s = base_s.filter("range",**search_range)
-        search_range = {params["ellipse_minor"]:{"lte":units}}
-        base_s = base_s.filter("range",**search_range)
+    # filter the ellipse search range in the data base query so the legen matches the tiles
+    if params.get('render_mode', "") =="ellipses":
+        units = convert_nm_to_ellipse_units(params['search_nautical_miles'], params['ellipse_units'])
+        search_range = {params["ellipse_major"]: {"lte": units}}
+        base_s = base_s.filter("range", **search_range)
+        search_range = {params["ellipse_minor"]: {"lte": units}}
+        base_s = base_s.filter("range", **search_range)
 
     # Add lucene query
     if lucene_query:
@@ -355,14 +355,14 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
             filter_key = f.get("meta", {}).get("key")
             if f.get("meta", {}).get("negate"):
                 if filter_key == "query":
-                    filter_dict["must_not"].append( { "bool": f.get(filter_key).get("bool") } )
+                    filter_dict["must_not"].append({"bool": f.get(filter_key).get("bool")})
                 else:
-                    filter_dict["must_not"].append( { filter_key: f.get(filter_key) } )
+                    filter_dict["must_not"].append({filter_key: f.get(filter_key)})
             else:
                 if filter_key == "query":
-                    filter_dict["filter"].append( { "bool": f.get(filter_key).get("bool") } )
+                    filter_dict["filter"].append({"bool": f.get(filter_key).get("bool")})
                 else:
-                    filter_dict["filter"].append( { filter_key: f.get(filter_key) } )
+                    filter_dict["filter"].append({filter_key: f.get(filter_key)})
 
         else:
             raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
@@ -389,7 +389,7 @@ def load_datashader_headers(header_file_path_str: Optional[str]) -> Dict[Any, An
 
     return loaded_yaml
 
-def get_es_headers(request_headers=None, user=None,x_opaque_id=None):
+def get_es_headers(request_headers=None, user=None, x_opaque_id=None):
     """
 
     :param request_headers:
@@ -420,15 +420,17 @@ def get_es_headers(request_headers=None, user=None,x_opaque_id=None):
     return result
 
 def parse_duration_interval(interval):
-    durations = {"days":"d",
-    "minutes":"m",
-    "hours":"h",
-    "weeks":"w",
-    "months":"M",
-    #"quarter":"q", dateutil.relativedelta doesn't handle quarters
-    "years":"y"}
+    durations = {
+        "days": "d",
+        "minutes": "m",
+        "hours": "h",
+        "weeks": "w",
+        "months": "M",
+        # "quarter": "q", dateutil.relativedelta doesn't handle quarters
+        "years": "y",
+    }
     kwargs = {}
-    for key,value in durations.items():
+    for key, value in durations.items():
         if interval[len(interval)-1] == value:
             kwargs[key] = int(interval[0:len(interval)-1])
     return relativedelta(**kwargs)
@@ -524,11 +526,11 @@ def geotile_bucket_to_lonlat(bucket):
     if hasattr(bucket, "centroid"):
         lon = bucket.centroid.location.lon
         lat = bucket.centroid.location.lat
-    elif hasattr(bucket.key,'grids'):
-        z, x, y = [ int(x) for x in bucket.key.grids.split("/") ]
+    elif hasattr(bucket.key, 'grids'):
+        z, x, y = [int(x) for x in bucket.key.grids.split("/")]
         lon, lat = mu.center(x, y, z)
     else:
-        z, x, y = [ int(x) for x in bucket.key.split("/") ]
+        z, x, y = [int(x) for x in bucket.key.split("/")]
         lon, lat = mu.center(x, y, z)
     return lon, lat
 
@@ -571,7 +573,7 @@ def get_nested_field_from_hit(hit, field_parts: List[str], default=None):
     raise ValueError("field must be provided")
 
 def chunk_iter(iterable, chunk_size):
-    chunks = [ None ] * chunk_size
+    chunks = [None] * chunk_size
     i = -1
     for i, v in enumerate(iterable):
         idx = (i % chunk_size)
@@ -581,14 +583,14 @@ def chunk_iter(iterable, chunk_size):
         chunks[idx] = v
 
     if i >= 0:
-        last_written_idx =( i % chunk_size)
+        last_written_idx = (i % chunk_size)
         yield (False, chunks[0:last_written_idx+1])
 
-def bucket_noop(bucket,search):
+def bucket_noop(bucket, search):
     # pylint: disable=unused-argument
     return bucket
 class Scan:
-    def __init__(self, searches, inner_aggs=None,field=None,precision=None, size=10, timeout=None,bucket_callback=bucket_noop):
+    def __init__(self, searches, inner_aggs=None, field=None, precision=None, size=10, timeout=None, bucket_callback=bucket_noop):
         self.field = field
         self.precision = precision
         self.searches = searches
@@ -616,21 +618,21 @@ class Scan:
         self.total_took = 0
         self.aborted = False
 
-        def run_search(s,**kwargs):
+        def run_search(s, **kwargs):
             _timeout_at = kwargs.pop("timeout_at", None)
             if _timeout_at:
                 _time_remaining = _timeout_at - int(time.time())
                 s = s.params(timeout=f"{_time_remaining}s")
             if self.field and self.precision:
-                s.aggs.bucket("comp", "geotile_grid", field=self.field,precision=self.precision,size=self.size)
-            #logger.info(json.dumps(s.to_dict(),indent=2,default=str))
+                s.aggs.bucket("comp", "geotile_grid", field=self.field, precision=self.precision, size=self.size)
+            # logger.info(json.dumps(s.to_dict(), indent=2, default=str))
             return s.execute()
 
         timeout_at = None
         if self.timeout:
             timeout_at = int(time.time()) + self.timeout
         for search in self.searches:
-            response = run_search(search,timeout_at=timeout_at)
+            response = run_search(search, timeout_at=timeout_at)
             self.num_searches += 1
             self.total_took += response.took
             self.total_shards += response._shards.total  # pylint: disable=W0212
@@ -638,7 +640,7 @@ class Scan:
             self.total_successful += response._shards.successful  # pylint: disable=W0212
             self.total_failed += response._shards.failed  # pylint: disable=W0212
             for b in response.aggregations.comp.buckets:
-                b = self.bucket_callback(b,self)
+                b = self.bucket_callback(b, self)
                 yield b
 
 
@@ -735,19 +737,19 @@ def get_tile_categories(base_s, x, y, z, geopoint_field, category_field, size):
     cat_s = cat_s.params(size=0)
     cat_s = cat_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
     cat_s.aggs.bucket("categories", "terms", field=category_field, size=size)
-    cat_s.aggs.bucket("missing", "filter", bool={ "must_not" : { "exists": { "field": category_field } } })
+    cat_s.aggs.bucket("missing", "filter", bool={"must_not" : {"exists": {"field": category_field}}})
     response = cat_s.execute()
     if hasattr(response.aggregations, "categories"):
         for category in response.aggregations.categories:
             # this if prevents bools from using 0/1 instead of true/false
             if hasattr(category, "key_as_string"):
-                category_filters[str(category.key)] = { "term": {category_field: category.key_as_string} }
+                category_filters[str(category.key)] = {"term": {category_field: category.key_as_string}}
             else:
-                category_filters[str(category.key)] = { "term": {category_field: category.key} }
+                category_filters[str(category.key)] = {"term": {category_field: category.key}}
             category_legend[str(category.key)] = category.doc_count
         category_legend["Other"] = response.aggregations.categories.sum_other_doc_count
     if hasattr(response.aggregations, "missing") and response.aggregations.missing.doc_count > 0:
-        category_filters["N/A"] = { "bool": { "must_not" : { "exists": { "field": category_field } } } }
+        category_filters["N/A"] = {"bool": {"must_not" : {"exists": {"field": category_field}}}}
         category_legend["N/A"] = response.aggregations.missing.doc_count
 
     return category_filters, category_legend
