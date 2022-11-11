@@ -93,7 +93,7 @@ def get_track_field_names(params: Dict[str, Any]) -> TrackFieldNames:
         track_connection=track_connection,
     )
 
-def populated_field_names(field_names: Union[EllipseFieldNames, TrackFieldNames]) -> List[str]:
+def populated_field_names(field_names: Union[EllipseFieldNames,TrackFieldNames]) -> List[str]:
     field_names_as_lists = (v for v in asdict(field_names).values() if v is not None)
     return [".".join(field_name_as_list) for field_name_as_list in field_names_as_lists]
 
@@ -126,7 +126,7 @@ def normalize_ellipses_to_list(locs, majors, minors, angles):
             and isinstance(locs[0], float)
             and isinstance(locs[1], float)
         ):
-            locs = [locs]  # eg. [[-73.986, 40.7485]]
+            locs = [locs]  # eg. [[-73.986,40.7485]]
             majors = [majors]
             minors = [minors]
             angles = [angles]
@@ -146,7 +146,7 @@ def normalize_locations_to_list(locs):
             and isinstance(locs[0], float)
             and isinstance(locs[1], float)
         ):
-            locs = [locs]  # eg. [[-73.986, 40.7485]]
+            locs = [locs]  # eg. [[-73.986,40.7485]]
     else:
         # All other cases are single location
         locs = [locs]
@@ -175,7 +175,7 @@ def normalize_location(location) -> Optional[Location]:
         lat, lon = location.split(",", 1)
         return Location(lat=float(lat), lon=float(lon))
 
-    # sometimes the location is a two-element [lon, lat] list
+    # sometimes the location is a two-element [lon,lat] list
     if isinstance(location, (AttrList, list)):
         if len(location) != 2:
             logger.warning("skipping location with invalid list format %s", location)
@@ -539,7 +539,7 @@ def get_span_upper_bound(span_range: str, estimated_points_per_tile: Optional[in
         return math.log(1e308)
 
     assert estimated_points_per_tile is not None
-    return math.log(max(math.pow(estimated_points_per_tile, 2), 2))
+    return math.log(max(math.pow(estimated_points_per_tile,2), 2))
 
 def get_span_none(span_upper_bound: Optional[float]) -> Optional[List[float]]:
     if span_upper_bound is None:
@@ -673,14 +673,14 @@ def generate_nonaggregated_tile(
                 )
             )
 
-            # Sort by category (if used) and then tracking value
+            #Sort by category (if used) and then tracking value
             if len(df) != 0:
                 if category_field:
-                    df.sort_values(["c", "t"], inplace=True)
+                    df.sort_values(["c","t"], inplace=True)
                 else:
                     df.sort_values(["t"], inplace=True)
 
-            # Now we need to iterate through the list so far and separate by different colors/distances
+            #Now we need to iterate through the list so far and separate by different colors/distances
             split_dicts = []
             start_points_dicts = []
             current_track = []
@@ -689,7 +689,7 @@ def generate_nonaggregated_tile(
             old_row = blank_row
             for _, row in df.iterrows():
                 if old_row.get("c") != row.get("c"):
-                    # new category, so insert space in the tracks dicts and add to the start dicts
+                    #new category, so insert space in the tracks dicts and add to the start dicts
                     if track_distance > filter_meters:
                         split_dicts = split_dicts + current_track
                         split_dicts.append(blank_row)
@@ -702,7 +702,7 @@ def generate_nonaggregated_tile(
                         not np.isnan(old_row.get("y")) :
                     distance = np.sqrt(np.power(row.get("x")-old_row.get("x"), 2)+np.power(row.get("y")-old_row.get("y"), 2))
                     if distance > search_meters:
-                        # These points are too far apart, split them as different tracks if total track length is acceptable
+                        #These points are too far apart, split them as different tracks if total track length is acceptable
                         if track_distance > filter_meters:
                             split_dicts = split_dicts + current_track
                             split_dicts.append(blank_row)
@@ -714,7 +714,7 @@ def generate_nonaggregated_tile(
                 current_track.append(dict(row))
                 old_row = row
 
-            # last one is always an end-point if the track was long enough
+            #last one is always an end-point if the track was long enough
             if track_distance > filter_meters:
                 split_dicts = split_dicts + current_track
                 split_dicts.append(blank_row)
@@ -777,7 +777,7 @@ def generate_nonaggregated_tile(
                 y_range=y_range,
             ).line(df, "x", "y", agg=rd.count_cat("c"))
 
-            # now for the points as well
+            #now for the points as well
             points_agg = None
 
             if df_points is not None:
@@ -824,12 +824,12 @@ def generate_nonaggregated_tile(
                 )
 
                 if (spread is not None) and (spread > 0):
-                    # Spread squares x3
+                    #Spread squares x3
                     points_img = tf.spread(points_img, spread*3, shape='square')
                 else:
                     points_img = tf.spread(points_img, 2, shape='square')
 
-                # Stack end markers onto the tracks
+                #Stack end markers onto the tracks
                 img = tf.stack(img, points_img)
 
             img = img.to_bytesio().read()
@@ -985,7 +985,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
         base_s = get_search_base(config.elastic_hosts, headers, params, idx)
         base_s = base_s[0:0]
         # Now find out how many documents
-        count_s = copy.copy(base_s)[0:0] # slice of array sets from/size since we are aggregating the data we don't need the hits
+        count_s = copy.copy(base_s)[0:0] #slice of array sets from/size since we are aggregating the data we don't need the hits
         count_s = count_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})
 
         doc_cnt = count_s.count()
@@ -1083,7 +1083,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                     "geo_centroid",
                     field=geopoint_field
                 )
-            inner_aggs = {"categories": inner_agg}
+            inner_aggs = { "categories": inner_agg }
         elif category_field and histogram_interval is not None: # Histogram Mode
             inner_agg_size = histogram_cnt
 
@@ -1100,7 +1100,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                     "geo_centroid",
                     field=geopoint_field
                 )
-            inner_aggs = {"categories": inner_agg}
+            inner_aggs = { "categories": inner_agg }
         else:
             inner_agg_size = 1
             if use_centroid:
@@ -1113,7 +1113,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         # the composite needs one bin for 'after_key'
         composite_agg_size = int(max_bins / inner_agg_size) - 1
-        field_type = get_field_type(config.elastic_hosts, headers, params, geopoint_field, idx)
+        field_type = get_field_type(config.elastic_hosts, headers, params,geopoint_field, idx)
         partial_data = False # TODO can we get partial data?
         span = None
         if field_type == "geo_point":
@@ -1121,11 +1121,11 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
             if params['bucket_min']>0 or params['bucket_max']<1:
                 if estimated_points_per_tile is None:
-                    # this isn't good we need a real number so lets query the max aggregation ammount
+                    #this isn't good we need a real number so lets query the max aggregation ammount
                     max_value_s = copy.copy(base_s)
-                    bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=1)
+                    bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
                     if category_field:
-                        bucket.metric("sum", "sum", field=category_field, missing=0)
+                        bucket.metric("sum","sum",field=category_field,missing=0)
                     resp = max_value_s.execute()
                     if category_field:
                         estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
@@ -1134,20 +1134,20 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
                 min_bucket = math.floor(math.exp(math.log(estimated_points_per_tile)*params['bucket_min']))
                 max_bucket = math.ceil(math.exp(math.log(estimated_points_per_tile)*params['bucket_max']))
-                geo_tile_grid.pipeline("selector", "bucket_selector", buckets_path={"doc_count": "_count"}, script=f"params.doc_count >= {min_bucket} && params.doc_count <= {max_bucket}")
+                geo_tile_grid.pipeline("selector","bucket_selector",buckets_path={"doc_count":"_count"},script=f"params.doc_count >= {min_bucket} && params.doc_count <= {max_bucket}")
 
             if inner_aggs is not None:
                 for agg_name, agg in inner_aggs.items():
                     geo_tile_grid.aggs[agg_name] = agg
             tile_s.aggs["comp"] = geo_tile_grid
-            resp = Scan([tile_s], timeout=config.query_timeout_seconds)
+            resp = Scan([tile_s],timeout=config.query_timeout_seconds)
             # resp = ScanAggs(
             #     tile_s,
             #     {"grids": geo_tile_grid},
             #     inner_aggs,
             #     size=composite_agg_size,
             #     timeout=config.query_timeout_seconds
-            # ) # Dont use composite aggregator because you cannot use a bucket selector
+            # ) #Dont use composite aggregator because you cannot use a bucket selector
 
 
             df = pd.DataFrame(
@@ -1175,45 +1175,45 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             geotile_precision = current_zoom+zoom
             searches = []
 
-            if params.get("generated_params", {}).get('complete', False):
+            if params.get("generated_params", {}).get('complete',False):
                 estimated_points_per_tile = params["generated_params"]['global_doc_cnt']
-                span = [0, estimated_points_per_tile]
+                span = [0,estimated_points_per_tile]
                 logger.info("USING GENERATED PARAMS")
             else:
                 if category_field:
                     max_value_s = copy.copy(base_s)
-                    bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=1)
-                    bucket.metric("sum", "sum", field=category_field, missing=0)
+                    bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+                    bucket.metric("sum","sum",field=category_field,missing=0)
                     resp = max_value_s.execute()
                     estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
-                    span = [0, estimated_points_per_tile]
+                    span = [0,estimated_points_per_tile]
                 else:
                     max_value_s = copy.copy(base_s)
-                    max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=1)
+                    max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
                     resp = max_value_s.execute()
                     estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
-                    span = [0, estimated_points_per_tile]
-            logger.info("EST Points: %s %s", estimated_points_per_tile, category_field)
+                    span = [0,estimated_points_per_tile]
+            logger.info("EST Points: %s %s",estimated_points_per_tile,category_field)
 
             searches = []
-            composite_agg_size = 65536  # max agg bucket size
+            composite_agg_size = 65536#max agg bucket size
             subtile_bb_dict = create_bounding_box_for_tile(x, y, z)
             subtile_s = copy.copy(base_s)
             subtile_s = subtile_s[0:0]
             subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
-            bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=composite_agg_size, bounds=subtile_bb_dict)
+            bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
             if category_field:
-                bucket.metric("sum", "sum", field=category_field, missing=0)
+                bucket.metric("sum","sum",field=category_field,missing=0)
             searches.append(subtile_s)
-            cmap = "bmy" # todo have front end pass the cmap for none categorical
+            cmap = "bmy" #todo have front end pass the cmap for none categorical
 
-            # def calc_aggregation(bucket, search):
-            #     # get bounds from bucket.key
-            #     # do search for sum of values on category_field
+            # def calc_aggregation(bucket,search):
+            #     #get bounds from bucket.key
+            #     #do search for sum of values on category_field
             #     z, x, y = [ int(x) for x in bucket.key.split("/") ]
             #     bucket_bb_dict = create_bounding_box_for_tile(x, y, z)
             #     subtile_s = copy.copy(base_s)
-            #     subtile_s.aggs.bucket("sum", "avg", field=category_field, missing=0)
+            #     subtile_s.aggs.bucket("sum","avg",field=category_field,missing=0)
             #     subtile_s = subtile_s[0:0]
             #     subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: bucket_bb_dict})
             #     response = subtile_s.execute()
@@ -1223,39 +1223,39 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             #     search.total_skipped += response._shards.skipped  # pylint: disable=W0212
             #     search.total_successful += response._shards.successful  # pylint: disable=W0212
             #     search.total_failed += response._shards.failed  # pylint: disable=W0212
-            #     bucket.doc_count = response.aggregations.sum['value'] # replace with sum of category_field
+            #     bucket.doc_count = response.aggregations.sum['value'] #replace with sum of category_field
             #     return bucket
 
-            def remap_bucket(bucket, search):
+            def remap_bucket(bucket,search):
                 # pylint: disable=unused-argument
-                # get bounds from bucket.key
-                # remap sub aggregation for sum of values to the doc count
+                #get bounds from bucket.key
+                #remap sub aggregation for sum of values to the doc count
                 bucket.doc_count = bucket.sum['value']
                 return bucket
             bucket_callback = None
             if category_field:
-                # bucket_callback = calc_aggregation # don't run a sub query. sub aggregation worked But we might want to leave this in for cross index searches
+                #bucket_callback = calc_aggregation #don't run a sub query. sub aggregation worked But we might want to leave this in for cross index searches
                 bucket_callback = remap_bucket
 
-            if params['timeOverlap']:  # run scan using date intervals to check overlaps during the same time
+            if params['timeOverlap']:#run scan using date intervals to check overlaps during the same time
                 subtile_bb_dict = create_bounding_box_for_tile(x, y, z)
                 interval = params['timeOverlapSize']
-                logger.info("CREATING TIMEBUCKETS %s", interval)
-                searches = create_time_interval_searches(base_s, subtile_bb_dict, start_time, stop_time, timestamp_field, geopoint_field, geotile_precision, composite_agg_size, category_field, interval)
+                logger.info("CREATING TIMEBUCKETS %s",interval)
+                searches = create_time_interval_searches(base_s,subtile_bb_dict,start_time,stop_time,timestamp_field,geopoint_field,geotile_precision,composite_agg_size,category_field,interval)
 
-            resp = Scan(searches, timeout=config.query_timeout_seconds, bucket_callback=bucket_callback)
+            resp = Scan(searches,timeout=config.query_timeout_seconds,bucket_callback=bucket_callback)
             df = pd.DataFrame(
                 convert_composite(
                     resp.execute(),
-                    False, # we don't need categorical, because ES doesn't support composite buckets for geo_shapes we calculate that with a secondary search in the bucket_callback
-                    False, # we dont need filter_buckets, because ES doesn't support composite buckets for geo_shapes we calculate that with a secondary search in the bucket_callback
+                    False,#we don't need categorical, because ES doesn't support composite buckets for geo_shapes we calculate that with a secondary search in the bucket_callback
+                    False,#we dont need filter_buckets, because ES doesn't support composite buckets for geo_shapes we calculate that with a secondary search in the bucket_callback
                     histogram_interval,
                     category_type,
                     category_format
                 )
             )
             if len(df)/resp.num_searches == composite_agg_size:
-                logger.warning("clipping on tile %s", [x, y, z])
+                logger.warning("clipping on tile %s",[x,y,z])
 
         s2 = time.time()
         logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)
@@ -1284,7 +1284,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             # TODO it would be nice if datashader honored the category orders
             # in z-order, then we could make "Other" drawn underneath the less
             # promenent colors
-            categories = list(df["t"].unique())
+            categories = list( df["t"].unique() )
             metrics["categories"] = json.dumps(categories)
             try:
                 categories.insert(0, categories.pop(categories.index("Other")))
@@ -1354,7 +1354,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             if span is None:
                 span = get_span_zero(span_upper_bound)
             logger.info("Span %s %s", span, span_range)
-            logger.info("aggs min:%s max:%s", float(agg.min()), float(agg.max()))
+            logger.info("aggs min:%s max:%s",float(agg.min()),float(agg.max()))
             img = tf.shade(agg, cmap=cc.palette[cmap], how="log", span=span)
 
         ###############################################################
@@ -1385,25 +1385,25 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
         raise
 
 
-def create_time_interval_searches(base_s, subtile_bb_dict, start_time, stop_time, timestamp_field, geopoint_field, geotile_precision, composite_agg_size, category_field, interval="auto"):
+def create_time_interval_searches(base_s,subtile_bb_dict,start_time,stop_time,timestamp_field,geopoint_field,geotile_precision,composite_agg_size,category_field,interval="auto"):
     stime = start_time
     searches = []
     if interval == "auto":
         delta = stop_time - start_time
         minutes = delta.total_seconds() /60
-        step = 1 # step through all the minutes in an hour to find a fit
+        step = 1 #step through all the minutes in an hour to find a fit
         while minutes/step > 546:
             step = step +1
         interval = str(step)+"m"
 
-    logger.info("Actual time bucket %s", interval)
+    logger.info("Actual time bucket %s",interval)
     while stime < stop_time:
         subtile_s = copy.copy(base_s)
         subtile_s = subtile_s.filter("geo_bounding_box", **{geopoint_field: subtile_bb_dict})
         subtile_s = subtile_s[0:0]
         bucket_start_time = stime
         bucket_duration = parse_duration_interval(interval)
-        # logger.info(bucket_duration)
+        #logger.info(bucket_duration)
         bucket_stop_time = bucket_start_time+ bucket_duration
         bucket_stop_time = min(bucket_stop_time, stop_time)
         time_range = {timestamp_field: {}}
@@ -1411,9 +1411,9 @@ def create_time_interval_searches(base_s, subtile_bb_dict, start_time, stop_time
         time_range[timestamp_field]["lte"] = bucket_stop_time
         stime = bucket_stop_time
         subtile_s = subtile_s.filter("range", **time_range)
-        bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=composite_agg_size, bounds=subtile_bb_dict)
-        bucket.pipeline("selector", "bucket_selector", buckets_path={"doc_count": "_count"}, script="params.doc_count >= 2")
+        bucket = subtile_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=composite_agg_size,bounds=subtile_bb_dict)
+        bucket.pipeline("selector","bucket_selector",buckets_path={"doc_count":"_count"},script="params.doc_count >= 2")
         if category_field:
-            bucket.metric("sum", "sum", field=category_field, missing=0)
+            bucket.metric("sum","sum",field=category_field,missing=0)
         searches.append(subtile_s)
     return searches

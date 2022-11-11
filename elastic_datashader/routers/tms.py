@@ -187,13 +187,13 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
     # Then bail and let another request have a shot at it.
     try:
         x_opaque_id = str(uuid.uuid4())
-        headers = get_es_headers(request_headers=request.headers, user=params["user"], x_opaque_id=x_opaque_id)
+        headers = get_es_headers(request_headers=request.headers, user=params["user"],x_opaque_id=x_opaque_id)
         logger.debug("Loaded input headers %s", request.headers)
         logger.debug("Loaded elasticsearch headers %s", headers)
 
         # Get or generate extended parameters
         params = merge_generated_parameters(request.headers, params, idx, parameter_hash)
-        params = {**params, "x-opaque-id": x_opaque_id}
+        params = {**params,"x-opaque-id":x_opaque_id}
         base_tile_info = {
             'hash': parameter_hash,
             'idx': idx,
@@ -318,7 +318,7 @@ async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z:
     # Generate the tile into the cache in the background.
     background_tasks.add_task(generate_tile_to_cache, idx, x, y, z, params, parameter_hash, request)
 
-    # lets hold the connection open for the already_waited time then check the cache again
+    #lets hold the connection open for the already_waited time then check the cache again
     timeout = time.time() + already_waited
     while time.time() < timeout:
         time.sleep(0.1)
