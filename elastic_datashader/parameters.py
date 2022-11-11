@@ -50,10 +50,10 @@ def create_default_params() -> Dict[str, Any]:
         "track_connection": None,
         "use_centroid": False,
         "user": None,
-        "bucket_min":0,
-        "bucket_max":1,
-        "timeOverlap":False,
-        "timeOverlapSize":"auto"
+        "bucket_min": 0,
+        "bucket_max": 1,
+        "timeOverlap": False,
+        "timeOverlapSize": "auto"
     }
 
 
@@ -293,10 +293,10 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params["geopoint_field"] = query_params.get("geopoint_field", params["geopoint_field"])
     params["timestamp_field"] = query_params.get("timestamp_field", params["timestamp_field"])
     params.update(get_time_bounds(now, from_time, to_time))
-    params["bucket_min"] = float(query_params.get("bucket_min",0))
-    params["bucket_max"] = float(query_params.get("bucket_max",1))
-    params["timeOverlap"] = query_params.get("timeOverlap","false") == "true"
-    params["timeOverlapSize"] = query_params.get("timeOverlapSize","auto")
+    params["bucket_min"] = float(query_params.get("bucket_min", 0))
+    params["bucket_max"] = float(query_params.get("bucket_max", 1))
+    params["timeOverlap"] = query_params.get("timeOverlap", "false") == "true"
+    params["timeOverlapSize"] = query_params.get("timeOverlapSize", "auto")
     params["debug"] = (query_params.get("debug", False) == 'true')
 
     if params["geopoint_field"] is None:
@@ -346,7 +346,7 @@ def generate_global_params(headers, params, idx):
     if category_type == "number":
         bounds_s.aggs.metric("field_stats", "stats", field=category_field)
 
-    field_type = get_field_type(config.elastic_hosts, headers, params,geopoint_field, idx)
+    field_type = get_field_type(config.elastic_hosts, headers, params, geopoint_field, idx)
     # Execute and process search
     if len(list(bounds_s.aggs)) > 0 and field_type != "geo_shape":
         logger.info(bounds_s.to_dict())
@@ -427,14 +427,14 @@ def generate_global_params(headers, params, idx):
 
         if category_field:
             max_value_s = copy.copy(base_s)
-            bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
-            bucket.metric("sum","sum",field=category_field,missing=0)
+            bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=1)
+            bucket.metric("sum", "sum", field=category_field, missing=0)
             resp = max_value_s.execute()
             estimated_points_per_tile = resp.aggregations.comp.buckets[0].sum['value']
             histogram_range = estimated_points_per_tile
         else:
             max_value_s = copy.copy(base_s)
-            max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field,precision=geotile_precision,size=1)
+            max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=1)
             resp = max_value_s.execute()
             estimated_points_per_tile = resp.aggregations.comp.buckets[0].doc_count
             histogram_range = estimated_points_per_tile
@@ -471,14 +471,14 @@ def merge_generated_parameters(headers, params, idx, param_hash):
         timeout=120
     )
 
-    #See if the hash exists
+    # See if the hash exists
     try:
         doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
     except NotFoundError:
         doc = None
 
     if not doc:
-        #if not, create the hash in the db but only if it does not already exist
+        # if not, create the hash in the db but only if it does not already exist
         try:
             doc = Document(
                 _id=layer_id,
@@ -493,13 +493,13 @@ def merge_generated_parameters(headers, params, idx, param_hash):
         except ConflictError:
             logger.debug("Hash document now exists, continuing")
 
-        #re-fetch to get sequence number correct
+        # re-fetch to get sequence number correct
         doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
 
-    #Check for generator timeouts:
+    # Check for generator timeouts:
     if doc.to_dict().get("generated_params", {}).get("generation_start_time") and \
-                datetime.now(timezone.utc) > datetime.strptime(doc.to_dict().get("generated_params", {}).get("generation_start_time"),"%Y-%m-%dT%H:%M:%S.%f%z")+timedelta(seconds=5*60):
-        #Something caused the worker generating the params to time out so clear that entry
+                datetime.now(timezone.utc) > datetime.strptime(doc.to_dict().get("generated_params", {}).get("generation_start_time"), "%Y-%m-%dT%H:%M:%S.%f%z")+timedelta(seconds=5*60):
+        # Something caused the worker generating the params to time out so clear that entry
         try:
             doc.update(
                 using=es,
@@ -511,7 +511,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
         except ConflictError:
             logger.debug("Abandoned resetting parameters due to conflict, other process has completed.")
 
-    #Loop-check if the generated params are in missing/in-process/complete
+    # Loop-check if the generated params are in missing/in-process/complete
     timeout_at = datetime.now(timezone.utc)+timedelta(seconds=45)
 
     while doc.to_dict().get("generated_params", {}).get("complete", False) is False:
@@ -519,10 +519,10 @@ def merge_generated_parameters(headers, params, idx, param_hash):
             logger.info("Hit timeout waiting for generated parameters to be placed into database")
             break
 
-        #If missing, mark them as in generation
+        # If missing, mark them as in generation
         if not doc.to_dict().get("generated_params", None):
-            #Mark them as being generated but do so with concurrenty control
-            #https://www.elastic.co/guide/en/elasticsearch/reference/current/optimistic-concurrency-control.html
+            # Mark them as being generated but do so with concurrenty control
+            # https://www.elastic.co/guide/en/elasticsearch/reference/current/optimistic-concurrency-control.html
             logger.info("Discovering generated parameters")
             generated_params = {
                 "complete": False,
@@ -543,12 +543,12 @@ def merge_generated_parameters(headers, params, idx, param_hash):
                 logger.debug("Abandoned generating parameters due to conflict, will wait for other process to complete.")
                 break
 
-            #Generate and save off parameters
+            # Generate and save off parameters
             logger.warning("Discovering generated params")
             generated_params.update(generate_global_params(headers, params, idx))
             generated_params["generation_complete_time"] = datetime.now(timezone.utc)
             generated_params["complete"] = True
-            #Store off generated params
+            # Store off generated params
             doc.update(
                 using=es,
                 index=".datashader_layers",
@@ -561,6 +561,6 @@ def merge_generated_parameters(headers, params, idx, param_hash):
         sleep(1)
         doc = Document.get(id=layer_id, using=es, index=".datashader_layers")
 
-    #We now have params so use them
+    # We now have params so use them
     params["generated_params"] = doc.to_dict().get("generated_params")
     return params
