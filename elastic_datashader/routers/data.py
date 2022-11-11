@@ -32,7 +32,7 @@ async def get_data(idx: str, lat: float, lon: float, radius: float, request: Req
         lat = float(lat)
         lon = float(lon)
         radius = float(radius)
-        #Check for paging args
+        # Check for paging args
         from_arg = int(request.args.get("from", 0))
         size_arg = int(request.args.get("size", 100))
 
@@ -70,12 +70,12 @@ async def get_data(idx: str, lat: float, lon: float, radius: float, request: Req
 
     # Build and execute search
     base_s = get_search_base(config.elastic_hosts, request.headers, params, idx)
-    distance_filter_dict = {"distance": f"{radius}m", geopoint_field: {"lat":lat, "lon":lon}}
+    distance_filter_dict = {"distance": f"{radius}m", geopoint_field: {"lat": lat, "lon": lon}}
     base_s = base_s.filter("geo_distance", **distance_filter_dict)
-    distance_sort_dict = {geopoint_field:{"lat":lat, "lon":lon}, "order":"asc", "ignore_unmapped":True}
+    distance_sort_dict = {geopoint_field: {"lat": lat, "lon": lon}, "order": "asc", "ignore_unmapped": True}
     base_s = base_s.sort({"_geo_distance": distance_sort_dict})
     # Paginate
-    base_s = base_s[from_arg:from_arg+size_arg]
+    base_s = base_s[from_arg: from_arg+size_arg]
 
     search_resp = base_s.execute()
     hits = []
@@ -83,7 +83,7 @@ async def get_data(idx: str, lat: float, lon: float, radius: float, request: Req
 
     for hit in search_resp:
         if includes_list:
-            #Only include named fields
+            # Only include named fields
             named = {}
 
             for f in includes_list:

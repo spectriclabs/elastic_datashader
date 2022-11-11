@@ -38,7 +38,7 @@ PyYAML = "*"
 humanize = "*"
 uvicorn = {extras = ["standard"], version = "^0.18.2", optional = true}
 fastapi = "^0.86"
-georgio = "2022.225.1340"
+georgio = "2022.313.1239"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
@@ -78,6 +78,7 @@ setenv =
 
 deps =
 	geopy
+	flake8
 	pylint
 	pytest
 	pytest-cov
@@ -87,6 +88,7 @@ whitelist_externals =
 	mkdir
 
 commands =
+	flake8 --select E201,E202,E231,E262,E265 elastic_datashader
 	pylint elastic_datashader
 	mkdir -p {toxinidir}/tms-cache
 	pytest --cov-report term-missing --cov=elastic_datashader
