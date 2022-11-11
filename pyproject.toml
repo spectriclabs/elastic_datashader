@@ -78,6 +78,7 @@ setenv =
 
 deps =
 	geopy
+	flake8
 	pylint
 	pytest
 	pytest-cov
@@ -87,6 +88,7 @@ whitelist_externals =
 	mkdir
 
 commands =
+	flake8 --select E201,E202,E231,E262,E265 elastic_datashader
 	pylint elastic_datashader
 	mkdir -p {toxinidir}/tms-cache
 	pytest --cov-report term-missing --cov=elastic_datashader
