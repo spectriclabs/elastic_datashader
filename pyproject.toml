@@ -38,7 +38,7 @@ PyYAML = "*"
 humanize = "*"
 uvicorn = {extras = ["standard"], version = "^0.18.2", optional = true}
 fastapi = "^0.86"
-georgio = "2022.225.1340"
+georgio = "2022.313.1239"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
