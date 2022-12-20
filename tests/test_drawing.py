@@ -13,9 +13,9 @@ from elastic_datashader import drawing
         (
             ("foo", "bar", "baz", "Other", "N/A"),
             {
-                "bar": "#8a9500",
-                "baz": "#870062",
-                "foo": "#9a0390",
+                "bar": "#b5e2e1",
+                "baz": "#672138",
+                "foo": "#bfebc3",
                 "Other": "#AAAAAA",
                 "N/A": "#666666",
             }
@@ -84,7 +84,7 @@ def test_ellipse_planar_points():
     np.testing.assert_almost_equal(actual_x[8], 0)
     np.testing.assert_almost_equal(actual_x[12], -50)
 
-    
+
 
     radm = 100
     radn = 30

@@ -119,9 +119,9 @@ def test_get_category_field():
     assert parameters.get_category_field("banana") == "banana"
 
 def test_get_parameter_hash():
-    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1}) == "0d922e38f1a94fdc8acc6016c333d49e"
-    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1, "abc": datetime(2022, 2, 17, 11, 0, 0, tzinfo=timezone.utc)}) == "5463c0e1ae7f3c9e182afc2786050765"
-    assert parameters.get_parameter_hash({}) == "d41d8cd98f00b204e9800998ecf8427e"
+    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1}) == "a6488297eb1cdaa23e196800b1c399b13d9a5c86cfecaf8f9fd0fbe9af7533db"
+    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1, "abc": datetime(2022, 2, 17, 11, 0, 0, tzinfo=timezone.utc)}) == "88ade56886a8099e6fd3c25525a0fb9ab3938be64374569480ed3bfd7f3d70e9"
+    assert parameters.get_parameter_hash({}) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 def test_get_time_bounds_already_quantized():
     now = datetime(2022, 6, 14, 12, 15, 0, tzinfo=timezone.utc)

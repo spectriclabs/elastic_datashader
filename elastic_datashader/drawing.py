@@ -1,5 +1,5 @@
 from functools import lru_cache
-from hashlib import md5
+from hashlib import sha256
 from typing import Dict, Iterable, Tuple
 
 import io
@@ -23,7 +23,7 @@ def get_categorical_color_index(category: str, num_colors: int) -> int:
     across independent tile generations, but can result in situations where
     colors are reused before exhausting the color palette.
     """
-    category_hash = md5(bytes(category, encoding="utf-8")).hexdigest()
+    category_hash = sha256(bytes(category, encoding="utf-8")).hexdigest()
     number = int(category_hash[0:2], 16)
     return number % num_colors
 
