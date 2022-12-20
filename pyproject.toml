@@ -32,13 +32,13 @@ Pillow = "*"
 pynumeral = "*"
 arrow = "*"
 python-datemath = "*"
-numba = "*"
+numba = "0.56.4"
 numpy = "^1.23"
 PyYAML = "*"
 humanize = "*"
 uvicorn = {extras = ["standard"], version = "^0.18.2", optional = true}
 fastapi = "^0.86"
-georgio = "2022.313.1239"
+georgio = "2022.335.152"
 
 [tool.poetry.dev-dependencies]
 pytest = "*"
