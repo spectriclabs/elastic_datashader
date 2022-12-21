@@ -118,7 +118,7 @@ def all_ellipse_fields_have_values(locs, majors, minors, angles, field_names: El
 
 def normalize_ellipses_to_list(locs, majors, minors, angles):
     '''
-    If its a list determine if there are multiple ellipses or just a single ellipse in list format
+    If it's a list determine if there are multiple ellipses or just a single ellipse in list format
     '''
     if isinstance(locs, (AttrList, list)):
         if (

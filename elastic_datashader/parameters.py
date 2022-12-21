@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from hashlib import md5
+from hashlib import sha256
 from json import loads
 from socket import gethostname
 from time import sleep
@@ -244,7 +244,7 @@ def get_time_bounds(now: datetime, from_time: Optional[str], to_time: Optional[s
 
 def get_parameter_hash(params: Dict[str, Any]) -> str:
     """Calculates a hash value for the specific parameter set"""
-    parameter_hash = md5()
+    parameter_hash = sha256()
 
     for _, p in sorted(params.items()):
         if isinstance(p, datetime):
