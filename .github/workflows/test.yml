@@ -3,8 +3,6 @@ name: "Build, Test, and Publish Test Docker Image"
 on:
   push:
     branches: [ master ]
-  pull_request:
-    branches: [ master ]
 
 env:
   REGISTRY: ghcr.io
