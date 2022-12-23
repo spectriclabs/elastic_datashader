@@ -84,7 +84,7 @@ deps =
 	pytest-cov
 	requests
 
-whitelist_externals =
+allowlist_externals =
 	mkdir
 
 commands =
