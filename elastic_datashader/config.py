@@ -46,7 +46,7 @@ def load_datashader_headers(header_path_str: str) -> Dict[Any, Any]:
     try:
         loaded_yaml = yaml.safe_load(header_path.read_text(encoding='utf8'))
     except (OSError, IOError, yaml.YAMLError) as ex:
-        raise Exception(f"Failed to load HEADER_FILE from {header_path_str}") from ex
+        raise IOError(f"Failed to load HEADER_FILE from {header_path_str}") from ex
 
     if type(loaded_yaml) is not dict:
         raise ValueError(f"HEADER_FILE YAML should be a dict mapping, but received {loaded_yaml}")
@@ -60,7 +60,7 @@ def get_log_level(level_name: Optional[str]) -> int:
     level_value = getLevelName(level_name.upper())
 
     if type(level_value) is not int:
-        raise Exception(f"Invalid logging level {level_name}")
+        raise ValueError(f"Invalid logging level {level_name}")
 
     return level_value
 
@@ -78,13 +78,13 @@ def is_base64_encoded(value: str) -> bool:
 
 def check_config(c: Config) -> None:
     if not c.cache_path.exists():
-        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' does not exist")
+        raise IOError(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' does not exist")
 
     if not c.cache_path.is_dir():
-        raise Exception(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' is not a directory")
+        raise IOError(f"DATASHADER_CACHE_DIRECTORY '{c.cache_path}' is not a directory")
 
     if c.api_key and not is_base64_encoded(c.api_key):
-        raise Exception(f"DATASHADER_ELASTIC_API_KEY '{c.api_key}' does not appear to be base64 encoded")
+        raise ValueError(f"DATASHADER_ELASTIC_API_KEY '{c.api_key}' does not appear to be base64 encoded")
 
 def config_from_env(env) -> Config:
     return Config(

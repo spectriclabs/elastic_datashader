@@ -382,7 +382,7 @@ def load_datashader_headers(header_file_path_str: Optional[str]) -> Dict[Any, An
     try:
         loaded_yaml = yaml.safe_load(header_file_path.read_text(encoding='utf8'))
     except (OSError, IOError, yaml.YAMLError) as ex:
-        raise Exception(f"Failed to load HEADER_FILE from {header_file_path_str}") from ex
+        raise IOError(f"Failed to load HEADER_FILE from {header_file_path_str}") from ex
 
     if type(loaded_yaml) is not dict:
         raise ValueError(f"HEADER_FILE YAML should be a dict mapping, but received {loaded_yaml}")
@@ -576,14 +576,14 @@ def chunk_iter(iterable, chunk_size):
     chunks = [None] * chunk_size
     i = -1
     for i, v in enumerate(iterable):
-        idx = (i % chunk_size)
+        idx = i % chunk_size
         if idx == 0 and i > 0:
             i = -1
             yield (True, chunks)
         chunks[idx] = v
 
     if i >= 0:
-        last_written_idx = (i % chunk_size)
+        last_written_idx = i % chunk_size
         yield (False, chunks[0:last_written_idx+1])
 
 def bucket_noop(bucket, search):

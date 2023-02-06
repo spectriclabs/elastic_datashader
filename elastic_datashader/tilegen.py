@@ -730,7 +730,7 @@ def generate_nonaggregated_tile(
             metrics.get("locations", 0),
             metrics.get("hits", 0),
         )
-        metrics["query_time"] = (s2 - s1)
+        metrics["query_time"] = s2 - s1
 
         estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
 
@@ -1259,7 +1259,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         s2 = time.time()
         logger.info("ES took %s (%s) for %s with %s searches", (s2 - s1), resp.total_took, len(df), resp.num_searches)
-        metrics["query_time"] = (s2 - s1)
+        metrics["query_time"] = s2 - s1
         metrics["query_took"] = resp.total_took
         metrics["num_searches"] = resp.num_searches
         metrics["aborted"] = resp.aborted

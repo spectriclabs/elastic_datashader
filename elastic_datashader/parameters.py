@@ -228,14 +228,14 @@ def get_time_bounds(now: datetime, from_time: Optional[str], to_time: Optional[s
             start_time = convert_kibana_time(from_time, now, 'down')
         except ValueError as err:
             logger.exception("invalid from_time parameter")
-            raise Exception("invalid from_time parameter") from err
+            raise ValueError("invalid from_time parameter") from err
 
     if to_time:
         try:
             stop_time = convert_kibana_time(to_time, now, 'up')
         except ValueError as err:
             logger.exception("invalid to_time parameter")
-            raise Exception("invalid to_time parameter") from err
+            raise ValueError("invalid to_time parameter") from err
 
     if start_time and stop_time:
         start_time, stop_time = quantize_time_range(start_time, stop_time)
@@ -297,11 +297,11 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params["bucket_max"] = float(query_params.get("bucket_max", 1))
     params["timeOverlap"] = query_params.get("timeOverlap", "false") == "true"
     params["timeOverlapSize"] = query_params.get("timeOverlapSize", "auto")
-    params["debug"] = (query_params.get("debug", False) == 'true')
+    params["debug"] = query_params.get("debug", False) == 'true'
 
     if params["geopoint_field"] is None:
         logger.error("missing geopoint_field")
-        raise Exception("missing geopoint_field")
+        raise ValueError("missing geopoint_field")
 
     parameter_hash = get_parameter_hash(params)
     all_params = {**params, **unhashed_params}
