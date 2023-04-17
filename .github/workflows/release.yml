@@ -6,6 +6,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  DOCKER_BUILDKIT: 1
+  BUILDKIT_PROGRESS: plain
 
 jobs:
   build-and-push-image:
