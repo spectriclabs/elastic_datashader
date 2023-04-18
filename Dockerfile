@@ -21,7 +21,7 @@ USER datashader
 RUN mkdir /home/datashader/tmp
 COPY --from=builder /build/dist/*.whl /home/datashader/tmp/
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir /home/datashader/*.whl && \
+    pip install --no-cache-dir /home/datashader/tmp/*.whl && \
     pip install uvicorn
 
 COPY deployment/logging_config.yml /opt/elastic_datashader/
