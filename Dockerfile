@@ -13,16 +13,18 @@ RUN poetry build
 
 FROM python:3.10 AS deployment
 LABEL maintainer="foss@spectric.com"
+RUN useradd -d /home/datashader datashader && \
+    mkdir -p /home/datashader /opt/elastic_datashader/tms-cache && \
+    chown -R datashader:datashader /home/datashader /opt/elastic_datashader
 
-ENV PIP_ROOT_USER_ACTION=ignore
-
-COPY --from=builder /build/dist/*.whl /opt/elastic_datashader/
-RUN mkdir -p /opt/elastic_datashader/tms-cache && \
-    pip install --upgrade pip && \
-    pip install --no-cache-dir /opt/elastic_datashader/*.whl && \
+USER datashader
+RUN mkdir /home/datashader/tmp
+COPY --from=builder /build/dist/*.whl /home/datashader/tmp/
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir /home/datashader/tmp/*.whl && \
     pip install uvicorn
 
-COPY deployment/logging_config.yml /opt/elastic_datashader
+COPY deployment/logging_config.yml /opt/elastic_datashader/
 
 VOLUME ["/opt/elastic_datashader/tms-cache"]
 ENV DATASHADER_CACHE_DIRECTORY=/opt/elastic_datashader/tms-cache
