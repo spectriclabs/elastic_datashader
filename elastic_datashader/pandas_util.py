@@ -48,7 +48,7 @@ def simplify_categories(
         df = df.copy()
     df[col] = df[col].map(color_key)
     df[col] = df[col].astype("category")
-    df[col].cat.remove_unused_categories(inplace=True)
+    df[col] = df[col].cat.remove_unused_categories()
     # at this point, categories and colors are the same thing
     # return a new color key that can be passed to shade()
     new_color_key = {x: x for x in df[col].cat.categories}
