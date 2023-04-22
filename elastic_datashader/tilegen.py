@@ -1117,7 +1117,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
         partial_data = False # TODO can we get partial data?
         span = None
         if field_type == "geo_point":
-            geo_tile_grid = A("geotile_grid", field=geopoint_field, precision=geotile_precision)
+            geo_tile_grid = A("geotile_grid", field=geopoint_field, precision=geotile_precision,size=max_bins)
             estimated_points_per_tile = get_estimated_points_per_tile(span_range, global_bounds, z, global_doc_cnt)
             if params['bucket_min']>0 or params['bucket_max']<1:
                 if estimated_points_per_tile is None:
