@@ -167,6 +167,8 @@ def get_field_type(elastic_hosts: str, headers: Optional[str], params: Dict[str,
         timeout=900,
         headers=get_es_headers(headers, user, x_opaque_id),
     )
+    if idx.find("*:") != -1:
+        idx = idx[idx.find("*:")+2:] #when you query for mappings if it is cross cluster you don't get a mapping
     mappings = es.indices.get_field_mapping(fields=field, index=idx)
     # {'foot_prints': {'mappings': {'foot_print': {'full_name': 'foot_print', 'mapping': {'foot_print': {'type': 'geo_shape'}}}}}}
     index = list(mappings.keys())[0] # if index is my_index* it comes back as my_index
