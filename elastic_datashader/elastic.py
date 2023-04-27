@@ -172,7 +172,11 @@ def get_field_type(elastic_hosts: str, headers: Optional[str], params: Dict[str,
     mappings = es.indices.get_field_mapping(fields=field, index=idx)
     # {'foot_prints': {'mappings': {'foot_print': {'full_name': 'foot_print', 'mapping': {'foot_print': {'type': 'geo_shape'}}}}}}
     index = list(mappings.keys())[0] # if index is my_index* it comes back as my_index
-    return mappings[index]['mappings'][field]['mapping'][field]['type']
+    field_parts = field.split(".")
+    try:
+        return mappings[index]['mappings'][field]['mapping'][field_parts[-1]]['type'] # handles 'geo_center' or a nested object {signal:{geo:{location:{}}}}
+    except:
+        return mappings[index]['mappings'][field]['mapping'][field]['type'] # handles literal string with periods 'signal.geo.location'
 
 def get_search_base(
     elastic_hosts: str,
