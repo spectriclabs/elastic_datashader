@@ -175,7 +175,7 @@ def get_field_type(elastic_hosts: str, headers: Optional[str], params: Dict[str,
     field_parts = field.split(".")
     try:
         return mappings[index]['mappings'][field]['mapping'][field_parts[-1]]['type'] # handles 'geo_center' or a nested object {signal:{geo:{location:{}}}}
-    except:
+    except AttributeError:
         return mappings[index]['mappings'][field]['mapping'][field]['type'] # handles literal string with periods 'signal.geo.location'
 
 def get_search_base(
