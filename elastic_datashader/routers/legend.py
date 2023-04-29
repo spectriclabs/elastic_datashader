@@ -1,9 +1,9 @@
 from copy import copy
 from json import dumps, loads
 from typing import Optional
-import math
 
 from fastapi import APIRouter, Request, Response
+from georgio import line_of_bearing  # pylint: disable=no-name-in-module
 
 import mercantile
 import pynumeral
@@ -21,30 +21,14 @@ from ..parameters import extract_parameters, merge_generated_parameters
 
 router = APIRouter()
 
-def lob(point, brng, distance):
-
-    R = 6371009 # Radius of the Earth this is the same as georgio
-    brng = math.radians(brng) # Bearing is degrees converted to radians.
-    d = distance # Distance in meters
-
-
-    lat1 = math.radians(point['lat']) # Current lat point converted to radians
-    lon1 = math.radians(point['lon']) # Current lon point converted to radians
-
-    lat2 = math.asin(math.sin(lat1)*math.cos(d/R) +
-        math.cos(lat1)*math.sin(d/R)*math.cos(brng))
-
-    lon2 = lon1 + math.atan2(math.sin(brng)*math.sin(d/R)*math.cos(lat1),
-                math.cos(d/R)-math.sin(lat1)*math.sin(lat2))
-
-    lat2 = math.degrees(lat2)
-    lon2 = math.degrees(lon2)
-    return {"lat": lat2, "lon": lon2}
-
 def expand_bbox_by_meters(bbox, meters):
-    # top left line of bearing nw and bottom right lob se
-    return {"top_left": lob(bbox['top_left'], 315, meters), "bottom_right": lob(bbox['bottom_right'], 135, meters)}
-
+    # top left line of bearing NW and bottom right line of bearing SE
+    top_left_lon, top_left_lat = line_of_bearing(bbox['top_left']['lon'], bbox['top_left']['lat'], 315, meters)
+    bottom_right_lon, bottom_right_lat = line_of_bearing(bbox['bottom_right']['lon'], bbox['bottom_right']['lat'], 135, meters)
+    return {
+        "top_left": {'lon': top_left_lon, 'lat': top_left_lat},
+        "bottom_right": {'lon': bottom_right_lon, 'lat': bottom_right_lat},
+    }
 
 def legend_response(data: str, error: Optional[Exception]=None, **kwargs) -> Response:
     headers={
