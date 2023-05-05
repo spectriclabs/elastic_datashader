@@ -28,7 +28,7 @@ COPY deployment/logging_config.yml /opt/elastic_datashader/
 
 VOLUME ["/opt/elastic_datashader/tms-cache"]
 ENV DATASHADER_CACHE_DIRECTORY=/opt/elastic_datashader/tms-cache
-
+ENV PATH="$PATH:/home/datashader/.local/bin"
 ENTRYPOINT [ "uvicorn", \
     "elastic_datashader:app", \
     "--ssl-ciphers","!SHA:!SHA256:!CHACHA20:!AESCCM:!ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384", \
