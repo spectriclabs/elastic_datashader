@@ -216,7 +216,7 @@ def get_search_base(
     time_range = None
 
     if timestamp_field:
-        time_range = {timestamp_field: {}}
+        time_range = {timestamp_field: {"format": "strict_date_optional_time_nanos"}}
         if start_time is not None:
             time_range[timestamp_field]["gte"] = start_time
         if stop_time is not None:
@@ -680,7 +680,7 @@ class ScanAggs:
             s = self.search[:0]
 
             if _timeout_at:
-                _time_remaining = _timeout_at - time.time()
+                _time_remaining = int(_timeout_at - time.time())
                 s = s.params(timeout=f"{_time_remaining}s")
 
             s.aggs.bucket("comp", "composite", sources=self.source_aggs, size=self.size, **kwargs)
