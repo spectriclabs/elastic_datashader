@@ -853,13 +853,13 @@ def generate_nonaggregated_tile(
         raise
 
 @lru_cache
-def calculate_pixel_spread(max_zoom: int,agg_zooms:int) -> int:
+def calculate_pixel_spread(max_zoom: int, agg_zooms: int) -> int:
     '''
     Pixel spread is the number of pixels to put around each
     data point.
     '''
-    logger.debug('calculate_pixel_spread(%d,%d)', max_zoom,agg_zooms)
-    return max(int(abs(max_zoom-agg_zooms)),0)
+    logger.debug('calculate_pixel_spread(%d,%d)', max_zoom, agg_zooms)
+    return max(int(abs(max_zoom-agg_zooms)), 0)
 
 
 def apply_spread(img, spread):
@@ -1128,7 +1128,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
                 geo_tile_grid.pipeline("selector", "bucket_selector", buckets_path={"doc_count": "_count"}, script=f"params.doc_count >= {min_bucket} && params.doc_count <= {max_bucket}")
             if category_field:
                 geo_tile_grid = A("geotile_grid", field=geopoint_field, precision=geotile_precision)
-                resp = ScanAggs(tile_s,{"grids": geo_tile_grid},inner_aggs,size=composite_agg_size,timeout=config.query_timeout_seconds)
+                resp = ScanAggs(tile_s, {"grids": geo_tile_grid}, inner_aggs, size=composite_agg_size, timeout=config.query_timeout_seconds)
             else:                    
                 if inner_aggs is not None:
                     for agg_name, agg in inner_aggs.items():
@@ -1345,7 +1345,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         ###############################################################
         # Common
-        spread = spread or calculate_pixel_spread(max_agg_zooms,agg_zooms)
+        spread = spread or calculate_pixel_spread(max_agg_zooms, agg_zooms)
         img = apply_spread(img, spread)
         img = img.to_bytesio().read()
 
