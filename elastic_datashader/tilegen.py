@@ -1129,7 +1129,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             if category_field:
                 geo_tile_grid = A("geotile_grid", field=geopoint_field, precision=geotile_precision)
                 resp = ScanAggs(tile_s, {"grids": geo_tile_grid}, inner_aggs, size=composite_agg_size, timeout=config.query_timeout_seconds)
-            else:                    
+            else:
                 if inner_aggs is not None:
                     for agg_name, agg in inner_aggs.items():
                         geo_tile_grid.aggs[agg_name] = agg
