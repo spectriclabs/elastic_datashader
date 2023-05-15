@@ -1111,7 +1111,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             geo_tile_grid = A("geotile_grid", field=geopoint_field, precision=geotile_precision, size=max_bins)
 
             if params['bucket_min']>0 or params['bucket_max']<1:
-                if global_doc_cnt is None:
+                if global_doc_cnt is None or global_doc_cnt  == 0:
                     # this isn't good we need a real number so lets query the max aggregation ammount
                     max_value_s = copy.copy(base_s)
                     bucket = max_value_s.aggs.bucket("comp", "geotile_grid", field=geopoint_field, precision=geotile_precision, size=1)
