@@ -7,7 +7,7 @@ from georgio import line_of_bearing  # pylint: disable=no-name-in-module
 
 import mercantile
 import pynumeral
-
+import colorcet as cc
 from ..config import config
 from ..drawing import create_color_key
 from ..elastic import (
@@ -100,10 +100,6 @@ async def provide_legend(idx: str, field_name: str, request: Request):  # pylint
         "field_max", None
     )
 
-    # If not in category mode, just return nothing
-    if params["category_field"] is None:
-        return legend_response("[]", parameter_hash=parameter_hash, params=params)
-
     cmap = params["cmap"]
     category_field = params["category_field"]
     geopoint_field = params["geopoint_field"]
@@ -134,6 +130,13 @@ async def provide_legend(idx: str, field_name: str, request: Request):  # pylint
     legend_s = legend_s.params(size=0)
 
     legend = {}
+
+    if params["category_field"] is None:
+        if params.get('render_mode', "") == "ellipses":
+            doc_count = base_s.count()
+            return legend_response(dumps([{"key": "Total", "color": cc.palette[cmap][-1], "count": doc_count}]), parameter_hash=parameter_hash, params=params)
+        # If not in category mode or ellipse, just return nothing
+        return legend_response("[]", parameter_hash=parameter_hash, params=params)
 
     if histogram_interval is not None and category_histogram in (True, None):
         # Put in the histogram search
