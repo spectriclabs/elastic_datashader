@@ -26,8 +26,8 @@ def expand_bbox_by_meters(bbox, meters):
     top_left_lon, top_left_lat = line_of_bearing(bbox['top_left']['lon'], bbox['top_left']['lat'], 315, meters)
     bottom_right_lon, bottom_right_lat = line_of_bearing(bbox['bottom_right']['lon'], bbox['bottom_right']['lat'], 135, meters)
     return {
-        "top_left": {'lon': top_left_lon, 'lat': top_left_lat},
-        "bottom_right": {'lon': bottom_right_lon, 'lat': bottom_right_lat},
+        "top_left": {'lon': min(180, max(-180, top_left_lon)), 'lat': min(90, max(-90, top_left_lat))},
+        "bottom_right": {'lon': min(180, max(-180, bottom_right_lon)), 'lat': min(90, max(-90, bottom_right_lat))},
     }
 
 def legend_response(data: str, error: Optional[Exception]=None, **kwargs) -> Response:
@@ -123,7 +123,6 @@ async def provide_legend(idx: str, field_name: str, request: Request):  # pylint
             # you can sometimes see a little tiny part of the ellipse and it isn't counted
             meters = params['search_nautical_miles'] * 1852
             legend_bbox = expand_bbox_by_meters(legend_bbox, meters/2)
-        logger.info("legend_bbox: %s", legend_bbox)
         base_s = base_s.filter("geo_bounding_box", **{geopoint_field: legend_bbox})
 
     legend_s = copy(base_s)
