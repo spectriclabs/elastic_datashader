@@ -371,7 +371,13 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
                     filter_dict["filter"].append({filter_key: f.get(filter_key)})
 
         else:
-            raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
+            # Here we handle filters that don't send a type (this happens when controls send filters)
+            # example filters[{"meta":{"index":"11503c28-7d88-4f9a-946b-2997a5ea64cf","key":"name"},"query":{"match_phrase":{"name":"word_5"}}}]
+            if f.get("meta", {}).get("negate"):
+                filter_dict["must_not"].append(f.get("query"))
+            else:
+                filter_dict["filter"].append(f.get("query"))
+            # raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
 
     logger.info("Filter output %s", filter_dict)
     return filter_dict
