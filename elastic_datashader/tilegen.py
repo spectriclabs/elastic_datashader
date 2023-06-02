@@ -404,9 +404,6 @@ def create_datashader_ellipses_from_search(
         )
 
         for ellipse in ellipse_generator(hit, field_names, ellipse_units):
-            # expel above CEP limit
-            if ellipse.major_meters > search_meters or ellipse.minor_meters > search_meters:
-                continue
 
             x_points, y_points = ellipse_points(ellipse)
 

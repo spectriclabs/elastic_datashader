@@ -153,7 +153,7 @@ def convert_nm_to_ellipse_units(distance: float, units: str) -> float:
         return distance / 2  # semi-axis nautical miles to full-axis meters
 
     if units == "semi_majmin_m":
-        return distance * 2 * 1852  # semi-axis meters to full-axis meters
+        return (distance / 2) * 1852  # semi-axis meters to full-axis meters
 
     # NB. assume "majmin_m" if any others
     return distance * 1852
