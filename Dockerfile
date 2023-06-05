@@ -1,4 +1,4 @@
-FROM python:3.10 AS builder
+FROM python:3.11 AS builder
 
 ENV PIP_ROOT_USER_ACTION=ignore
 
@@ -11,7 +11,7 @@ COPY elastic_datashader /build/elastic_datashader
 WORKDIR /build/elastic_datashader
 RUN poetry build
 
-FROM python:3.10 AS deployment
+FROM python:3.11 AS deployment
 LABEL maintainer="foss@spectric.com"
 RUN useradd -d /home/datashader datashader && \
     mkdir -p /home/datashader /opt/elastic_datashader/tms-cache && \
