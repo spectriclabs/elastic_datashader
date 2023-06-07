@@ -228,7 +228,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
     except Exception as ex:  # pylint: disable=W0703
         logger.error(
             "Failed to generate tile %s: %s",
-            tile_name(idx, x, y, z, parameter_hash),
+            request.url,
             str(ex)
         )
         error_info = {**base_tile_info, 'error': repr(ex)}
