@@ -20,17 +20,25 @@ RUN useradd -d /home/datashader datashader && \
 USER datashader
 RUN mkdir /home/datashader/tmp
 COPY --from=builder /build/dist/*.whl /home/datashader/tmp/
+ENV PATH="$PATH:/home/datashader/.local/bin"
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir /home/datashader/tmp/*.whl && \
+    pip install gunicorn && \
     pip install uvicorn
 
 COPY deployment/logging_config.yml /opt/elastic_datashader/
+COPY deployment/gunicorn_config.py /opt/elastic_datashader/
 
 VOLUME ["/opt/elastic_datashader/tms-cache"]
 ENV DATASHADER_CACHE_DIRECTORY=/opt/elastic_datashader/tms-cache
-ENV PATH="$PATH:/home/datashader/.local/bin"
-ENTRYPOINT [ "uvicorn", \
-    "elastic_datashader:app", \
-    "--ssl-ciphers","!SHA:!SHA256:!CHACHA20:!AESCCM:!ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384", \
-    "--log-config", "/opt/elastic_datashader/logging_config.yml" \
+
+
+ENTRYPOINT [ "gunicorn", \
+    "--ciphers","!SHA:!SHA256:!CHACHA20:!AESCCM:!ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384", \
+    "--chdir", "/opt/elastic_datashader", \
+    "-c", "/opt/elastic_datashader/gunicorn_config.py", \
+    "--max-requests", "40", \
+    "--workers", "30", \
+    "-k", "uvicorn.workers.UvicornWorker", \
+    "elastic_datashader:app" \
 ]
