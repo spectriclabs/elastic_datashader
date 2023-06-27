@@ -63,7 +63,7 @@ To run in production mode via Docker+Uvicorn:
 
 ```sh
 $ docker run -it --rm=true -p 5000:5000 \
-    elastic_datashader:0.0.6 \
+    elastic_datashader:latest \
     --log-level=debug \
     -b :5000 \
     --workers 32 \
@@ -71,6 +71,20 @@ $ docker run -it --rm=true -p 5000:5000 \
     --env DATASHADER_LOG_LEVEL=DEBUG
 ```
 
+### SSL Config Options
+
+```
+docker run -it --rm=true -p 5000:5000 \
+    elastic_datashader:latest \
+    --log-level=debug \
+    -b :5000 \
+    --workers 32 \
+    --env DATASHADER_ELASTIC=http://user:passwordt@host:9200 \
+    --env DATASHADER_LOG_LEVEL=DEBUG \
+    --certfile <path> \
+    --keyfile <path> \
+    --ca-certs <path>
+```
 ### Running behind NGINX
 
 Run datashader as normal and use the following NGINX configuration snippet:
