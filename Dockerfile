@@ -23,8 +23,8 @@ COPY --from=builder /build/dist/*.whl /home/datashader/tmp/
 ENV PATH="$PATH:/home/datashader/.local/bin"
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir /home/datashader/tmp/*.whl && \
-    pip install gunicorn && \
-    pip install uvicorn
+    pip install gunicorn==20.1.0 && \
+    pip install uvicorn==0.22.0
 
 COPY deployment/logging_config.yml /opt/elastic_datashader/
 COPY deployment/gunicorn_config.py /opt/elastic_datashader/
@@ -34,7 +34,8 @@ ENV DATASHADER_CACHE_DIRECTORY=/opt/elastic_datashader/tms-cache
 
 
 ENTRYPOINT [ "gunicorn", \
-    "--ciphers","!SHA:!SHA256:!CHACHA20:!AESCCM:!ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384", \
+    "--ssl-version","TLSv1_2", \
+    "--ciphers","ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384", \
     "--chdir", "/opt/elastic_datashader", \
     "-c", "/opt/elastic_datashader/gunicorn_config.py", \
     "--max-requests", "40", \
