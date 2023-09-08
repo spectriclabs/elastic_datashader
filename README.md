@@ -140,7 +140,7 @@ The API is currently provisional and may change in future releases.
 * `geopoint_field=[alphanumeric]` : the field to use for geopoint coordinates.
 
 **Optional:**
-
+* `geopfield_type=[alphanumeric]` : the field type to use for the query (default: `geo_point`) this is needed because crosscluster get_field_mapping doesn't work
 * `timestamp_field=[string]` : the field to use for time (default: `@timestamp`)
 * `params=[json]` : query/filter parameters from kibana.
 * `cmap=[alphanumeric]` : the colorcet map to use (default: `bmy` for heatmap and `glasbey_category10` for colored points)

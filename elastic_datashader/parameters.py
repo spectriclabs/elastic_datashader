@@ -36,6 +36,7 @@ def create_default_params() -> Dict[str, Any]:
         "ellipse_units": "",
         "filter_distance": None,
         "geopoint_field": None,
+        'geofield_type': 'geo_point',
         "highlight": None,
         "lucene_query": None,
         "max_batch": config.max_batch,
@@ -291,6 +292,7 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params["cmap"] = get_cmap(query_params.get("cmap", None), category_field)
     params["span_range"] = query_params.get("span", "auto")
     params["geopoint_field"] = query_params.get("geopoint_field", params["geopoint_field"])
+    params["geofield_type"] = query_params.get("geofield_type", params["geofield_type"])
     params["timestamp_field"] = query_params.get("timestamp_field", params["timestamp_field"])
     params.update(get_time_bounds(now, from_time, to_time))
     params["bucket_min"] = float(query_params.get("bucket_min", 0))
@@ -346,7 +348,8 @@ def generate_global_params(headers, params, idx):
     if category_type == "number":
         bounds_s.aggs.metric("field_stats", "stats", field=category_field)
 
-    field_type = get_field_type(config.elastic_hosts, headers, params, geopoint_field, idx)
+    # field_type = get_field_type(config.elastic_hosts, headers, params, geopoint_field, idx)
+    field_type = params["geofield_type"] # CCS you cannot get mappings so we needed to push the field type from the client side
     # Execute and process search
     if len(list(bounds_s.aggs)) > 0 and field_type != "geo_shape":
         logger.info(bounds_s.to_dict())
