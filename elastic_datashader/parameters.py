@@ -15,7 +15,7 @@ from elasticsearch.exceptions import NotFoundError, ConflictError
 from elasticsearch_dsl import Document
 
 from .config import config
-from .elastic import get_field_type, get_search_base, build_dsl_filter
+from .elastic import get_search_base, build_dsl_filter
 from .logger import logger
 from .timeutil import quantize_time_range, convert_kibana_time
 
