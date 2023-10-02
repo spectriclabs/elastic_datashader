@@ -1019,7 +1019,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             raise ValueError("invalid resolution value")
 
         # don't allow geotile precision to be any worse than current zoom
-        MAXIMUM_PERCISION = 29 
+        MAXIMUM_PERCISION = 29
         geotile_precision = min(max(current_zoom, current_zoom + agg_zooms), MAXIMUM_PERCISION)
 
         tile_s = copy.copy(base_s)
