@@ -301,6 +301,9 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params["timeOverlapSize"] = query_params.get("timeOverlapSize", "auto")
     params["debug"] = query_params.get("debug", False) == 'true'
 
+    if params["geofield_type"] == "undefined":
+        params["geofield_type"] = "geo_point"
+
     if params["geopoint_field"] is None:
         logger.error("missing geopoint_field")
         raise ValueError("missing geopoint_field")

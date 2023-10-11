@@ -361,12 +361,14 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
             filter_key = f.get("meta", {}).get("key")
             if f.get("meta", {}).get("negate"):
                 if filter_key == "query":
-                    filter_dict["must_not"].append({"bool": f.get(filter_key).get("bool")})
+                    filt_index = list(f.get(filter_key))[0]
+                    filter_dict["must_not"].append({filt_index: f.get(filter_key).get(filt_index)})
                 else:
                     filter_dict["must_not"].append({filter_key: f.get(filter_key)})
             else:
                 if filter_key == "query":
-                    filter_dict["filter"].append({"bool": f.get(filter_key).get("bool")})
+                    filt_index = list(f.get(filter_key))[0]
+                    filter_dict["must_not"].append({filt_index: f.get(filter_key).get(filt_index)})
                 else:
                     filter_dict["filter"].append({filter_key: f.get(filter_key)})
 
