@@ -1273,10 +1273,6 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
             except ValueError:
                 pass
 
-            # datashader has issue in 0.15.0 with categories that have only one class
-            # https://github.com/holoviz/datashader/issues/1230
-            if len(categories) == 1:
-                categories.append('')
             cat_dtype = pd.api.types.CategoricalDtype(categories=categories, ordered=True)
             df["t"] = df["t"].astype(cat_dtype)
 
