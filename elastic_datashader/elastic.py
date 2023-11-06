@@ -309,78 +309,25 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
             f.get("geo_shape") or
             f.get("geo_distance")
         )
-
-        # Handle spatial filters
-        if is_spatial_filter:
-            if f.get("geo_polygon"):
-                geo_polygon_dict = {"geo_polygon": f.get("geo_polygon")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_polygon_dict)
-                else:
-                    filter_dict["filter"].append(geo_polygon_dict)
-            elif f.get("geo_bounding_box"):
-                geo_bbox_dict = {"geo_bounding_box": f.get("geo_bounding_box")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_bbox_dict)
-                else:
-                    filter_dict["filter"].append(geo_bbox_dict)
-            elif f.get("geo_shape"):
-                geo_bbox_dict = {"geo_shape": f.get("geo_shape")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_bbox_dict)
-                else:
-                    filter_dict["filter"].append(geo_bbox_dict)
-            elif f.get("geo_distance"):
-                geo_bbox_dict = {"geo_distance": f.get("geo_distance")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_bbox_dict)
-                else:
-                    filter_dict["filter"].append(geo_bbox_dict)
-            elif f.get("query"):
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(f.get("query"))
-                else:
-                    filter_dict["filter"].append(f.get("query"))
-            else:
-                raise ValueError("unsupported spatial_filter  {}".format(f))  # pylint: disable=C0209
-
-        # Handle phrase matching
-        elif f.get("meta").get("type") in ("phrase", "phrases", "bool"):
+        if f.get("query",None):
             if f.get("meta").get("negate"):
                 filter_dict["must_not"].append(f.get("query"))
             else:
                 filter_dict["filter"].append(f.get("query"))
-
-        elif f.get("meta").get("type") in ("range", "exists"):
-            if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(handle_range_or_exists_filters(f))
-            else:
-                filter_dict["filter"].append(handle_range_or_exists_filters(f))
-
-        elif f.get("meta", {}).get("type") == "custom" and f.get("meta", {}).get("key") is not None:
-            filter_key = f.get("meta", {}).get("key")
-            if f.get("meta", {}).get("negate"):
-                if filter_key == "query":
-                    filt_index = list(f.get(filter_key))[0]
-                    filter_dict["must_not"].append({filt_index: f.get(filter_key).get(filt_index)})
-                else:
-                    filter_dict["must_not"].append({filter_key: f.get(filter_key)})
-            else:
-                if filter_key == "query":
-                    filt_index = list(f.get(filter_key))[0]
-                    filter_dict["must_not"].append({filt_index: f.get(filter_key).get(filt_index)})
-                else:
-                    filter_dict["filter"].append({filter_key: f.get(filter_key)})
-
         else:
-            # Here we handle filters that don't send a type (this happens when controls send filters)
-            # example filters[{"meta":{"index":"11503c28-7d88-4f9a-946b-2997a5ea64cf","key":"name"},"query":{"match_phrase":{"name":"word_5"}}}]
-            if f.get("meta", {}).get("negate"):
-                filter_dict["must_not"].append(f.get("query"))
+            if not is_spatial_filter:
+                filt_type = f.get("meta").get("type")
+                if f.get("meta").get("negate"):
+                    filter_dict["must_not"].append({filt_type:f.get(filt_type)})
+                else:
+                    filter_dict["filter"].append({filt_type:f.get(filt_type)})
             else:
-                filter_dict["filter"].append(f.get("query"))
-            # raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
-
+                for geo_type in ["geo_polygon","geo_bounding_box","geo_shape","geo_distance"]:
+                    if f.get(geo_type,None):
+                        if f.get("meta").get("negate"):
+                            filter_dict["must_not"].append({geo_type:f.get(geo_type)})
+                        else:
+                            filter_dict["filter"].append({geo_type:f.get(geo_type)})
     logger.info("Filter output %s", filter_dict)
     return filter_dict
 
