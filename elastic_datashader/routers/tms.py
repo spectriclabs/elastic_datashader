@@ -25,7 +25,7 @@ from ..cache import (
 )
 from ..config import config
 from ..drawing import generate_x_tile
-from ..elastic import get_es_headers
+from ..elastic import get_es_headers,get_search_base
 from ..logger import logger
 from ..parameters import extract_parameters, merge_generated_parameters
 from ..tilegen import (
@@ -294,6 +294,10 @@ async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z:
     # Get hash and parameters
     try:
         parameter_hash, params = extract_parameters(request.headers, request.query_params)
+        # try to build the dsl object bad filters cause exceptions that are then retried.
+        # underlying elasticsearch_dsl doesn't support the elasticsearch 8 api yet so this causes requests to thrash
+        # If the filters are bad or elasticsearch_dsl cannot build the request will never be completed so serve X tile
+        get_search_base(config.elastic_hosts,request.headers,params,idx)
     except Exception as ex:  # pylint: disable=W0703
         logger.exception("Error while extracting parameters")
         params = {"user": request.headers.get("es-security-runas-user", None)}
