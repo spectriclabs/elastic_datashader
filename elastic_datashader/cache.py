@@ -2,6 +2,8 @@ from asyncio import sleep
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from os import scandir
+import os
+from contextlib import suppress
 from pathlib import Path
 from shutil import rmtree
 from time import time
@@ -161,6 +163,15 @@ def age_off_cache(cache_path: Path, idx_name: str, max_age: timedelta) -> None:
             logger.info("Aging off %s at %d sec old", file_path, file_age.total_seconds())
             # set missing_ok=True in case another process deleted the same file
             file_path.unlink(missing_ok=True)
+
+    # clear all empty dirs and dirs that contain empty dirs to prevent build up of param hash directories
+    remove_empty_dirs(cache_path/idx_name)
+
+def remove_empty_dirs(path: Path):
+    for root,dirs,_ in os.walk(path, topdown=False):
+        for d in dirs:
+            with suppress(OSError):
+                os.rmdir(Path(root,d))
 
 def get_idx_names(cache_path: Path) -> Iterable[str]:
     for path in cache_path.glob("*"):
