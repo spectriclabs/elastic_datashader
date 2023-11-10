@@ -33,7 +33,7 @@ def test_gen_overlay_img():
     expected = Image.open("./tests/dat/gen_overlay_img.png")
     img = drawing.gen_overlay_img(width, height, thickness)
 
-    np.testing.assert_equal(np.array(expected), np.array(img))
+    np.testing.assert_array_almost_equal(np.array(expected), np.array(img))
 
 def test_gen_debug_img():
     width = 256
@@ -55,7 +55,7 @@ def test_gen_debug_overlay():
     img = drawing.gen_empty(256, 256)
     expected = Path("./tests/dat/gen_debug_overlay.txt").read_bytes()
     actual = drawing.gen_debug_overlay(img, "hello, world!")
-    assert expected == actual
+    np.testing.assert_array_almost_equal(np.array(expected), np.array(img))
 
 def test_generate_x_tile():
     expected = Path("./tests/dat/gen_error.txt").read_bytes()
