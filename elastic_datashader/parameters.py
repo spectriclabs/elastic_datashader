@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from json import loads
-from socket import gethostname
 from time import sleep
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import unquote
@@ -351,7 +350,6 @@ def generate_global_params(headers, params, idx):
     if category_type == "number":
         bounds_s.aggs.metric("field_stats", "stats", field=category_field)
 
-    # field_type = get_field_type(config.elastic_hosts, headers, params, geopoint_field, idx)
     field_type = params["geofield_type"] # CCS you cannot get mappings so we needed to push the field type from the client side
     # Execute and process search
     if len(list(bounds_s.aggs)) > 0 and field_type != "geo_shape":
@@ -470,7 +468,7 @@ def generate_global_params(headers, params, idx):
 
 
 def merge_generated_parameters(headers, params, idx, param_hash):
-    layer_id = f"{param_hash}_{gethostname()}"
+    layer_id = f"{param_hash}_{config.hostname}"
     es = Elasticsearch(
         config.elastic_hosts.split(","),
         verify_certs=False,
@@ -488,7 +486,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
         try:
             doc = Document(
                 _id=layer_id,
-                creating_host=gethostname(),
+                creating_host=config.hostname,
                 creating_pid=os.getpid(),
                 creating_timestamp=datetime.now(timezone.utc),
                 generated_params=None,
@@ -533,7 +531,7 @@ def merge_generated_parameters(headers, params, idx, param_hash):
             generated_params = {
                 "complete": False,
                 "generation_start_time": datetime.now(timezone.utc),
-                "generating_host": gethostname(),
+                "generating_host": config.hostname,
                 "generating_pid": os.getpid(),
             }
 

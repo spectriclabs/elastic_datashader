@@ -15,8 +15,6 @@ def test_config_defaults():
     assert cfg.cache_path == Path("tms-cache")
     assert cfg.cache_timeout == timedelta(seconds=3600)
     assert cfg.elastic_hosts == "http://localhost:9200"
-    assert cfg.proxy_host is None
-    assert cfg.proxy_prefix == ""
     assert cfg.tms_key is None
     assert cfg.max_bins == 10000
     assert cfg.max_batch == 10000
@@ -56,8 +54,6 @@ def test_config_env():
     assert cfg.cache_path == Path("tms-cache-foo")
     assert cfg.cache_timeout == timedelta(seconds=60)
     assert cfg.elastic_hosts == "http://localhost:9201"
-    assert cfg.proxy_host == "http://localhost:1337"
-    assert cfg.proxy_prefix == "foo"
     assert cfg.tms_key == "bar"
     assert cfg.max_bins == 10
     assert cfg.max_batch == 1000

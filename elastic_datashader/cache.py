@@ -168,10 +168,10 @@ def age_off_cache(cache_path: Path, idx_name: str, max_age: timedelta) -> None:
     remove_empty_dirs(cache_path/idx_name)
 
 def remove_empty_dirs(path: Path):
-    for root,dirs,_ in os.walk(path, topdown=False):
+    for root, dirs, _ in os.walk(path, topdown=False):
         for d in dirs:
             with suppress(OSError):
-                os.rmdir(Path(root,d))
+                os.rmdir(Path(root, d))
 
 def get_idx_names(cache_path: Path) -> Iterable[str]:
     for path in cache_path.glob("*"):

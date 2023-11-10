@@ -1099,7 +1099,6 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         # the composite needs one bin for 'after_key'
         composite_agg_size = int(max_bins / inner_agg_size) - 1
-        # field_type = get_field_type(config.elastic_hosts, headers, params, geopoint_field, idx)
         field_type = params["geofield_type"] # CCS you cannot get mappings so we needed to push the field type from the client side
         partial_data = False # TODO can we get partial data?
         span = None
