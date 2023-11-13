@@ -1,7 +1,7 @@
 from asyncio import create_task
 
 from fastapi import FastAPI
-
+from fastapi.middleware.cors import CORSMiddleware
 import urllib3
 
 from .cache import background_cache_cleanup
@@ -29,6 +29,19 @@ app.include_router(index.router)
 app.include_router(indices.router)
 app.include_router(legend.router)
 app.include_router(tms.router)
+
+
+
+
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 async def app_startup():

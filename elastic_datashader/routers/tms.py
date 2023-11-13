@@ -3,11 +3,12 @@ from os import getpid
 from typing import Optional
 import time
 import uuid
+import json
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError
 from elasticsearch_dsl import Document
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.datastructures import URL
 
 from ..cache import (
@@ -26,7 +27,7 @@ from ..config import config
 from ..drawing import generate_x_tile
 from ..elastic import get_es_headers, get_search_base
 from ..logger import logger
-from ..parameters import extract_parameters, merge_generated_parameters
+from ..parameters import extract_parameters, merge_generated_parameters, SearchParams
 from ..tilegen import (
     TILE_HEIGHT_PX,
     TILE_WIDTH_PX,
@@ -281,7 +282,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
         release_cache_placeholder(config.cache_path, rendering_tile_name(idx, x, y, z, parameter_hash))
 
-async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
+async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks,post_params={}):
     check_proxy_key(request.headers.get('tms-proxy-key'))
 
     es = Elasticsearch(
@@ -292,7 +293,9 @@ async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z:
 
     # Get hash and parameters
     try:
-        parameter_hash, params = extract_parameters(request.headers, request.query_params)
+        print(request.query_params)
+        print(post_params)
+        parameter_hash, params = extract_parameters(request.headers, {**request.query_params,**post_params})
         # try to build the dsl object bad filters cause exceptions that are then retried.
         # underlying elasticsearch_dsl doesn't support the elasticsearch 8 api yet so this causes requests to thrash
         # If the filters are bad or elasticsearch_dsl cannot build the request will never be completed so serve X tile
@@ -344,3 +347,18 @@ async def get_tms(idx: str, x: int, y: int, z: int, request: Request, background
 @router.get("/{already_waited}/{idx}/{z}/{x}/{y}.png")
 async def get_tms_after_wait(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks):
     return await fetch_or_render_tile(already_waited, idx, x, y, z, request, background_tasks)
+
+
+@router.post("/{idx}/{z}/{x}/{y}.png")
+async def post_tile(already_waited: int,idx: str, x: int, y: int, z: int, request: Request,params: SearchParams, background_tasks: BackgroundTasks):
+    params = params.dict()
+    params["params"] = json.dumps(params["params"])
+    response = await fetch_or_render_tile(0, idx, x, y, z, request, background_tasks,post_params=params)
+    if isinstance(response,RedirectResponse):
+        print(response.headers)
+        return JSONResponse(status_code=200, content={"retry-after":response.headers['retry-after']})
+    return response
+    
+
+
+    
