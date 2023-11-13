@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 from os import getpid
-from socket import gethostname
 from typing import Optional
 import time
 import uuid
@@ -111,7 +110,7 @@ def create_datashader_tiles_entry(es, **kwargs) -> None:
     '''
     doc_info = {
          **kwargs,
-        'host': gethostname(),
+        'host': config.hostname,
         'pid': getpid(),
         'timestamp': datetime.now(timezone.utc),
     }
