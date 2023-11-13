@@ -157,7 +157,7 @@ def cached_response(es, idx, x, y, z, params, parameter_hash) -> Optional[Respon
         except NotFoundError:
             logger.warning("Unable to find cached tile entry in .datashader_tiles")
 
-        return make_image_response(img, params.get("user") or "", parameter_hash, 60)
+        return make_image_response(img, params.get("user") or "", parameter_hash, config.cache_timeout.seconds)
 
     logger.debug("Did not find image in cache: %s", tile_name(idx, x, y, z, parameter_hash))
     return None
