@@ -158,26 +158,6 @@ def convert_nm_to_ellipse_units(distance: float, units: str) -> float:
     # NB. assume "majmin_m" if any others
     return distance * 1852
 
-def get_field_type(elastic_hosts: str, headers: Optional[str], params: Dict[str, Any], field: str, idx: str) -> str:
-    user = params.get("user")
-    x_opaque_id = params.get("x-opaque-id")
-    es = Elasticsearch(
-        elastic_hosts.split(","),
-        verify_certs=False,
-        timeout=900,
-        headers=get_es_headers(headers, user, x_opaque_id),
-    )
-    if idx.find("*:") != -1:
-        idx = idx[idx.find("*:")+2:] # when you query for mappings if it is cross cluster you don't get a mapping
-    mappings = es.indices.get_field_mapping(fields=field, index=idx)
-    # {'foot_prints': {'mappings': {'foot_print': {'full_name': 'foot_print', 'mapping': {'foot_print': {'type': 'geo_shape'}}}}}}
-    index = list(mappings.keys())[0] # if index is my_index* it comes back as my_index
-    field_parts = field.split(".")
-    try:
-        return mappings[index]['mappings'][field]['mapping'][field_parts[-1]]['type'] # handles 'geo_center' or a nested object {signal:{geo:{location:{}}}}
-    except AttributeError:
-        return mappings[index]['mappings'][field]['mapping'][field]['type'] # handles literal string with periods 'signal.geo.location'
-
 def get_search_base(
     elastic_hosts: str,
     headers: Optional[str],
@@ -271,21 +251,6 @@ def get_search_base(
 
     return base_s
 
-def handle_range_or_exists_filters(filter_input: Dict[Any, Any]) -> Dict[str, Any]:
-    """
-    `range` and `exists` filters can appear either directly under
-    `filter[]` or under `filter[].query` depending on the version
-    of Kibana, the former being the old way, so they need special
-    handling for backward compatibility.
-    """
-    filter_type = filter_input.get("meta").get("type")  # "range" or "exists"
-
-    # Handle old query structure for backward compatibility
-    if filter_input.get(filter_type) is not None:
-        return {filter_type: filter_input.get(filter_type)}
-
-    return filter_input.get("query")
-
 def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
     """
 
@@ -309,78 +274,25 @@ def build_dsl_filter(filter_inputs) -> Optional[Dict[str, Any]]:
             f.get("geo_shape") or
             f.get("geo_distance")
         )
-
-        # Handle spatial filters
-        if is_spatial_filter:
-            if f.get("geo_polygon"):
-                geo_polygon_dict = {"geo_polygon": f.get("geo_polygon")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_polygon_dict)
-                else:
-                    filter_dict["filter"].append(geo_polygon_dict)
-            elif f.get("geo_bounding_box"):
-                geo_bbox_dict = {"geo_bounding_box": f.get("geo_bounding_box")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_bbox_dict)
-                else:
-                    filter_dict["filter"].append(geo_bbox_dict)
-            elif f.get("geo_shape"):
-                geo_bbox_dict = {"geo_shape": f.get("geo_shape")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_bbox_dict)
-                else:
-                    filter_dict["filter"].append(geo_bbox_dict)
-            elif f.get("geo_distance"):
-                geo_bbox_dict = {"geo_distance": f.get("geo_distance")}
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(geo_bbox_dict)
-                else:
-                    filter_dict["filter"].append(geo_bbox_dict)
-            elif f.get("query"):
-                if f.get("meta").get("negate"):
-                    filter_dict["must_not"].append(f.get("query"))
-                else:
-                    filter_dict["filter"].append(f.get("query"))
-            else:
-                raise ValueError("unsupported spatial_filter  {}".format(f))  # pylint: disable=C0209
-
-        # Handle phrase matching
-        elif f.get("meta").get("type") in ("phrase", "phrases", "bool"):
+        if f.get("query", None):
             if f.get("meta").get("negate"):
                 filter_dict["must_not"].append(f.get("query"))
             else:
                 filter_dict["filter"].append(f.get("query"))
-
-        elif f.get("meta").get("type") in ("range", "exists"):
-            if f.get("meta").get("negate"):
-                filter_dict["must_not"].append(handle_range_or_exists_filters(f))
-            else:
-                filter_dict["filter"].append(handle_range_or_exists_filters(f))
-
-        elif f.get("meta", {}).get("type") == "custom" and f.get("meta", {}).get("key") is not None:
-            filter_key = f.get("meta", {}).get("key")
-            if f.get("meta", {}).get("negate"):
-                if filter_key == "query":
-                    filt_index = list(f.get(filter_key))[0]
-                    filter_dict["must_not"].append({filt_index: f.get(filter_key).get(filt_index)})
-                else:
-                    filter_dict["must_not"].append({filter_key: f.get(filter_key)})
-            else:
-                if filter_key == "query":
-                    filt_index = list(f.get(filter_key))[0]
-                    filter_dict["must_not"].append({filt_index: f.get(filter_key).get(filt_index)})
-                else:
-                    filter_dict["filter"].append({filter_key: f.get(filter_key)})
-
         else:
-            # Here we handle filters that don't send a type (this happens when controls send filters)
-            # example filters[{"meta":{"index":"11503c28-7d88-4f9a-946b-2997a5ea64cf","key":"name"},"query":{"match_phrase":{"name":"word_5"}}}]
-            if f.get("meta", {}).get("negate"):
-                filter_dict["must_not"].append(f.get("query"))
+            if not is_spatial_filter:
+                filt_type = f.get("meta").get("type")
+                if f.get("meta").get("negate"):
+                    filter_dict["must_not"].append({filt_type: f.get(filt_type)})
+                else:
+                    filter_dict["filter"].append({filt_type: f.get(filt_type)})
             else:
-                filter_dict["filter"].append(f.get("query"))
-            # raise ValueError("unsupported filter type {}".format(f.get("meta").get("type")))  # pylint: disable=C0209
-
+                for geo_type in ["geo_polygon", "geo_bounding_box", "geo_shape", "geo_distance"]:
+                    if f.get(geo_type, None):
+                        if f.get("meta").get("negate"):
+                            filter_dict["must_not"].append({geo_type: f.get(geo_type)})
+                        else:
+                            filter_dict["filter"].append({geo_type: f.get(geo_type)})
     logger.info("Filter output %s", filter_dict)
     return filter_dict
 
@@ -449,32 +361,6 @@ def parse_duration_interval(interval):
             kwargs[key] = int(interval[0:len(interval)-1])
     return relativedelta(**kwargs)
 
-def convert(response, category_formatter=str):
-    """
-
-    :param response:
-    :return:
-    """
-    if hasattr(response.aggregations, "categories"):
-        for category in response.aggregations.categories:
-            for bucket in category.grids:
-                x, y = lnglat_to_meters(
-                    bucket.centroid.location.lon, bucket.centroid.location.lat
-                )
-                yield {
-                    "lon": bucket.centroid.location.lon,
-                    "lat": bucket.centroid.location.lat,
-                    "x": x,
-                    "y": y,
-                    "c": bucket.centroid.count,
-                    "t": category_formatter(category.key),
-                }
-    else:
-        for bucket in response.aggregations.grids:
-            lon = bucket.centroid.location.lon
-            lat = bucket.centroid.location.lat
-            x, y = lnglat_to_meters(lon, lat)
-            yield {"lon": lon, "lat": lat, "x": x, "y": y, "c": bucket.centroid.count}
 
 def convert_composite(response, categorical, filter_buckets, histogram_interval, category_type, category_format):
     if categorical and filter_buckets is False:
@@ -585,20 +471,6 @@ def get_nested_field_from_hit(hit, field_parts: List[str], default=None):
         return v
 
     raise ValueError("field must be provided")
-
-def chunk_iter(iterable, chunk_size):
-    chunks = [None] * chunk_size
-    i = -1
-    for i, v in enumerate(iterable):
-        idx = i % chunk_size
-        if idx == 0 and i > 0:
-            i = -1
-            yield (True, chunks)
-        chunks[idx] = v
-
-    if i >= 0:
-        last_written_idx = i % chunk_size
-        yield (False, chunks[0:last_written_idx+1])
 
 def bucket_noop(bucket, search):
     # pylint: disable=unused-argument

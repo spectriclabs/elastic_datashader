@@ -18,7 +18,6 @@ class Config:
     cache_cleanup_interval: timedelta
     cache_path: Path
     cache_timeout: timedelta
-    csrf_secret_key: str
     datashader_headers: Dict[Any, Any]
     elastic_hosts: str
     ellipse_render_mode: str
@@ -29,8 +28,6 @@ class Config:
     max_ellipses_per_tile: int
     max_legend_items_per_tile: int
     num_ellipse_points: int
-    proxy_host: Optional[str]
-    proxy_prefix: str
     query_timeout_seconds: int
     render_timeout: timedelta
     tms_key: Optional[str]
@@ -93,7 +90,6 @@ def config_from_env(env) -> Config:
         cache_cleanup_interval=timedelta(seconds=int(env.get("DATASHADER_CACHE_CLEANUP_INTERVAL", 5*60))),
         cache_path=Path(env.get("DATASHADER_CACHE_DIRECTORY", "tms-cache")),
         cache_timeout=timedelta(seconds=int(env.get("DATASHADER_CACHE_TIMEOUT", 60*60))),
-        csrf_secret_key=env.get("DATASHADER_CSRF_SECRET_KEY", "CSRFProtectionKey"),
         datashader_headers=load_datashader_headers(env.get("DATASHADER_HEADER_FILE", "headers.yaml")),
         elastic_hosts=env.get("DATASHADER_ELASTIC", "http://localhost:9200"),
         ellipse_render_mode=env.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix"),
@@ -104,8 +100,6 @@ def config_from_env(env) -> Config:
         max_ellipses_per_tile=int(env.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100_000)),
         max_legend_items_per_tile=int(env.get("MAX_LEGEND_ITEMS_PER_TILE", 20)),
         num_ellipse_points=int(env.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)),
-        proxy_host=env.get("DATASHADER_PROXY_HOST", None),
-        proxy_prefix=env.get("DATASHADER_PROXY_PREFIX", ""),
         query_timeout_seconds=int(env.get("DATASHADER_QUERY_TIMEOUT", 0)),
         render_timeout=timedelta(seconds=int(env.get("DATASHADER_RENDER_TIMEOUT", 30))),
         tms_key=env.get("DATASHADER_TMS_KEY", None),

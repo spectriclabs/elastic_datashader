@@ -75,7 +75,7 @@ def test_clear_hash_cache(tmp_path):
 
 
 def test_age_off_cache(tmp_path):
-    xdir = tmp_path / "fooindex/somehash/3/1"
+    xdir = tmp_path / "fooindex/some_new_hash/3/1"
     xdir.mkdir(parents=True)
 
     yfile = xdir / "2.png"
@@ -90,6 +90,10 @@ def test_age_off_cache(tmp_path):
 
     assert not yfile.exists()
     assert yfile_after.exists()
+    sleep(2)
+    # clear again should remove all files and empty folders
+    cache.age_off_cache(tmp_path, "fooindex", timedelta(seconds=1))
+    assert not xdir.exists()
 
 
 def test_build_layer_info(tmp_path):

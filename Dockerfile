@@ -38,7 +38,7 @@ ENTRYPOINT [ "gunicorn", \
     "--ciphers","ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384", \
     "--chdir", "/opt/elastic_datashader", \
     "-c", "/opt/elastic_datashader/gunicorn_config.py", \
-    "--max-requests", "40", \
+    "--max-requests", "400", \
     "--workers", "30", \
     "-k", "uvicorn.workers.UvicornWorker", \
     "elastic_datashader:app" \
