@@ -149,8 +149,8 @@ def cached_response(es, idx, x, y, z, params, parameter_hash) -> Optional[Respon
 
         try:
             es.update(  # pylint: disable=E1123
-                ".datashader_tiles",
-                tile_id(idx, x, y, z, parameter_hash),
+                index=".datashader_tiles",
+                id=tile_id(idx, x, y, z, parameter_hash),
                 body={"script" : {"source": "ctx._source.cache_hits++"}},
                 retry_on_conflict=5,
             )
