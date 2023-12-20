@@ -57,7 +57,7 @@ localwebserver = ["uvicorn"]
 
 [tool.pylint.'MESSAGES CONTROL']
 max-line-length = 150
-extension-pkg-whitelist = pydantic
+extension-pkg-whitelist = "pydantic"
 disable = "too-many-nested-blocks,too-many-branches,too-many-statements,R0801,R0902,R0903,R0911,R0913,R0914,C0103,C0114,C0115,C0116,C0123,C0301,C0302,fixme"
 
 [tool.black]
