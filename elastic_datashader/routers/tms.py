@@ -282,7 +282,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
         release_cache_placeholder(config.cache_path, rendering_tile_name(idx, x, y, z, parameter_hash))
 
-async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks, post_params={}):
+async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z: int, request: Request, background_tasks: BackgroundTasks, post_params=None):
     check_proxy_key(request.headers.get('tms-proxy-key'))
 
     es = Elasticsearch(
@@ -290,7 +290,8 @@ async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z:
         verify_certs=False,
         timeout=120,
     )
-
+    if post_params is None:
+        post_params = {}
     # Get hash and parameters
     try:
         print(request.query_params)
@@ -355,10 +356,10 @@ async def post_tile(already_waited: int, idx: str, x: int, y: int, z: int, reque
     params["params"] = json.dumps(params["params"])
     response = await fetch_or_render_tile(0, idx, x, y, z, request, background_tasks, post_params=params)
     if isinstance(response, RedirectResponse):
-        print(response.headers)
+        print(already_waited)
         return JSONResponse(status_code=200, content={"retry-after": response.headers['retry-after']})
     return response
-    
+ 
 
 
-    
+ 
