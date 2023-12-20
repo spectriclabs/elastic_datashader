@@ -969,7 +969,7 @@ def generate_tile(idx, x, y, z, headers, params, tile_width_px=256, tile_height_
 
         # Create base search
         base_s = get_search_base(config.elastic_hosts, headers, params, idx)
-        #base_s = base_s[0:0]
+        # base_s = base_s[0:0]
         # Now find out how many documents
         count_s = copy.copy(base_s)[0:0] # slice of array sets from/size since we are aggregating the data we don't need the hits
         count_s = count_s.filter("geo_bounding_box", **{geopoint_field: bb_dict})

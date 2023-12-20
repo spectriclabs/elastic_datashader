@@ -24,12 +24,12 @@ class SearchParams(BaseModel):
     geopoint_field: str
     params: dict
     cmap: str = Field(default="bym")
-    resolution:str = Field(default="finest")
-    span_range:str = Field(default="auto", alias='span')
-    spread:str = Field(default="auto") # Point Size
-    timeOverlap:bool = Field(default=False)
-    timeOverlapSize:str = Field(default="auto")
-    timestamp_field:str = Field(default="@timestamp")
+    resolution: str = Field(default="finest")
+    span_range: str = Field(default="auto", alias='span')
+    spread: str = Field(default="auto") # Point Size
+    timeOverlap: bool = Field(default=False)
+    timeOverlapSize: str = Field(default="auto")
+    timestamp_field: str = Field(default="@timestamp")
     search_nautical_miles: int = Field(default=50)
     geofield_type: str = Field(default='geo_point')
     bucket_max: float = Field(default=100, ge=0, le=100)
