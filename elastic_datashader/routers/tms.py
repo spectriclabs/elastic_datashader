@@ -359,7 +359,3 @@ async def post_tile(already_waited: int, idx: str, x: int, y: int, z: int, reque
         print(already_waited)
         return JSONResponse(status_code=200, content={"retry-after": response.headers['retry-after']})
     return response
- 
-
-
- 
