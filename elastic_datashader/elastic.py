@@ -59,7 +59,6 @@ def hosts_url_to_nodeconfig(elasticsearch_hosts: str):
             nodeconfig.headers = nodeconfig.headers.copy()
             nodeconfig.headers["authorization"] = elastic_transport.client_utils.basic_auth_to_header((parsed_url.username, parsed_url.password))
         node_configs.append(nodeconfig)
-    print(node_configs)
     return node_configs
 
 def verify_datashader_indices(elasticsearch_hosts: str):
