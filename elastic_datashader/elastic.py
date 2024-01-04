@@ -3,12 +3,14 @@ from typing import Any, Dict, List, Optional
 import copy
 import struct
 import time
+import urllib
 from dateutil.relativedelta import relativedelta
 
 from datashader.utils import lnglat_to_meters
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import AttrDict, Search
 
+import  elastic_transport
 import pynumeral
 import yaml
 
@@ -45,6 +47,20 @@ def scan(search, use_scroll=False, size=10000):
             else:
                 _search = None
 
+def hosts_url_to_nodeconfig(elasticsearch_hosts: str):
+    node_configs = []
+    for host in elasticsearch_hosts.split(","):
+        nodeconfig = elastic_transport.client_utils.url_to_node_config(host)
+        nodeconfig.verify_certs = False
+        # check if host has username and password and override the basic auth due to elastic bug
+        # https://github.com/elastic/elastic-transport-python/issues/141
+        parsed_url = urllib.parse.urlparse(host)
+        if parsed_url.username and parsed_url.password:
+            nodeconfig.headers = nodeconfig.headers.copy()
+            nodeconfig.headers["authorization"] = elastic_transport.client_utils.basic_auth_to_header((parsed_url.username, parsed_url.password))
+        node_configs.append(nodeconfig)
+    print(node_configs)
+    return node_configs
 
 def verify_datashader_indices(elasticsearch_hosts: str):
     """Verify the ES indices exist
@@ -52,8 +68,7 @@ def verify_datashader_indices(elasticsearch_hosts: str):
     :param elasticsearch_hosts:
     """
     es = Elasticsearch(
-        elasticsearch_hosts.split(","),
-        verify_certs=False,
+        hosts_url_to_nodeconfig(elasticsearch_hosts),
         timeout=120
     )
 
@@ -182,8 +197,7 @@ def get_search_base(
     x_opaque_id = params.get("x-opaque-id")
     # Connect to Elasticsearch
     es = Elasticsearch(
-        elastic_hosts.split(","),
-        verify_certs=False,
+        hosts_url_to_nodeconfig(elastic_hosts),
         timeout=900,
         headers=get_es_headers(headers, user, x_opaque_id),
     )
