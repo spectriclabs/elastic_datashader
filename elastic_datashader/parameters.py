@@ -12,12 +12,28 @@ import os
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import NotFoundError, ConflictError
 from elasticsearch_dsl import Document
+from pydantic import BaseModel, Field
 
 from .config import config
 from .elastic import get_search_base, build_dsl_filter
 from .logger import logger
 from .timeutil import quantize_time_range, convert_kibana_time
 
+
+class SearchParams(BaseModel):
+    geopoint_field: str
+    params: dict
+    cmap: str = Field(default="bym")
+    resolution: str = Field(default="finest")
+    span_range: str = Field(default="auto", alias='span')
+    spread: str = Field(default="auto") # Point Size
+    timeOverlap: bool = Field(default=False)
+    timeOverlapSize: str = Field(default="auto")
+    timestamp_field: str = Field(default="@timestamp")
+    search_nautical_miles: int = Field(default=50)
+    geofield_type: str = Field(default='geo_point')
+    bucket_max: float = Field(default=100, ge=0, le=100)
+    bucket_min: float  = Field(default=0, ge=0, le=1)
 
 def create_default_params() -> Dict[str, Any]:
     return {
@@ -287,7 +303,7 @@ def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) ->
     params["highlight"] = query_params.get("highlight")
     params["spread"] = normalize_spread(query_params.get("spread"))
     params["resolution"] = query_params.get("resolution", params["resolution"])
-    params["use_centroid"] = query_params.get("use_centroid", default=params["use_centroid"])
+    params["use_centroid"] = query_params.get("use_centroid", params["use_centroid"])
     params["cmap"] = get_cmap(query_params.get("cmap", None), category_field)
     params["span_range"] = query_params.get("span", "auto")
     params["geopoint_field"] = query_params.get("geopoint_field", params["geopoint_field"])

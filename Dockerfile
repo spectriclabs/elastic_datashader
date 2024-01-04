@@ -11,7 +11,7 @@ COPY elastic_datashader /build/elastic_datashader
 WORKDIR /build/elastic_datashader
 RUN poetry build
 
-FROM python:3.11 AS deployment
+FROM python:3.11-slim AS deployment
 LABEL maintainer="foss@spectric.com"
 RUN useradd -d /home/datashader datashader && \
     mkdir -p /home/datashader /opt/elastic_datashader/tms-cache && \
@@ -23,8 +23,8 @@ COPY --from=builder /build/dist/*.whl /home/datashader/tmp/
 ENV PATH="$PATH:/home/datashader/.local/bin"
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir /home/datashader/tmp/*.whl && \
-    pip install gunicorn==20.1.0 && \
-    pip install uvicorn==0.22.0
+    pip install gunicorn==21.2.0 && \
+    pip install uvicorn==0.24.0
 
 COPY deployment/logging_config.yml /opt/elastic_datashader/
 COPY deployment/gunicorn_config.py /opt/elastic_datashader/
