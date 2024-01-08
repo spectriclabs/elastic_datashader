@@ -23,7 +23,7 @@ COPY --from=builder /build/dist/*.whl /home/datashader/tmp/
 ENV PATH="$PATH:/home/datashader/.local/bin"
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir /home/datashader/tmp/*.whl && \
-    pip install gunicorn==21.2.0 && \
+    pip install gunicorn==20.1.0 && \
     pip install uvicorn==0.24.0
 
 COPY deployment/logging_config.yml /opt/elastic_datashader/
