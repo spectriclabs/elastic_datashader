@@ -286,7 +286,7 @@ async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z:
     check_proxy_key(request.headers.get('tms-proxy-key'))
 
     es = Elasticsearch(
-        hosts_url_to_nodeconfig(config.elastic_hosts)),
+        hosts_url_to_nodeconfig(config.elastic_hosts),
         verify_certs=False,
         timeout=120,
     )
