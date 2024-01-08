@@ -25,7 +25,7 @@ from ..cache import (
 )
 from ..config import config
 from ..drawing import generate_x_tile
-from ..elastic import get_es_headers, get_search_base
+from ..elastic import get_es_headers, get_search_base, hosts_url_to_nodeconfig
 from ..logger import logger
 from ..parameters import extract_parameters, merge_generated_parameters, SearchParams
 from ..tilegen import (
@@ -233,7 +233,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         )
         error_info = {**base_tile_info, 'error': repr(ex)}
         create_datashader_tiles_entry(
-            Elasticsearch(config.elastic_hosts.split(","), verify_certs=False, timeout=120),
+            Elasticsearch(hosts_url_to_nodeconfig(config.elastic_hosts), verify_certs=False, timeout=120),
             **error_info
         )
         logger.debug("Releasing cache placeholder %s", rendering_tile_name(idx, x, y, z, parameter_hash))
@@ -254,7 +254,7 @@ def generate_tile_to_cache(idx: str, x: int, y: int, z: int, params, parameter_h
         }
 
         create_datashader_tiles_entry(
-            Elasticsearch(config.elastic_hosts.split(","), verify_certs=False, timeout=120),
+            Elasticsearch(hosts_url_to_nodeconfig(config.elastic_hosts), verify_certs=False, timeout=120),
             **new_tile_info,
         )
 
@@ -286,7 +286,7 @@ async def fetch_or_render_tile(already_waited: int, idx: str, x: int, y: int, z:
     check_proxy_key(request.headers.get('tms-proxy-key'))
 
     es = Elasticsearch(
-        config.elastic_hosts.split(","),
+        hosts_url_to_nodeconfig(config.elastic_hosts)),
         verify_certs=False,
         timeout=120,
     )
