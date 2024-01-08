@@ -4,6 +4,7 @@ from elasticsearch import Elasticsearch
 from fastapi import APIRouter, Response
 
 from ..config import config
+from ..elastic import hosts_url_to_nodeconfig
 
 router = APIRouter(
     prefix="/indices",
@@ -14,7 +15,7 @@ router = APIRouter(
 @router.get("")
 async def retrieve_indices():
     es = Elasticsearch(
-        config.elastic_hosts.split(","),
+        hosts_url_to_nodeconfig(config.elastic_hosts),
         verify_certs=False,
         timeout=120)
     aliases = es.indices.get_alias("*")  # pylint: disable=E1121
@@ -33,7 +34,7 @@ async def retrieve_indices():
 @router.get("/{index}/field_caps")
 async def retrieve_field_caps(index: str):
     es = Elasticsearch(
-        config.elastic_hosts.split(","), verify_certs=False, timeout=120
+        hosts_url_to_nodeconfig(config.elastic_hosts), verify_certs=False, timeout=120
     )
     field_caps = es.field_caps(  # pylint: disable=E1121,E1123
         index,
@@ -55,7 +56,7 @@ async def retrieve_field_caps(index: str):
 @router.get("/{index}/mapping")
 async def retrieve_index_mapping(index: str):
     es = Elasticsearch(
-        config.elastic_hosts.split(","), verify_certs=False, timeout=120
+        hosts_url_to_nodeconfig(config.elastic_hosts), verify_certs=False, timeout=120
     )
     index_mapping = es.indices.get_mapping(index)  # pylint: disable=E1121
     mapping = [

@@ -15,7 +15,7 @@ from elasticsearch_dsl import Document
 from pydantic import BaseModel, Field
 
 from .config import config
-from .elastic import get_search_base, build_dsl_filter
+from .elastic import get_search_base, build_dsl_filter, hosts_url_to_nodeconfig
 from .logger import logger
 from .timeutil import quantize_time_range, convert_kibana_time
 
@@ -486,7 +486,7 @@ def generate_global_params(headers, params, idx):
 def merge_generated_parameters(headers, params, idx, param_hash):
     layer_id = f"{param_hash}_{config.hostname}"
     es = Elasticsearch(
-        config.elastic_hosts.split(","),
+        hosts_url_to_nodeconfig(config.elastic_hosts),
         verify_certs=False,
         timeout=120
     )
