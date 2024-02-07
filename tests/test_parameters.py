@@ -118,7 +118,7 @@ def test_get_category_field():
     assert parameters.get_category_field(None) is None
     assert parameters.get_category_field("banana") == "banana"
 
-def test_get_parameter_hash():a6488297eb1cdaa23e196800b1c399
+def test_get_parameter_hash():
     assert parameters.get_parameter_hash({"foo": "bar", "baz": 1}) == "a6488297eb1cdaa23e196800b1c399"
     assert parameters.get_parameter_hash({"foo": "bar", "baz": 1, "abc": datetime(2022, 2, 17, 11, 0, 0, tzinfo=timezone.utc)}) == "88ade56886a8099e6fd3c25525a0fb"
     assert parameters.get_parameter_hash({}) == "e3b0c44298fc1c149afbf4c8996fb9"
