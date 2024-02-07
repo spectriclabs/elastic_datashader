@@ -26,11 +26,11 @@ def test_du(tmp_path):
 
 
 def test_tile_name():
-    assert cache.tile_name("abc", 1, 2, 3, "somehash") == "abc/somehash/3/1/2.png"
+    assert cache.tile_name("abc", 1, 2, 3, "somehash") == "ba7816bf8f01cfea4141/somehash/3/1/2.png"
 
 
 def test_tile_id():
-    assert cache.tile_id("abc", 1, 2, 3, "somehash") == "abc_somehash_3_1_2"
+    assert cache.tile_id("abc", 1, 2, 3, "somehash") == "ba7816bf8f01cfea4141_somehash_3_1_2"
 
 
 def test_get_cache_none():
@@ -57,8 +57,8 @@ def test_set_cache(tmp_path):
 
 
 def test_check_cache_dir(tmp_path):
-    cache.check_cache_dir(tmp_path, "foo")
-    assert (tmp_path / "foo").exists()
+    cache.check_cache_dir(tmp_path, "abc")
+    assert (tmp_path / "ba7816bf8f01cfea4141").exists()
 
 
 def test_clear_hash_cache(tmp_path):
