@@ -118,10 +118,10 @@ def test_get_category_field():
     assert parameters.get_category_field(None) is None
     assert parameters.get_category_field("banana") == "banana"
 
-def test_get_parameter_hash():
-    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1}) == "a6488297eb1cdaa23e196800b1c399b13d9a5c86cfecaf8f9fd0fbe9af7533db"
-    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1, "abc": datetime(2022, 2, 17, 11, 0, 0, tzinfo=timezone.utc)}) == "88ade56886a8099e6fd3c25525a0fb9ab3938be64374569480ed3bfd7f3d70e9"
-    assert parameters.get_parameter_hash({}) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+def test_get_parameter_hash():a6488297eb1cdaa23e196800b1c399
+    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1}) == "a6488297eb1cdaa23e196800b1c399"
+    assert parameters.get_parameter_hash({"foo": "bar", "baz": 1, "abc": datetime(2022, 2, 17, 11, 0, 0, tzinfo=timezone.utc)}) == "88ade56886a8099e6fd3c25525a0fb"
+    assert parameters.get_parameter_hash({}) == "e3b0c44298fc1c149afbf4c8996fb9"
 
 def test_get_time_bounds_already_quantized():
     now = datetime(2022, 6, 14, 12, 15, 0, tzinfo=timezone.utc)
