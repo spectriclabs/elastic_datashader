@@ -2,6 +2,7 @@ from asyncio import sleep
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from os import scandir
+from hashlib import sha256
 import os
 from contextlib import suppress
 from pathlib import Path
@@ -23,14 +24,37 @@ def path_age(now: datetime, path: Path) -> timedelta:
 
     return now - path_dt
 
+index_hash_map = {}
+
+def get_index_hash(idx: str) -> str:
+    '''
+    Calculates a hash value for the specific index set
+    On some OS's the pathname becomes too long and causes errors when 
+    creating files if multiple CCS indexes have been explicitly defined
+    *:my-data-* listed as 
+    mysite-1:my-data-*,mysite-2:my-data-*,mysite-3:my-data-*,mysite-4:my-data-*,mysite-5:my-data-*
+    '''
+    idx_hash =  index_hash_map.get(idx,None)
+    if idx_hash is not None:
+        return idx_hash
+    idx_hash = sha256()
+    idx_hash.update(str(idx).encode("utf-8"))
+    idx_hash = idx_hash.hexdigest()[0:20]
+    index_hash_map[idx] = idx_hash
+    return idx_hash
+
 def tile_name(idx, x, y, z, parameter_hash) -> str:
-    return f"{idx}/{parameter_hash}/{z}/{x}/{y}.png"
+    idx_hash = get_index_hash(idx)
+    return f"{idx_hash}/{parameter_hash}/{z}/{x}/{y}.png"
 
 def rendering_tile_name(idx, x, y, z, parameter_hash) -> str:
-    return f"{idx}/{parameter_hash}/{z}/{x}/{y}.rendering"
+    idx_hash = get_index_hash(idx)
+
+    return f"{idx_hash}/{parameter_hash}/{z}/{x}/{y}.rendering"
 
 def tile_id(idx, x, y, z, parameter_hash) -> str:
-    return f"{idx}_{parameter_hash}_{z}_{x}_{y}"
+    idx_hash = get_index_hash(idx)
+    return f"{idx_hash}_{parameter_hash}_{z}_{x}_{y}"
 
 def directory_size(path: Path) -> int:
     '''
@@ -134,14 +158,14 @@ def release_cache_placeholder(cache_path: Path, tile: str) -> None:
     if tile_path.exists():
         tile_path.unlink(missing_ok=True)
 
-def check_cache_dir(cache_path: Path, layer_name: str) -> None:
+def check_cache_dir(cache_path: Path, idx: str) -> None:
     """
     Ensure the folder ``cache_path``/``layer_name`` exists
 
     :param cache_path: Top level directory
     :param layer_name: Specific layer in cache
     """
-    tile_cache_path = cache_path / layer_name
+    tile_cache_path = cache_path / get_index_hash(idx)
     tile_cache_path.mkdir(parents=True, exist_ok=True)
 
 def clear_hash_cache(cache_path: Path, idx_name: str, param_hash: Optional[str]) -> None:

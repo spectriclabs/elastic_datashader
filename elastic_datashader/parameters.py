@@ -267,7 +267,7 @@ def get_parameter_hash(params: Dict[str, Any]) -> str:
             p = p.isoformat()
         parameter_hash.update(str(p).encode("utf-8"))
 
-    return parameter_hash.hexdigest()
+    return parameter_hash.hexdigest()[0:30]
 
 def extract_parameters(headers: Dict[Any, Any], query_params: Dict[Any, Any]) -> Tuple[str, Dict[str, Any]]:
     """
