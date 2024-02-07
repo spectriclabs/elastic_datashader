@@ -34,7 +34,7 @@ def get_index_hash(idx: str) -> str:
     *:my-data-* listed as 
     mysite-1:my-data-*,mysite-2:my-data-*,mysite-3:my-data-*,mysite-4:my-data-*,mysite-5:my-data-*
     '''
-    idx_hash =  index_hash_map.get(idx,None)
+    idx_hash =  index_hash_map.get(idx, None)
     if idx_hash is not None:
         return idx_hash
     idx_hash = sha256()
