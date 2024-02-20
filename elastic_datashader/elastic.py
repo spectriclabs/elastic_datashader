@@ -197,7 +197,7 @@ def get_search_base(
     # Connect to Elasticsearch
     es = Elasticsearch(
         hosts_url_to_nodeconfig(elastic_hosts),
-        timeout=900,
+        timeout=config.query_timeout_seconds,
         headers=get_es_headers(headers, user, x_opaque_id),
     )
 
