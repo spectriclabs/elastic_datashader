@@ -21,7 +21,7 @@ class Config:
     datashader_headers: Dict[Any, Any]
     elastic_hosts: str
     ellipse_render_mode: str
-    ellipse_render_min_zoom:int
+    ellipse_render_min_zoom: int
     hostname: str
     log_level: int
     max_batch: int
