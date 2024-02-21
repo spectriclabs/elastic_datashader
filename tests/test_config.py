@@ -20,7 +20,7 @@ def test_config_defaults():
     assert cfg.max_batch == 10000
     assert cfg.max_ellipses_per_tile == 100000
     assert cfg.allowlist_headers is None
-    assert cfg.query_timeout_seconds == 0
+    assert cfg.query_timeout_seconds == 900
     assert cfg.hostname == socket.getfqdn()
 
 
