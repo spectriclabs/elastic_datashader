@@ -21,6 +21,7 @@ class Config:
     datashader_headers: Dict[Any, Any]
     elastic_hosts: str
     ellipse_render_mode: str
+    ellipse_render_min_zoom: int
     hostname: str
     log_level: int
     max_batch: int
@@ -93,6 +94,7 @@ def config_from_env(env) -> Config:
         datashader_headers=load_datashader_headers(env.get("DATASHADER_HEADER_FILE", "headers.yaml")),
         elastic_hosts=env.get("DATASHADER_ELASTIC", "http://localhost:9200"),
         ellipse_render_mode=env.get("DATASHADER_ELLIPSE_RENDER_MODE", "matrix"),
+        ellipse_render_min_zoom=env.get("DATASHADER_ELLIPSE_RENDER_MIN_ZOOM", 8),
         hostname=getfqdn(),
         log_level=get_log_level(env.get("DATASHADER_LOG_LEVEL", None)),
         max_batch=int(env.get("DATASHADER_MAX_BATCH", 10_000)),
@@ -100,7 +102,7 @@ def config_from_env(env) -> Config:
         max_ellipses_per_tile=int(env.get("DATASHADER_MAX_ELLIPSES_PER_TILE", 100_000)),
         max_legend_items_per_tile=int(env.get("MAX_LEGEND_ITEMS_PER_TILE", 20)),
         num_ellipse_points=int(env.get("DATASHADER_NUM_ELLIPSE_POINTS", 100)),
-        query_timeout_seconds=int(env.get("DATASHADER_QUERY_TIMEOUT", 0)),
+        query_timeout_seconds=int(env.get("DATASHADER_QUERY_TIMEOUT", 900)),
         render_timeout=timedelta(seconds=int(env.get("DATASHADER_RENDER_TIMEOUT", 30))),
         tms_key=env.get("DATASHADER_TMS_KEY", None),
         use_scroll=true_if_none(env.get("DATASHADER_USE_SCROLL", None)),

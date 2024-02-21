@@ -637,6 +637,9 @@ def generate_nonaggregated_tile(
         metrics = {"over_max": False}
 
         if render_mode == "ellipses":
+            if z < config.ellipse_render_min_zoom:
+                img = gen_overlay(gen_empty(tile_width_px, tile_height_px), color=(128, 128, 128, 128))
+                return img, metrics
             field_names = get_ellipse_field_names(params)
             count_s = count_s.source(includes=populated_field_names(field_names))
             df = pd.DataFrame.from_dict(
