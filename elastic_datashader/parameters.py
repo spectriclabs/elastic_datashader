@@ -351,7 +351,6 @@ def generate_global_params(headers, params, idx):
     global_doc_cnt = 0
 
     bounds_s = copy.copy(base_s)
-    bounds_s = bounds_s.params(size=0)
 
     # We only need to do a global query if we are in span 'auto' or
     # using a numeric category
