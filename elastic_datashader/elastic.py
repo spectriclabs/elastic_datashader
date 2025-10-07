@@ -35,13 +35,13 @@ def scan(search, use_scroll=False, size=10000):
     search = search.sort("_doc")
     if use_scroll:
         for hit in search.scan():
-            yield from hit
+            yield hit
     else:
         _search = search.params(size=size).extra(track_total_hits=False)
         while _search is not None:
             hit = None
             for hit in _search:
-                yield from hit
+                yield hit
             if hit is not None:
                 _search = search.extra(search_after=list(hit.meta.sort))
             else:
