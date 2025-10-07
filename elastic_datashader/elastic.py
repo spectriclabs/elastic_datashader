@@ -35,13 +35,13 @@ def scan(search, use_scroll=False, size=10000):
     search = search.sort("_doc")
     if use_scroll:
         for hit in search.scan():
-            yield from hit
+            yield hit
     else:
         _search = search.params(size=size).extra(track_total_hits=False)
         while _search is not None:
             hit = None
             for hit in _search:
-                yield from hit
+                yield hit
             if hit is not None:
                 _search = search.extra(search_after=list(hit.meta.sort))
             else:
@@ -379,10 +379,9 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
     if categorical and filter_buckets is False:
         # Convert a regular terms aggregation
         for bucket in response:
+            lon, lat = geotile_bucket_to_lonlat(bucket)
+            x, y = lnglat_to_meters(lon, lat)
             for category in bucket.categories:
-                lon, lat = geotile_bucket_to_lonlat(bucket)
-                x, y = lnglat_to_meters(lon, lat)
-
                 raw = category.key
                 # Bin the data
                 if histogram_interval is not None:
@@ -406,12 +405,11 @@ def convert_composite(response, categorical, filter_buckets, histogram_interval,
     elif categorical and filter_buckets is True:
         # Convert a filter bucket aggregation
         for bucket in response:
+            lon, lat = geotile_bucket_to_lonlat(bucket)
+            x, y = lnglat_to_meters(lon, lat)
             for key in bucket.categories.buckets:
                 category = bucket.categories.buckets[key]
                 if category.doc_count > 0:
-                    lon, lat = geotile_bucket_to_lonlat(bucket)
-                    x, y = lnglat_to_meters(lon, lat)
-
                     if category_type == "number":
                         try:
                             label = pynumeral.format(to_32bit_float(key), category_format)
@@ -597,7 +595,7 @@ class ScanAggs:
 
         while response.aggregations.comp.buckets:
             for b in response.aggregations.comp.buckets:
-                yield from b
+                yield b
             if "after_key" in response.aggregations.comp:
                 after = response.aggregations.comp.after_key
             else:
